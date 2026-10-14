@@ -120,6 +120,8 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(HistoryEntry);
     CHECK_ALL_FIELDS(SeenDesign);
     CHECK_ALL_FIELDS(TurnStats);
+    CHECK_ALL_FIELDS(StatisticsRow);
+    CHECK_ALL_FIELDS(PartnerIncome);
     CHECK_ALL_FIELDS(EconomyReport);
     CHECK_ALL_FIELDS(Knowledge);
     CHECK_ALL_FIELDS(InterfaceOptions);
@@ -524,8 +526,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x645b04381fef4a41ull;
-    constexpr size_t kGoldenSize = 1959;
+    constexpr uint64_t kGoldenChecksum = 0x943faea01dffab77ull;
+    constexpr size_t kGoldenSize = 1968;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -539,6 +541,20 @@ TEST_CASE("serialize: checksums are stable") {
     copy.colonies[0]->population[0].millions += 1;
     CHECK(stateChecksum(copy) != stateChecksum(g));
 }
+
+namespace {
+
+// What format 10 added (the REA parity audit, serialize.hpp): a game saved in
+// an older format loads without it.
+void dropFormat10(GameState& g) {
+    for (Empire& e : g.empires) {
+        e.statistics.clear();
+        e.economy.partners.clear();
+        e.interfaceOptions.empiresTab = 0;
+    }
+}
+
+} // namespace
 
 // Format 8 added the Designs window's Hide Obsolete and Stats\Strategy to the
 // empire's options (GitHub issue #1, spec 08 §3.6.7). Games saved in format 7
@@ -575,6 +591,7 @@ TEST_CASE("serialize: format 7 games load; format 8 keeps the Designs window's c
     GameState expected = g;
     expected.empires[0].interfaceOptions.designsHideObsolete = false;
     expected.empires[0].interfaceOptions.designsStatsView = false;
+    dropFormat10(expected);
     CHECK(stateChecksum(*before) == stateChecksum(expected));
 }
 
@@ -607,7 +624,9 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
     auto before = deserializeState(old);
     REQUIRE_MESSAGE(before.has_value(), (before ? std::string{} : before.error()));
     for (const Design& d : before->designs) CHECK(d.picture.empty());
-    CHECK(stateChecksum(*before) == stateChecksum(plain));
+    GameState plainNine = plain;
+    dropFormat10(plainNine);
+    CHECK(stateChecksum(*before) == stateChecksum(plainNine));
     // A design without a picture adds one empty text to format 9: four bytes
     // (and the game's empty list of mods four more; each empire's built-in
     // controller and empty script player state 25, the script players'
@@ -624,6 +643,49 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
     const size_t colonies = static_cast<size_t>(std::count_if(plain.colonies.begin(), plain.colonies.end(), [](const auto& c) { return c.has_value(); }));
     CHECK(nine.size() == eight.size() + 4 * plain.designs.size() + 4 + 25 * plain.empires.size() + 25 +
                              4 * (plain.empires.size() + colonies + plain.vehicles.size()) + 28 + 24);
+}
+
+// Format 10 added, for the diplomacy package: a human player's statistics
+// record (Empire::statistics, spec 05 §5), the economy report's trade and
+// tariffs empire by empire (EconomyReport::partners) and the Empires window's
+// tab (InterfaceOptions::empiresTab). Games saved in format 9 (OpenSE4 0.11
+// and 0.12) still load, without them.
+TEST_CASE("serialize: format 9 games load; format 10 keeps the statistics record, the partners' income and the Empires tab") {
+    GameState g = busyGame();
+    REQUIRE_FALSE(g.empires[0].statistics.empty());   // the human's record, a row a turn at least
+    g.empires[0].interfaceOptions.empiresTab = 2;
+    PartnerIncome p;
+    p.empire = EmpireId{1u};
+    p.trade = {10, 20, 30};
+    p.research = 4;
+    p.intelligence = 5;
+    p.tariffReceived = {1, 2, 3};
+    g.empires[0].economy.partners = {p};
+    auto now = deserializeState(serializeState(g));
+    REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
+    CHECK(stateChecksum(*now) == stateChecksum(g));
+    CHECK(now->empires[0].interfaceOptions.empiresTab == 2);
+    REQUIRE(now->empires[0].economy.partners.size() == 1);
+    CHECK(now->empires[0].economy.partners[0].tariffReceived == Resources{1, 2, 3});
+    CHECK(now->empires[0].statistics.size() == g.empires[0].statistics.size());
+
+    const std::vector<uint8_t> current = serializeState(g);
+    const std::string magic(current.begin(), current.begin() + 8);
+    std::vector<uint8_t> payload;
+    serial::write(payload, g, 9);
+    std::vector<uint8_t> old = wrapEnvelope(magic, payload);
+    old[8] = 9;
+    GameState nine = g;
+    dropFormat10(nine);
+    std::vector<uint8_t> ninePayload;
+    serial::write(ninePayload, nine, 9);
+    CHECK(payload == ninePayload);   // format 9 holds none of it
+    auto before = deserializeState(old);
+    REQUIRE_MESSAGE(before.has_value(), (before ? std::string{} : before.error()));
+    CHECK(before->empires[0].statistics.empty());
+    CHECK(before->empires[0].economy.partners.empty());
+    CHECK(before->empires[0].interfaceOptions.empiresTab == 0);
+    CHECK(stateChecksum(*before) == stateChecksum(nine));
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------

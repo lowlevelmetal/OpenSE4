@@ -47,7 +47,7 @@ Treaties are ranked from worst to best. Each pair of empires has one treaty.
 | Non-Intercourse | The two keep apart. Their ships still fight. |
 | None | Met, but no treaty. Ships still fight. |
 | Non-Aggression | No fighting. Ships may share sectors. |
-| Subjugation | One side is the master, the other its subject. The subject pays tribute and may hold no other treaties. |
+| Subjugation | One side is the master, the other its subject. The subject pays tribute and can neither propose nor accept treaties. |
 | Protectorate | One side protects the other, which pays a smaller tribute. |
 | Trade Alliance | Trade in minerals, organics and radioactives. |
 | Trade and Research Alliance | Trade in research points as well. |
@@ -63,7 +63,9 @@ subordinate and pays; the empire that proposed it becomes the master. A subject 
 its income (stock settings) and a protectorate 20 %. The master receives the minerals,
 organics and radioactives; the research and intelligence part is simply lost. A master also
 learns its subject's ship designs. Accepting Subjugation ends the subject's friendly treaties
-with everyone else.
+with everyone else, and from then on the subject can neither propose nor accept a treaty, not
+even with its master; it can still break its treaty or declare war. A protectorate keeps that
+freedom.
 
 A **Partnership** shares the most:
 
@@ -103,18 +105,18 @@ Each message has a **type**, a **tone** (Pleading, Neutral or Demanding) and a t
 edit. The types are:
 
 - **General Message**: words only.
-- **Propose Treaty**, and the replies Accept, Refuse and Counter. A counter-proposal is a new proposal. A treaty takes effect only when accepted.
-- **Break Treaty**: the treaty falls to None at once.
+- **Propose Treaty**, and the replies Accept, Refuse and Counter. A counter-proposal is a new proposal. A treaty takes effect only when accepted. You can propose any treaty from Non-Intercourse to Partnership, so peace after a war is Non-Intercourse or better; a subjugated race can propose none.
+- **Break Treaty**: the treaty falls to None at once. It is offered from Non-Aggression up.
 - **Declare War**: war at once, whatever the treaty was.
-- **Propose Trade**: a package of things you give and things you ask for. You may ask for **Any** system, planet, technology and so on, and let the other side choose. A trade that still holds an Any item cannot be accepted: the other side must counter with real items.
+- **Propose Trade**: a package of things you give and things you ask for, with something on each side. You may ask for **Any** planet, technology, ship, unit transport or star chart and let the other side choose, but what you give must be real. A trade that still holds an Any item cannot be accepted: the other side must counter with real items. You may propose a trade even at war.
 - **Gift** and **Tribute**: things you give. They change hands only when accepted. A tribute is a gift to a stronger power. The game setup can forbid gifts.
-- **Surrender**: your whole empire passes to the recipient at once: your planets, ships, stored minerals, organics and radioactives, and a level in each technology where you were ahead. You are asked to confirm. It works only when the game setup allows surrender.
-- **Grant Independence**: you give up one of your colonies, which the recipient may then settle.
-- **Demands and requests**: ask for a gift, a tribute or surrender; ask the other side to pull ships or colonies out of a system or leave a planet; to stop hostilities, espionage, sabotage or attacks; to break a treaty with, declare war on, make peace with, support you against or attack a third empire. These bind no one. Computer players weigh them; a human may simply ignore them.
+- **Surrender**: your whole empire passes to the recipient at once: your planets, ships, stored minerals, organics and radioactives, and a level in each technology where you were ahead. You are asked to confirm. It is offered only when the game setup allows surrender.
+- **Grant Independence** (an OpenSE4 addition): you give up one of your colonies, which the recipient may then settle.
+- **Demands and requests**: ask for a gift, a tribute or surrender; ask the other side to pull ships or colonies out of a system or leave a planet; to stop hostilities, espionage, sabotage or attacks; to break a treaty with, declare war on, make peace with, support you against or attack a third empire. A request for a gift or tribute carries the list of what you want (Any items allowed); a computer player that agrees pays from that list. These bind no one, and you may send them whatever the treaty. Computer players weigh them; a human may simply ignore them. Demanding surrender is offered only when the game setup allows surrender.
 
 A **package** can hold systems (your claim passes to the receiver), planets, resources in steps
-of 1,000, technology, ships (with their cargo), units, star charts (the receiver explores those
-systems), a treaty and comm channels. When a package is carried out, each item gets its own
+of 1,000, technology, ships (with their cargo), loaded unit transports, star charts (the
+receiver explores those systems), a treaty and comm channels. When a package is carried out, each item gets its own
 entries in the Log, the receiver's first: Planet, Vehicle, Resources or Technology Received and
 Transfered, Starcharts Received, Treaty Enacted and so on, each with its Goto. Things that were
 lost before the trade was accepted are simply left out. Technology that teaches the receiver
@@ -166,14 +168,15 @@ empty.
 
 - **Left-click** a portrait to open [Communicate](window:communicate) with that empire.
 - **Right-click** a portrait for its Race Report: its race, characteristics, traits and description, and its technology if it is your partner.
-- The tabs choose the column: **Treaty** (treaty, race, player type, since when, last war, the computer's mood with its anger value, messages waiting, a message sent this turn), **Trade** (trade percentage of the maximum, what is shared, its growth, shared sight and resupply) and **Tariff** (who pays whom).
+- Once you have sent an empire a message this turn, clicking its portrait does nothing.
+- The tabs choose the column, and the window remembers the tab with your empire's options: **Treaty** (the treaty, with who dominates or protects whom; the trade percentage; every empire's mood toward you, with the anger value for a computer player; a line saying you sent a message, or what they offered or proposed; then race, player type, since when, last war and messages waiting), **Trade** (what trade with that empire brings you this turn, then the trade percentage of the maximum, what is shared, its growth, shared sight and resupply) and **Tariff** (the tariff they pay you or you pay them, then who pays whom).
 
 The buttons on the right open more windows:
 
 | Button | What it shows |
 |---|---|
-| History | A dated record of your empire's and others' main events. |
-| Treaty Grid | The treaty between each pair of empires. You see treaties of your allies only; the rest show `??`. |
+| History | A dated record of your empire's and others' main events, oldest first, by decade: pick an empire, or Other Events, in the list on the left. |
+| Treaty Grid | The treaty between each pair of empires, as a code (War, NI, NA, Sub, Pro, TA, TR, MA, P); a subjugation or protectorate shows who is the subordinate (S) and who dominates (D). You see your own treaties and those of the empires you hold Non-Aggression or better with; the other cells, and pairs with no treaty, are blank. |
 | Intelligence | Your [intelligence](intelligence) projects (dim until you have met another empire). |
 | Borders | Opens the [Borders](window:borders) window over this one: the systems the empires you check in its list claim, in their colours, and those several of them claim in yellow (contested). `Select All`, `Allies`, `Enemies` and `Us` check those empires. Click a system on its map to claim it for your empire, or to give the claim up. |
 | Scores | The score table (see [Score and victory](score-and-victory#the-scores-window)). |
@@ -185,23 +188,32 @@ The buttons on the right open more windows:
 
 In [Communicate](window:communicate) you choose the **Message Type**, the **Tone** and, when the
 type needs it, a treaty, a third empire, a system or a planet. The third empire comes from the
-empires you have met that are still in the game. The text starts with a suitable default; change
-it as you like. (Your Politics minister, when it is on, writes its own requests and needs no such
-choice.)
+empires you have met that are still in the game. The text starts with a line your own race
+would say, chosen at random; change it as you like. (Your Politics minister, when it is on,
+writes its own requests and needs no such choice.)
 
-For trades, gifts and tributes, `Edit Package` opens the package editor. Choose **We give** or
-**We ask for**, pick a tab (systems, planets, resources, technology, ships, units, star charts,
-treaty, comm channels) and click items to add them; resources are added in steps of 1,000 with
-`Add To Package`. Click an item in the package to remove it. `Clear Package` empties it and `Done`
-goes back to the message.
+Choosing a gift, a tribute, a request for one, or a trade opens the package editor at once;
+afterwards `Edit Package` (gifts, tributes and the requests for them) or `Edit Trade` (trades)
+opens it again. Choose **We give** or **We ask for**, pick a tab (systems, planets, resources,
+technology, ships, units, star charts, treaty, comm channels) and click items to add them;
+resources are added in steps of 1,000 with `Add To Package`. Systems and star charts list the
+systems you have explored, units the ships carrying units, and the technology tab is dim when
+the game allows no technology trades. Click an item in the package to remove it.
+`Clear Package` empties it and `Done` goes back to the message.
 
 `Send Message` sends it; the button is disabled once you have written to that empire this turn.
-Surrender and Declare War ask you to confirm. `Report` shows the empire's race report,
-`View Last Offer` their newest offer, and `Start Again` clears the message.
+Surrender and Declare War ask you to confirm. `Report` shows the empire's race report;
+`View Trade`, `View Gift` and `View Tribute` light up when the empire's newest message is that
+kind of offer, and show it; `Start Again` clears the message.
+
+When you open Communicate from a portrait and that empire's newest message (from this turn or
+the last) waits for an answer, the type list also offers the answers: Accept, Refuse or Counter
+a treaty or a trade, Accept or Refuse a gift or tribute, Accept or Refuse a demand.
 
 When you open a message you received (with **Send Reply** in the [Log](window:log)), the window
 shows what they offer and ask for, with `Accept`, `Refuse`, `Counter` and `Reply`. Counter
-starts a counter-proposal from their offer, with the two sides of the package swapped.
+starts a counter-proposal from their offer, with the two sides of the package swapped; anything
+they left you to choose ("Any") must be replaced with real items before you send it.
 
 ## Diplomacy advice
 

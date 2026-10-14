@@ -278,6 +278,23 @@ struct TurnStats {
     int bases = 0;
 };
 
+// One row of a player's statistics record (Empire::statistics).
+struct StatisticsRow {
+    EmpireId empire;
+    TurnStats stats;
+};
+
+// What one other empire gives us by trade and tariffs in the coming turn, for
+// the Empires window's Trade and Tariff tabs (spec 06 §1.5).
+struct PartnerIncome {
+    EmpireId empire;
+    Resources trade;            // minerals, organics and radioactives by trade (Trade Alliance up)
+    int64_t research = 0;       // research by trade (Trade and Research Alliance up)
+    int64_t intelligence = 0;   // intelligence by trade (Partnership)
+    Resources tariffReceived;   // its tariff, when it is our subject or protectorate
+    Resources tariffGiven;      // our tariff, when it is our master
+};
+
 // Income/expense breakdown of the last processed turn (Empire Status window).
 struct EconomyReport {
     Resources colonies, trade, tariffsIn, remoteMining, otherIncome;
@@ -286,6 +303,9 @@ struct EconomyReport {
     Resources storageCap;
     int64_t research = 0;
     int64_t intelligence = 0;
+    // The trade and tariffs above, empire by empire: one entry for each living
+    // empire with something to give or take, in empire order (save format 10).
+    std::vector<PartnerIncome> partners;
 };
 
 // What an empire knows about the galaxy (spec 01 §6).
@@ -382,6 +402,9 @@ struct InterfaceOptions {
     // Dsgn, 3 Enemy Unit Dsgn), kept with the empire's options like the two
     // check boxes: the window opens on it (spec 08 §3.6.7; save format 10).
     uint8_t designsTab = 0;
+    // The Empires window's tab, 0 Treaty, 1 Trade, 2 Tariff: the original keeps
+    // it with the empire's options (spec 06 §1.5, spec 08 §3.6.7; save format 10).
+    uint8_t empiresTab = 0;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
@@ -456,6 +479,12 @@ struct Empire {
     std::vector<LogEntry> log;              // this turn's messages (pruned at the end of each turn, spec 05 §3.4)
     std::vector<HistoryEntry> historyEvents;  // the History window's long record, oldest first
     std::vector<TurnStats> history;         // statistics per turn (Scores, Comparisons)
+    // A human player's statistics record (spec 05 §5, confirmed: binary): at
+    // the start of each of its end-of-turn processings, one row for every
+    // living empire whose score the player may see then, its own included.
+    // The Comparisons window plots these rows only, so an empire has a gap
+    // for the turns it was not visible (save format 10).
+    std::vector<StatisticsRow> statistics;
     int experience = 0;
 
     // Computer player state (spec 05 §7).

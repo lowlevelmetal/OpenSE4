@@ -488,12 +488,25 @@ up the trade chain [M].
 - **Happiness**: Trade and better are "good" treaties that please the empire. War,
   Non-Intercourse, Subjugation and Protectorate displease it [M]. Accepting a treaty raises
   a happiness event for both sides (confirmed: binary).
-- **Treaty grid**: treaties between third parties are visible only for empires we are
-  allied with [M], or through `Politics - Treaty Info`.
+- **Treaty grid** (confirmed: binary; the manual's "allied" was wrong): we see our own
+  treaties, and the treaty between two other empires when we hold Non-Aggression or better
+  with either of them (`Politics - Treaty Info` aside). The grid's cell layout is spec 06
+  §1.5.
+- **Subjugated races** (confirmed: binary): an empire that holds a Subjugation as the
+  subordinate side (a Protectorate does not count) can neither propose nor accept a treaty,
+  not even with its master. Its Communicate window leaves Propose Treaty out of the list,
+  and refuses a Propose or Counter Treaty ("Subjugated races cannot propose treaties") and an
+  Accept Treaty ("Subjugated races cannot accept treaties"). Break Treaty and Declare War stay.
+  The original checks this in the window only: a computer player's and a Politics
+  minister's messages and answers are not checked, and a treaty in an accepted package still
+  takes effect. Our engine differs: it also refuses such a message or answer from a human
+  player in the command itself (`cmd::SendMessage`, `cmd::AnswerMessage` without their
+  `minister` mark), so a network player cannot get round the window. It replaces OpenSE4's
+  earlier choice, which stopped a subject's treaties with third empires when they were set.
 - **OpenSE4 choices** [I]:
   - A Treaty package item makes the receiver the master unless it names the giver.
-  - A subject cannot sign new treaties with third empires.
-  - Break Treaty does not end a war.
+  - Break Treaty does not end a war (the window offers it only from Non-Aggression up,
+    §3.4).
 
 ### 3.3 Trade and tariffs
 
@@ -556,15 +569,42 @@ up the trade chain [M].
     contact with either side are told. Nothing else happens then: the sender, now owning
     nothing, is destroyed at its next destruction check (§6), which resets its treaties to
     no contact and removes the intel projects aimed at it.
-  - **Grant independence**: marks one of the sender's planets, which the sender then
-    evacuates and abandons; the recipient may then colonize it.
+  - **Grant independence** (confirmed: binary): the original's window never offers it, and
+    its message processing does nothing with it; the manual's description (a planet the
+    sender evacuates and abandons for the recipient to colonize) is not what the game does.
+    OpenSE4 extension: our client offers it, and the sender's colony is abandoned as the
+    manual describes (inferred), so the recipient may then colonize the planet.
 - **Non-binding demands and requests**, each taking a system, planet or empire where
   relevant: want a gift, want a tribute, demand surrender, remove ships from a system,
   remove colonies from a system, leave a planet, stop hostilities against an empire, break
   a treaty with an empire, declare war on an empire, make peace with an empire, support us
   against an empire, attack an empire in a system, attack a planet, stop espionage, stop
   sabotage, stop attacks in a system. The recipient replies Accept or Refuse. Only the AI
-  acts on them (§7.4).
+  acts on them (§7.4). Want a gift and Want a tribute carry a package of the items asked
+  for (confirmed: binary): the player fills the asked-for side in Select Package, "Any"
+  items allowed, and an empty one is not sent; an accepted request is paid from that list
+  (§7.4).
+- **What a player may send** (confirmed: binary; the original's Communicate window, spec 06
+  §4.2):
+  - Propose and Counter Treaty name Non-Intercourse, Non-Aggression, Subjugation,
+    Protectorate, Trade Alliance, Trade and Research Alliance, Military Alliance or
+    Partnership, the current treaty included; never War or None, so peace after a war is
+    Non-Intercourse or better.
+  - Break Treaty only from Non-Aggression up. Declare War is not offered while already at
+    war (OpenSE4's list, inferred: question 80).
+  - Propose Trade and every demand and request whatever the treaty, war included.
+  - Gift and Tribute only with the game option for gifts; Want a gift and Want a tribute
+    whatever it says.
+  - Surrender and Demand your surrender only with Allow Surrender on.
+  - A trade (Propose or Counter Trade) needs items on both sides, and the side we give
+    holds no "Any" item: a counter starts from the received packages with the sides swapped,
+    and when what we would give then holds "Any" items the window warns that a trade offer
+    cannot contain unspecified "Any" items, so the player replaces them. A gift or tribute
+    holds at least one item, none of them "Any".
+  - Our engine differs: the original checks all of this in the window only. Ours also
+    refuses such a message from a human player in `cmd::SendMessage` (not one marked
+    `minister`), so a network player cannot get round the window
+    (`diplomacy::playerMessageProblem`).
 - **Package items** (each logged on its own when carried out, spec 06 §7 Q70; confirmed:
   binary):
   - Systems: our border claim on the system passes to the receiver.
@@ -577,6 +617,18 @@ up the trade chain [M].
   - A Treaty: becomes active on acceptance.
   - Comm Channels: only when the receiver has no contact with the named empire; the two
     are then set to treaty None, without a first-contact check or entry.
+- **Select Package's lists** (confirmed: binary): Systems lists every system the player has
+  explored, on both sides, with no "Any"; Star Charts the same systems, on both sides; Units
+  the ships carrying units (loaded transports); the Treaty tab every treaty but "no contact",
+  None and the current one, War included. "Any" entries (an item the other side chooses)
+  are offered only on the side asked for, and only for a planet, a technology area, a ship,
+  a unit transport and a star chart. The Technology tab is dim when the game does not allow
+  technology trades. Resources are chosen with x10000 and x100000 toggles; our client
+  differs: the amounts are typed in, in steps of 1,000. Our client lists our own colonies,
+  technology areas, ships and the empires we have met on the side we give, and the
+  recipient's colonies in systems we have explored and its ships we see on the side we ask
+  for. The side we ask for of Comm Channels lists the empires the recipient has met and we
+  have not (inferred: question 80).
 - **Borders**: each empire publicly claims systems, and claims may overlap. The AI uses
   claims to compute anger.
 - **History window** (confirmed: binary): each human player's history is a file of dated
@@ -751,6 +803,14 @@ up the trade chain [M].
   tenths of a year (24001 for 2400.1) in 8, and each of the eleven columns in 12. The date
   is the one the empire's end-of-turn processing sees: advanced in a simultaneous game,
   unadvanced in a turn-based one (§8). The player's own empire always has a row.
+  The Comparisons window plots only these rows, and lists every empire with at least one
+  row, destroyed empires and those no longer visible included (confirmed: binary). Our
+  engine keeps the rows with the human player's empire (`Empire::statistics`, save format
+  10), taken at the same moment and by the same rule (`score::recordStatistics`), and our
+  window plots them alone, a gap where a turn has no row; since a network player's view
+  holds only its own record, no player sees another's. A game saved before the record
+  existed (format 9 and earlier) has none, and the window falls back to each empire's whole
+  history while its score is visible (an OpenSE4 choice).
 
 ## 6. Victory
 
@@ -1566,8 +1626,8 @@ Team mates are always accepted, and team enemies always refused.
   refused.
 - The AI then builds a package worth V = `… Value Base to Friend/Enemy`, plus (P × `…
   Per Percentage Greater Score` − 100) when P > 100.
-- It adds the requested items in order, a random concrete item for each "any" item, until
-  the package reaches V. A concrete requested item goes in even when the AI cannot hand
+- It adds the requested items (the package the request carries, §3.4) in order, a random
+  concrete item for each "any" item, until the package reaches V. A concrete requested item goes in even when the AI cannot hand
   it over; it just adds no value (confirmed: binary).
 - A package that ends up empty (V is 0 or less, or every requested item is an "any" item
   with nothing to offer) counts as a refusal (confirmed: binary).
@@ -4565,3 +4625,12 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     once more, the players told it is the last), and what do the players see when it ends?
     OpenSE4 ends a simultaneous game at once, as before (`score::checkVictory`): the Victory
     ending shows at the next turn's start, and the game plays no further turn (inferred).
+80. **Communicate's lists the 2026-10-11 audit left open** (§3.4 "What a player may send",
+    "Select Package's lists"). Our client chooses, until checked in the executable:
+    (a) Declare War is not offered while the two empires are already at war; does the
+    original's message list offer it then? (b) On the side asked for, the Comm Channels tab
+    lists the empires the recipient has met and the player has not, with no "Any"; what does
+    the original's tab list there? (c) The original's Planets, Technology and Ships tabs: which
+    colonies, areas and ships does each side list (ours: our own on the side we give; the
+    recipient's colonies in systems we have explored, the areas we can see and the ships we
+    see on the side we ask for)?

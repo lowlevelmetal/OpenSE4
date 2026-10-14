@@ -73,21 +73,27 @@ When the game ends, an ending window shows one of the pictures your copy lists f
 
 ## The Scores window
 
-[Scores](window:scores) (from the [Empires](window:empires) window) has a column for each empire,
-headed by its flag and the first letters of its name (hover over it for the full name), best
-rank first, ten empires to a page. Under each flag: its score, resources produced, research,
-intelligence, technology levels, systems, planets, population, units, ships and bases, and its
-rank. A figure too large for its column is shortened ("123k", "4.5M"); hover over it for the exact
-value. Empires whose scores are hidden show only dashes.
+[Scores](window:scores) (from the [Empires](window:empires) window) has a column for each empire
+whose score you may see, in player order, headed by its flag and the first letters of its name
+(hover over it for the full name), ten empires to a page. Under each flag: its score, resources
+produced, research, intelligence, technology levels, systems, planets, population, units, ships
+and bases, and its rank. Score, resources, research and intelligence are in thousands ("12.3K",
+or "4.5M" for millions), the population in billions ("2.5B"); hover over a figure for its exact
+value. The rank counts every empire, destroyed ones too, and equal scores share a rank.
 
 ## The Comparisons window
 
 [Comparisons](window:comparisons) draws one of the score table's columns as a graph over time. Pick
-the column with the buttons on the right, and tick the empires to compare. Empires whose scores
-you could not see at some point show gaps.
+the column with the buttons on the right, and tick the empires to compare. The graph shows the
+figures recorded at the end of each of your turns for the empires whose scores you could see
+then, so an empire you could not see for a while shows a gap, and an empire destroyed or no
+longer visible stays in the list.
 
 ## The Victory Conditions window
 
-[Victory Conditions](window:victory-conditions) lists each condition of this game, whether it is
-on, and how close each empire is to it, as far as you can see. It also shows how much of the
-qualifying time is left. Once the game is over, it names the empire with the best score.
+[Victory Conditions](window:victory-conditions) lists each condition of this game and marks with
+an **X** each empire that meets it; a condition that is off shows only its name. The years, the
+years of peace and the "no victory before" date concern the whole game, so once they are met
+every empire is marked. Hover over a cell to see how close that empire is, as far as you can
+see. It also shows how much of the qualifying time is left. Once the game is over, it names the
+empire with the best score.

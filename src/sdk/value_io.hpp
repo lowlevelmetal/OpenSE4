@@ -631,6 +631,7 @@ void fields(A& a, game::InterfaceOptions& x) {
     a("designs_stats_view", x.designsStatsView);
     a("scenario_page", x.scenarioPage);
     a("designs_tab", x.designsTab);
+    a("empires_tab", x.empiresTab);
 }
 template <class A>
 void fields(A& a, game::combat::Square& x) {
@@ -889,6 +890,7 @@ void fields(A& a, cmd::AnswerMessage& x) {
     a("message", x.message);
     a("accept", x.accept);
     a("text", x.text);
+    a("minister", x.minister);
 }
 template <class A>
 void fields(A& a, cmd::DecideWar& x) {

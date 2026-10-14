@@ -918,6 +918,14 @@ struct Applier {
                 !emp().relation(third).contact)
                 return R::fail("Choose an empire we have met, other than the recipient");
         }
+        // What the player's Communicate window lets it send (spec 06 §4.2,
+        // spec 05 §3.2, confirmed: binary): a subjugated race proposes no
+        // treaty, a trade has items on both sides, and so on. The original
+        // checks it in the window only, so a computer player's and a
+        // minister's messages are not checked; the engine checks every
+        // message a player writes, so a network player cannot get round it.
+        if (emp().kind == PlayerKind::Human && !c.minister)
+            if (const std::string why = diplomacy::playerMessageProblem(s, e, m); !why.empty()) return R::fail(why);
         // The game option limits the message types a player picks; the
         // answer to a request for a gift or tribute (the computer player's,
         // spec 05 §7.4, which never reads the option) is always allowed.
@@ -940,6 +948,10 @@ struct Applier {
         auto it = std::find_if(s.messages.begin(), s.messages.end(), [&](const DiplomaticMessage& m) { return m.id == c.message; });
         if (it == s.messages.end() || it->to != e || !it->delivered) return R::fail("No such message");
         if (it->answered) return R::fail("Already answered");
+        // Nor accept one (spec 05 §3.2, confirmed: binary; checked as in SendMessage).
+        if (c.accept && (it->type == MessageType::ProposeTreaty || it->type == MessageType::CounterTreaty) && emp().kind == PlayerKind::Human &&
+            !c.minister && diplomacy::isSubjugated(s, e))
+            return R::fail("Subjugated races cannot accept treaties");
         it->answered = true;
         DiplomaticMessage reply;
         reply.id = MessageId{s.nextMessageId++};
@@ -1165,7 +1177,7 @@ struct Applier {
     R operator()(const cmd::SetInterfaceOptions& c) {
         const InterfaceOptions& o = c.options;
         if (o.logFilter > uint8_t(LogCategory::Misc) + 1) return R::fail("Unknown log filter");
-        if (o.planetsTab > 9 || o.queuesTab > 4 || o.queuesShown > 0x0f || o.designsTab > 3) return R::fail("Unknown window choice");
+        if (o.planetsTab > 9 || o.queuesTab > 4 || o.queuesShown > 0x0f || o.designsTab > 3 || o.empiresTab > 2) return R::fail("Unknown window choice");
         if (o.facilityMarkers >= (1u << kFacilityMarkerGroups)) return R::fail("Unknown facility markers");
         if (o.logPosition < 0 || o.logScroll < 0) return R::fail("Invalid log position");
         emp().interfaceOptions = o;

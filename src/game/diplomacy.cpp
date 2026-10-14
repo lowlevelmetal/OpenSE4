@@ -170,7 +170,10 @@ void grantIndependence(TurnContext& ctx, const DiplomaticMessage& m) {
     const Colony* c = s.colony(m.planet);
     if (!c || c->owner != m.from) return;
     const std::string planet = s.galaxy.object(m.planet).name;
-    // The sender evacuates and abandons the planet; the recipient may settle it (inferred).
+    // An OpenSE4 extension: the original never offers the message and does
+    // nothing with it (spec 05 §3.4, confirmed: binary). Ours does what the
+    // manual describes: the sender evacuates and abandons the planet, and the
+    // recipient may settle it (inferred).
     s.colonies[m.planet.index()].reset();
     ctx.log(m.from, LogCategory::Politics, "Independence Granted",
             std::format("We have withdrawn from {} so that the {} may settle it.", planet, nameOf(s, m.to)), locationOf(s.galaxy, m.planet), "GiftGiven");
@@ -295,18 +298,10 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     const bool dominance = t == Treaty::Subjugation || t == Treaty::Protectorate;
     const bool aDom = dominance && aDominant;
     const bool bDom = dominance && !aDominant;
-    // A subject may hold no treaty but the one with its master (spec 05 §3.2).
-    if (t > Treaty::None)
-        for (auto [party, other] : {std::pair{a, b}, std::pair{b, a}}) {
-            const EmpireId master = masterOf(s, party);
-            if (master.valid() && master != other && s.empire(party).relation(master).treaty == Treaty::Subjugation) {
-                logGoto(ctx.log(party, LogCategory::Politics, "Treaty Not Possible",
-                                std::format("As a subject of the {} we cannot sign a treaty with the {}.", nameOf(s, master), nameOf(s, other)),
-                                std::nullopt, logpicture::race(other)),
-                        LogGoto::Empires);
-                return;
-            }
-        }
+    // A subjugated race's player can neither propose nor accept a treaty;
+    // that is checked where the player writes (cmd::SendMessage,
+    // cmd::AnswerMessage). Nothing here stops a treaty (spec 05 §3.2,
+    // confirmed: binary).
     Relation& ra = s.empire(a).relation(b);
     Relation& rb = s.empire(b).relation(a);
     if (ra.treaty == t && ra.dominant == aDom && rb.dominant == bDom) return;
@@ -478,10 +473,56 @@ EmpireId masterOf(const GameState& s, EmpireId e) {
     return {};
 }
 
+bool isSubjugated(const GameState& s, EmpireId e) {
+    const EmpireId master = masterOf(s, e);
+    return master.valid() && s.empire(e).relation(master).treaty == Treaty::Subjugation;
+}
+
+bool proposableTreaty(Treaty t) { return t >= Treaty::NonIntercourse && t != Treaty::None && t < Treaty::Count; }
+
+std::string playerMessageProblem(const GameState& s, EmpireId from, const DiplomaticMessage& m) {
+    if (!validEmpire(s, from) || !validEmpire(s, m.to) || from == m.to) return "Invalid recipient";
+    const Treaty current = s.empire(from).relation(m.to).treaty;
+    auto anyItems = [](const std::vector<PackageItem>& side) { return std::any_of(side.begin(), side.end(), isPlaceholder); };
+    switch (m.type) {
+        case MessageType::ProposeTreaty:
+        case MessageType::CounterTreaty:
+            if (isSubjugated(s, from)) return "Subjugated races cannot propose treaties";
+            if (!proposableTreaty(m.treaty)) return "Propose a treaty from Non-Intercourse to Partnership";
+            break;
+        case MessageType::BreakTreaty:
+            if (current < Treaty::NonAggression) return "There is no treaty to break";
+            break;
+        case MessageType::DeclareWar:
+            if (current == Treaty::War) return "We are already at war";
+            break;
+        case MessageType::ProposeTrade:
+        case MessageType::CounterTrade:
+            if (m.offer.empty() || m.request.empty()) return "A trade needs items on both sides";
+            if (anyItems(m.offer)) return "A trade offer cannot contain unspecified \"Any\" items";
+            break;
+        case MessageType::Gift:
+        case MessageType::Tribute:
+            if (m.offer.empty()) return "The package is empty";
+            if (anyItems(m.offer)) return "A package we give cannot contain unspecified \"Any\" items";
+            break;
+        case MessageType::DemandGift:
+        case MessageType::DemandTribute:
+            if (m.request.empty()) return "The package is empty";
+            break;
+        case MessageType::Surrender:
+        case MessageType::DemandSurrender:
+            if (!s.options.allowSurrender) return "Surrender is not allowed in this game";
+            break;
+        default: break;
+    }
+    return {};
+}
+
 bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b) {
     if (!validEmpire(s, viewer) || !validEmpire(s, a) || !validEmpire(s, b)) return false;
     if (viewer == a || viewer == b) return true;
-    return treatyAllowsResupply(s.empire(viewer).relation(a).treaty) || treatyAllowsResupply(s.empire(viewer).relation(b).treaty);
+    return s.empire(viewer).relation(a).treaty >= Treaty::NonAggression || s.empire(viewer).relation(b).treaty >= Treaty::NonAggression;
 }
 
 // ---- Ownership transfers ----------------------------------------------------------------------------
@@ -950,6 +991,20 @@ bool tradesResources(Treaty t) { return treatyTradesResources(t); }
 bool tradesResearch(Treaty t) { return treatyTradesResearch(t); }
 
 } // namespace
+
+Generated tradeFrom(const Rules& r, const GameState& s, EmpireId e, EmpireId partner) {
+    Generated out;
+    if (!living(s, e) || !living(s, partner) || e == partner) return out;
+    const Treaty t = s.empire(e).relation(partner).treaty;
+    const int pct = tradePercent(r, s, e, partner);
+    if (pct <= 0) return out;
+    const int64_t f = tradeFactor(r, s.empire(e));
+    const Generated g = generated(r, s, partner);
+    for (Resource res : kResources) out.resources[res] = tradeShare(g.resources[res], pct, f);
+    if (treatyTradesResearch(t)) out.research = tradeShare(g.research, pct, f);
+    if (t == Treaty::Partnership) out.intelligence = tradeShare(g.intelligence, pct, f);
+    return out;
+}
 
 Resources tradeIncome(const Rules& r, const GameState& s, EmpireId e) {
     Resources total = tariffsReceived(r, s, e);

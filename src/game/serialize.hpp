@@ -102,6 +102,11 @@ class Rules;
 // - Combat records: each Hit's damage to the shields and to the structure
 //   (CombatEvent::shieldDamage, structureDamage) for the Tactical Combat
 //   window's target panel (spec 06 §1.10.1).
+// - Diplomacy: a human player's statistics record (Empire::statistics,
+//   spec 05 §5), the trade and tariffs of the economy report empire by empire
+//   (EconomyReport::partners, spec 06 §1.5), the Empires window's tab
+//   (InterfaceOptions::empiresTab) and the minister mark on answers
+//   (cmd::AnswerMessage::minister, spec 05 §3.2).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

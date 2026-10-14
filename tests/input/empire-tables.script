@@ -2,7 +2,9 @@
 # dialog (780x475, spec 06 §1): ten empires a page, each column headed by the empire's flag over
 # the first letters of its name; every name, treaty code and figure fits its place and is drawn
 # whole, without "…" (assert-fits, assert-whole), on both pages (docs/BUILDING.md "Input
-# scripts"). v0.9.0 squeezed the last columns of the grid and cut the scores' figures.
+# scripts"). v0.9.0 squeezed the last columns of the grid and cut the scores' figures. Scores
+# shows only the empires whose score we may see (spec 06 §1.5), one page here; Victory
+# Conditions, which reads the Score Display option one step off, shows all twelve on two pages.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --quick-start --empires=12 --systems=16 --seed=3 --turns=40 --open=none --layout=1024x768 --size=1280x800
 
@@ -29,11 +31,17 @@ wait-window scores
 assert-fits scores
 assert-whole scores
 screenshot scores.png
-click item:"Empires 11-12" in=scores
-wait 2
-assert-fits scores
-assert-whole scores
 key Escape
 wait-closed scores
+click item:"Victory Conditions" in=empires
+wait-window victory-conditions
+assert-present item:"Empires 11-12" in=victory-conditions
+assert-fits victory-conditions
+screenshot victory-conditions.png
+click item:"Empires 11-12" in=victory-conditions
+wait 2
+assert-fits victory-conditions
+key Escape
+wait-closed victory-conditions
 key Escape
 wait-closed empires

@@ -9,11 +9,13 @@
 #include "client/classic/screens/screens.hpp"
 
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
 #include <format>
 #include <optional>
+#include <random>
 
 namespace opense4::client::classic {
 
@@ -23,24 +25,6 @@ using game::EmpireId;
 using game::MessageType;
 using game::PackageItem;
 using game::Treaty;
-
-enum class PackageTab { Systems, Planets, Resources, Technology, Ships, Units, StarCharts, Treaty, CommChannels, Count };
-
-const char* tabName(PackageTab t) {
-    switch (t) {
-        case PackageTab::Systems: return "Systems";
-        case PackageTab::Planets: return "Planets";
-        case PackageTab::Resources: return "Resources";
-        case PackageTab::Technology: return "Technology";
-        case PackageTab::Ships: return "Ships";
-        case PackageTab::Units: return "Units";
-        case PackageTab::StarCharts: return "Star Charts";
-        case PackageTab::Treaty: return "Treaty";
-        case PackageTab::CommChannels: return "Comm Channels";
-        case PackageTab::Count: break;
-    }
-    return "";
-}
 
 bool sameItem(const PackageItem& a, const PackageItem& b) {
     if (a.kind != b.kind) return false;
@@ -69,17 +53,14 @@ void addItem(std::vector<PackageItem>& side, const PackageItem& item) {
     side.push_back(item);
 }
 
-struct Candidate {
-    std::string label;
-    PackageItem item;
-};
-
 const game::DiplomaticMessage* findMessage(const game::GameState& s, game::MessageId id) {
     if (!id.valid()) return nullptr;
     for (const auto& m : s.messages)
         if (m.id == id) return &m;
     return nullptr;
 }
+
+bool isReplyType(MessageType t) { return replyAccepts(t).has_value() || t == MessageType::CounterTreaty || t == MessageType::CounterTrade; }
 
 class CommunicateScreen final : public Screen {
 public:
@@ -99,6 +80,12 @@ public:
         const bool haveTarget = target_.valid() && target_.index() < s.empires.size() && target_ != ui.session.player();
         if (!started_ && haveTarget) {
             started_ = true;
+            // Opened from a portrait, the window answers the newest message
+            // from that empire, when it takes an answer (spec 06 §4.2,
+            // confirmed: binary). Our engine answers a message once.
+            if (!received)
+                if (const game::DiplomaticMessage* m = replyableMessage(s, ui.session.player(), target_); m && answerable(m->type) && !m->answered)
+                    portraitReply_ = m->id;
             startAgain(ui);
             mode_ = received ? Mode::Received : Mode::Compose;
         }
@@ -121,7 +108,7 @@ public:
             case Mode::Compose: compose(ui); break;
             case Mode::Package: packageEditor(ui); break;
         }
-        lastOfferPopup(ui);
+        offerPopup(ui);
         confirmPopup(ui);
 
         d.beginButtons();
@@ -141,32 +128,84 @@ private:
     const game::Empire& them(const UiContext& ui) const { return ui.state().empire(target_); }
     const game::Relation& relation(const UiContext& ui) const { return ui.me().relation(target_); }
 
+    // The message the portrait's reply types answer, while it still can be.
+    const game::DiplomaticMessage* portraitMessage(const UiContext& ui) const {
+        const game::DiplomaticMessage* m = findMessage(ui.state(), portraitReply_);
+        return m && !m->answered ? m : nullptr;
+    }
+
+    // The type of the message the draft answers, for its speech pool.
+    MessageType answeredType(const UiContext& ui) const {
+        const game::DiplomaticMessage* m = findMessage(ui.state(), replyTo_);
+        return m ? m->type : MessageType::General;
+    }
+
+    // The draft's text from our race's speech (spec 06 §4.2, confirmed:
+    // binary). The line is drawn from the window's own random source, never
+    // the game's.
+    void fillText(const UiContext& ui) {
+        draft_.to = target_;
+        draft_.text = messageText(ui.rules(), ui.state(), ui.session.player(), draft_, answeredType(ui), pick_);
+        autoText_ = draft_.text;
+    }
+
     void startAgain(UiContext& ui) {
         draft_ = {};
         draft_.type = MessageType::General;
         draft_.tone = 1;
         draft_.treaty = firstProposable(ui);
-        draft_.text = defaultMessageText(draft_.type, draft_.treaty);
         replyTo_ = {};
+        pick_ = textRng_();
+        fillText(ui);
         status_.set({}, false);
     }
 
     Treaty firstProposable(const UiContext& ui) const {
         const Treaty current = relation(ui).treaty;
-        // Peace first when at war, otherwise the next better treaty.
-        if (current == Treaty::War) return Treaty::None;
+        // The next better treaty (peace from war is Non-Intercourse or better).
         for (Treaty t : proposableTreaties(current))
             if (t > current && t != Treaty::Subjugation && t != Treaty::Protectorate) return t;
         return proposableTreaties(current).front();
     }
 
-    void setType(MessageType t) {
-        const bool keepText = draft_.text != defaultMessageText(draft_.type, draft_.treaty);
+    // `picked`: the player chose the type, so a type with a package opens
+    // Select Package at once, on the side it fills first (spec 06 §4.2,
+    // confirmed: binary).
+    void setType(UiContext& ui, MessageType t, bool picked) {
+        const bool ownText = draft_.text != autoText_;
+        const MessageType before = draft_.type;
         draft_.type = t;
+        if (const game::DiplomaticMessage* m = portraitMessage(ui); m && isReplyType(t)) {
+            replyTo_ = m->id;
+            if (t == MessageType::CounterTreaty) {
+                const auto list = proposableTreaties(relation(ui).treaty);
+                draft_.treaty = std::find(list.begin(), list.end(), m->treaty) != list.end() ? m->treaty : firstProposable(ui);
+            }
+            // A counter-trade starts from their packages, the sides swapped.
+            if (t == MessageType::CounterTrade && before != t) {
+                draft_.offer = m->request;
+                draft_.request = m->offer;
+            }
+        } else if (!answering_.valid()) {
+            replyTo_ = {};
+        }
         const MessageNeeds n = messageNeeds(t);
         if (!n.offer) draft_.offer.clear();
         if (!n.request) draft_.request.clear();
-        if (!keepText) draft_.text = defaultMessageText(t, draft_.treaty);
+        if (before != t) {
+            pick_ = textRng_();
+            status_.set({}, false);
+        }
+        if (!ownText) fillText(ui);
+        if (picked && (n.offer || n.request)) {
+            mode_ = Mode::Package;
+            giveSide_ = n.offer;
+        }
+    }
+
+    std::string typeLabel(const UiContext& ui, MessageType t) const {
+        if (const game::DiplomaticMessage* m = portraitMessage(ui); m && isReplyType(t)) return replyTypeName(t, m->type);
+        return std::string(game::displayName(t));
     }
 
     // ---- The target's portrait column -------------------------------------------------------------
@@ -213,12 +252,20 @@ private:
         ImGui::TextColored(kTextBlue, "Message Type");
         ImGui::SameLine(labelW);
         ImGui::SetNextItemWidth(fieldW);
-        std::vector<MessageType> types = sendableMessageTypes(relation(ui).treaty, s.options);
-        if (replyTo_.valid() && counterType(originalType(ui)) != MessageType::General) types.insert(types.begin(), counterType(originalType(ui)));
-        if (std::find(types.begin(), types.end(), draft_.type) == types.end()) setType(types.front());
-        if (ImGui::BeginCombo("##type", std::string(game::displayName(draft_.type)).c_str(), ImGuiComboFlags_HeightLarge)) {
+        std::vector<MessageType> types =
+            sendableMessageTypes(relation(ui).treaty, s.options, game::diplomacy::isSubjugated(s, ui.session.player()));
+        // The answers to the newest message, when opened from the portrait.
+        if (const game::DiplomaticMessage* m = portraitMessage(ui)) {
+            const std::vector<MessageType> replies = replyTypes(m->type);
+            types.insert(types.begin(), replies.begin(), replies.end());
+        }
+        if (replyTo_.valid() && counterType(answeredType(ui)) != MessageType::General &&
+            std::find(types.begin(), types.end(), counterType(answeredType(ui))) == types.end())
+            types.insert(types.begin(), counterType(answeredType(ui)));
+        if (std::find(types.begin(), types.end(), draft_.type) == types.end()) setType(ui, types.front(), false);
+        if (ImGui::BeginCombo("##type", typeLabel(ui, draft_.type).c_str(), ImGuiComboFlags_HeightLarge)) {
             for (MessageType t : types) {
-                if (ImGui::Selectable(std::string(game::displayName(t)).c_str(), t == draft_.type)) setType(t);
+                if (ImGui::Selectable(typeLabel(ui, t).c_str(), t == draft_.type) && t != draft_.type) setType(ui, t, true);
                 ui.tagOption("communicate:message-type", learn::optionId(game::displayName(t)));   // for lessons
             }
             ImGui::EndCombo();
@@ -249,17 +296,37 @@ private:
         inputTextMultiline("##text", draft_.text, ImVec2(-FLT_MIN, ui.px(96)));
         ui.tagItem("communicate:text");
 
+        const game::DiplomaticMessage* answered = replyAccepts(draft_.type) ? portraitMessage(ui) : nullptr;
         if (n.offer || n.request) {
             ImGui::Spacing();
+            const bool both = n.offer && n.request;
             const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
             const float h = ImGui::GetContentRegionAvail().y - ui.px(34);
-            beginList(ui, "##give", ImVec2(n.request ? half : 0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-            packageList(ui, "We give", draft_.offer, true);
-            endList(ui);
+            if (n.offer) {
+                beginList(ui, "##give", ImVec2(both ? half : 0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+                packageList(ui, "We give", draft_.offer, true);
+                endList(ui);
+            }
             if (n.request) {
-                ImGui::SameLine();
+                if (both) ImGui::SameLine();
                 beginList(ui, "##take", ImVec2(0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
                 packageList(ui, "We ask for", draft_.request, true);
+                endList(ui);
+            }
+        } else if (answered) {
+            // An answer: what it answers.
+            ImGui::TextColored(kTextDim, "In answer to their %s of %s.", std::string(game::displayName(answered->type)).c_str(),
+                               formatDate(answered->sentTurn).c_str());
+            if (!answered->offer.empty() || !answered->request.empty()) {
+                auto offer = answered->offer, request = answered->request;
+                const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+                const float h = ImGui::GetContentRegionAvail().y - ui.px(34);
+                beginList(ui, "##theygive", ImVec2(half, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+                packageList(ui, "They give", offer, false);
+                endList(ui);
+                ImGui::SameLine();
+                beginList(ui, "##theyask", ImVec2(0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+                packageList(ui, "They ask for", request, false);
                 endList(ui);
             }
         } else {
@@ -267,11 +334,6 @@ private:
         }
         status_.draw();
         ImGui::EndChild();
-    }
-
-    MessageType originalType(const UiContext& ui) const {
-        const game::DiplomaticMessage* m = findMessage(ui.state(), replyTo_);
-        return m ? m->type : MessageType::General;
     }
 
     void treatyPicker(UiContext& ui, float labelW, float fieldW) {
@@ -283,10 +345,10 @@ private:
         if (std::find(list.begin(), list.end(), draft_.treaty) == list.end()) draft_.treaty = firstProposable(ui);
         if (ImGui::BeginCombo("##treaty", std::string(game::displayName(draft_.treaty)).c_str())) {
             for (Treaty t : list) {
-                if (ImGui::Selectable(std::string(game::displayName(t)).c_str(), t == draft_.treaty)) {
-                    const bool defaultText = draft_.text == defaultMessageText(draft_.type, draft_.treaty);
+                if (ImGui::Selectable(std::string(game::displayName(t)).c_str(), t == draft_.treaty) && t != draft_.treaty) {
+                    const bool auto_ = draft_.text == autoText_;
                     draft_.treaty = t;
-                    if (defaultText) draft_.text = defaultMessageText(draft_.type, t);
+                    if (auto_) fillText(ui);
                 }
                 ui.tagOption("communicate:treaty", learn::optionId(game::displayName(t)));   // for lessons
             }
@@ -304,7 +366,11 @@ private:
         const std::string label = draft_.thirdEmpire.valid() ? s.empire(draft_.thirdEmpire).name : std::string("Choose an empire");
         if (ImGui::BeginCombo("##third", label.c_str())) {
             for (EmpireId k : knownEmpires(ui))
-                if (k != target_ && ImGui::Selectable(s.empire(k).name.c_str(), k == draft_.thirdEmpire)) draft_.thirdEmpire = k;
+                if (k != target_ && ImGui::Selectable(s.empire(k).name.c_str(), k == draft_.thirdEmpire)) {
+                    const bool auto_ = draft_.text == autoText_;
+                    draft_.thirdEmpire = k;
+                    if (auto_) fillText(ui);
+                }
             ImGui::EndCombo();
         }
     }
@@ -317,6 +383,8 @@ private:
         ImGui::SetNextItemWidth(fieldW);
         const std::string label = draft_.system.valid() ? s.galaxy.system(draft_.system).name
                                                         : std::string(optional ? "Anywhere" : "Choose a system");
+        const bool auto_ = draft_.text == autoText_;
+        const game::SystemId before = draft_.system;
         if (ImGui::BeginCombo("##system", label.c_str(), ImGuiComboFlags_HeightLarge)) {
             if (optional && ImGui::Selectable("Anywhere", !draft_.system.valid())) draft_.system = {};
             std::vector<game::SystemId> systems;
@@ -328,6 +396,7 @@ private:
                 if (ImGui::Selectable(s.galaxy.system(sys).name.c_str(), sys == draft_.system)) draft_.system = sys;
             ImGui::EndCombo();
         }
+        if (auto_ && draft_.system != before) fillText(ui);
     }
 
     // Planets for demands: the recipient's (Leave Planet), a third party's (Attack
@@ -356,6 +425,8 @@ private:
         ImGui::SameLine(labelW);
         ImGui::SetNextItemWidth(fieldW);
         const std::string label = draft_.planet.valid() ? s.galaxy.object(draft_.planet).name : std::string("Choose a planet");
+        const bool auto_ = draft_.text == autoText_;
+        const game::ObjectId before = draft_.planet;
         if (ImGui::BeginCombo("##planet", label.c_str(), ImGuiComboFlags_HeightLarge)) {
             const auto choices = planetChoices(ui, own);
             if (choices.empty()) ImGui::TextColored(kTextDim, "No suitable planet known");
@@ -368,6 +439,7 @@ private:
             }
             ImGui::EndCombo();
         }
+        if (auto_ && draft_.planet != before) fillText(ui);
     }
 
     // A package side; clicking an item removes it when editable.
@@ -392,20 +464,51 @@ private:
         if (remove) items.erase(items.begin() + std::ptrdiff_t(*remove));
     }
 
+    // What the original's window would not send (spec 06 §4.2, confirmed:
+    // binary); the engine checks the same (game::diplomacy::playerMessageProblem).
     std::string problem(const UiContext& ui) const {
+        const game::GameState& s = ui.state();
         const MessageNeeds n = messageNeeds(draft_.type);
         if (relation(ui).messageSentThisTurn) return "Only one message per empire each turn.";
+        if (const std::optional<bool> accept = replyAccepts(draft_.type)) {
+            const game::DiplomaticMessage* m = portraitMessage(ui);
+            if (!m) return "There is no message to answer.";
+            if (*accept && draft_.type == MessageType::AcceptTreaty && game::diplomacy::isSubjugated(s, ui.session.player()))
+                return "Subjugated races cannot accept treaties.";
+            if (*accept && draft_.type == MessageType::AcceptTrade && packageHasAny(m->request))
+                return "They left us to choose some items: counter-propose with real items to accept.";
+            return {};
+        }
         if (n.thirdEmpire && !draft_.thirdEmpire.valid()) return "Choose the empire this message is about.";
         if (n.system && !draft_.system.valid() && draft_.type != MessageType::RequestAttackEmpire) return "Choose a system.";
         if ((n.planet || n.ownPlanet) && !draft_.planet.valid()) return "Choose a planet.";
+        if ((draft_.type == MessageType::ProposeTreaty || draft_.type == MessageType::CounterTreaty) &&
+            game::diplomacy::isSubjugated(s, ui.session.player()))
+            return "Subjugated races cannot propose treaties.";
         if ((draft_.type == MessageType::Gift || draft_.type == MessageType::Tribute) && draft_.offer.empty()) return "The package is empty.";
-        if (n.offer && n.request && draft_.offer.empty() && draft_.request.empty()) return "The package is empty.";
+        if ((draft_.type == MessageType::DemandGift || draft_.type == MessageType::DemandTribute) && draft_.request.empty())
+            return "The package is empty.";
+        // A trade needs items on both sides, and what we give is never "Any".
+        if (tradePackage(draft_.type) && (draft_.offer.empty() || draft_.request.empty())) return "A trade needs items on both sides.";
+        if (tradePackage(draft_.type) && packageHasAny(draft_.offer))
+            return "A trade offer cannot contain unspecified \"Any\" items: replace them with real ones.";
         return {};
     }
 
     void send(UiContext& ui) {
         if (const std::string p = problem(ui); !p.empty()) {
             status_.set(p, true);
+            return;
+        }
+        // An answer from the portrait's list (spec 06 §4.2): the engine's answer to that message.
+        if (const std::optional<bool> accept = replyAccepts(draft_.type)) {
+            game::cmd::AnswerMessage c;
+            c.message = portraitReply_;
+            c.accept = *accept;
+            c.text = draft_.text;
+            const game::CommandResult r = ui.session.issue(std::move(c));
+            status_.result(r);
+            if (r.ok) closeNow_ = true;
             return;
         }
         const MessageNeeds n = messageNeeds(draft_.type);
@@ -428,13 +531,24 @@ private:
         if (r.ok) closeNow_ = true;
     }
 
+    // Report, View Trade, View Gift, View Tribute, Edit Package, Edit Trade,
+    // Start Again, Send Message (spec 06 §1.5, confirmed: binary); OpenSE4
+    // adds Back To Message after a message opened from the Log.
     void composeButtons(UiContext& ui, Dialog& d, const game::DiplomaticMessage* received) {
         const MessageNeeds n = messageNeeds(draft_.type);
         if (d.button("Report")) openReport(ui);
-        if (d.button("View Last Offer", lastOffer(ui) != nullptr)) showOffer_ = true;
-        if (d.button("Edit Package", n.offer || n.request)) {
+        const OfferView view = offerView(replyableMessage(ui.state(), ui.session.player(), target_));
+        if (d.button("View Trade", view == OfferView::Trade)) showOffer_ = true;
+        if (d.button("View Gift", view == OfferView::Gift)) showOffer_ = true;
+        if (d.button("View Tribute", view == OfferView::Tribute)) showOffer_ = true;
+        const bool trade = tradePackage(draft_.type);
+        if (d.button("Edit Package", (n.offer || n.request) && !trade)) {
             mode_ = Mode::Package;
             giveSide_ = n.offer;
+        }
+        if (d.button("Edit Trade", trade)) {
+            mode_ = Mode::Package;
+            giveSide_ = true;
         }
         if (d.button("Start Again")) startAgain(ui);
         if (received && d.button("Back To Message")) mode_ = Mode::Received;
@@ -449,116 +563,56 @@ private:
 
     // ---- Package editor ("Select Package") --------------------------------------------------------------
 
-    std::vector<Candidate> candidates(const UiContext& ui, PackageTab tab, bool give) const {
+    std::string choiceLabel(const UiContext& ui, PackageTab tab, bool give, const PackageItem& i) const {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
         const game::Empire& me = ui.me();
-        const EmpireId owner = give ? me.id : target_;
-        std::vector<Candidate> out;
-        auto any = [&](PackageItem::Kind k, const char* label) {
-            if (!give) {
-                PackageItem i;
-                i.kind = k;
-                out.push_back({label, i});
+        using K = PackageItem::Kind;
+        if (isAnyItem(i)) {
+            switch (i.kind) {
+                case K::Planet: return "Any planet (they choose)";
+                case K::Technology: return "Any technology (they choose)";
+                case K::Vehicle: return tab == PackageTab::Units ? "Any unit transport (they choose)" : "Any ship (they choose)";
+                case K::StarChart: return "Any star chart (they choose)";
+                default: return "Any (they choose)";
             }
-        };
-        switch (tab) {
-            case PackageTab::Systems:
-                any(PackageItem::Kind::System, "Any system claim (they choose)");
-                for (game::SystemId sys : s.empire(owner).claimedSystems) {
-                    PackageItem i;
-                    i.kind = PackageItem::Kind::System;
-                    i.system = sys;
-                    out.push_back({me.hasExplored(sys) ? s.galaxy.system(sys).name : std::string("Unexplored system"), i});
-                }
-                break;
-            case PackageTab::Planets:
-                any(PackageItem::Kind::Planet, "Any planet (they choose)");
-                for (const auto& c : s.colonies) {
-                    if (!c || c->owner != owner) continue;
-                    if (!give && !me.hasExplored(s.galaxy.object(c->planet).system)) continue;
-                    PackageItem i;
-                    i.kind = PackageItem::Kind::Planet;
-                    i.planet = c->planet;
-                    out.push_back({std::format("{}{}", s.galaxy.object(c->planet).name, c->homeworld ? " (homeworld)" : ""), i});
-                }
-                break;
-            case PackageTab::Resources: break;
-            case PackageTab::Technology:
-                if (!s.options.allowTechTrades) break;
-                any(PackageItem::Kind::Technology, "Any technology (they choose)");
-                for (uint32_t a = 0; a < r.data().techAreas.size(); ++a) {
-                    const ruleset::TechAreaId id{a};
-                    if (give && me.techLevel(id) <= 0) continue;
-                    if (!give && !r.techVisible(s, me, id) && me.techLevel(id) == 0) continue;
-                    PackageItem i;
-                    i.kind = PackageItem::Kind::Technology;
-                    i.tech = id;
-                    out.push_back({give ? std::format("{} (level {})", r.tech(id).name, me.techLevel(id))
-                                        : std::format("{} (we have {})", r.tech(id).name, me.techLevel(id)),
-                                   i});
-                }
-                break;
-            case PackageTab::Ships:
-            case PackageTab::Units: {
-                const bool units = tab == PackageTab::Units;
-                any(PackageItem::Kind::Vehicle, units ? "Any unit (they choose)" : "Any ship (they choose)");
-                auto consider = [&](const game::Vehicle& v) {
-                    if (v.owner != owner || game::isUnitType(game::vehicleType(r, s, v)) != units) return;
-                    PackageItem i;
-                    i.kind = PackageItem::Kind::Vehicle;
-                    i.vehicle = v.id;
-                    const std::string name = v.count > 1 ? std::format("{} x{}", v.name, v.count) : v.name;
-                    out.push_back({std::format("{} ({})", name, v.mixed.empty() ? s.design(v.design).name : groupDesigns(s, v, 2)), i});
-                };
-                if (give)
-                    for (const game::Vehicle& v : s.vehicles) consider(v);
-                else
-                    for (game::VehicleId id : me.knowledge.visibleVehicles)
-                        if (const game::Vehicle* v = s.vehicle(id)) consider(*v);
-                break;
-            }
-            case PackageTab::StarCharts:
-                any(PackageItem::Kind::StarChart, "Any star chart (they choose)");
-                for (const game::StarSystem& sys : s.galaxy.systems) {
-                    if (me.hasExplored(sys.id) != give) continue;
-                    PackageItem i;
-                    i.kind = PackageItem::Kind::StarChart;
-                    i.system = sys.id;
-                    out.push_back({give ? sys.name : std::format("Unexplored system at {}, {}", sys.position.x, sys.position.y), i});
-                }
-                break;
-            case PackageTab::Treaty:
-                for (Treaty t : proposableTreaties(relation(ui).treaty)) {
-                    PackageItem i;
-                    i.kind = PackageItem::Kind::Treaty;
-                    i.treaty = t;
-                    out.push_back({std::string(game::displayName(t)), i});
-                }
-                break;
-            case PackageTab::CommChannels:
-                any(PackageItem::Kind::CommChannel, "Any comm channel (they choose)");
-                if (give)
-                    for (EmpireId k : knownEmpires(ui))
-                        if (k != target_) {
-                            PackageItem i;
-                            i.kind = PackageItem::Kind::CommChannel;
-                            i.empire = k;
-                            out.push_back({s.empire(k).name, i});
-                        }
-                break;
-            case PackageTab::Count: break;
         }
-        return out;
+        switch (i.kind) {
+            case K::System:
+            case K::StarChart: return s.galaxy.system(i.system).name;
+            case K::Planet: {
+                const game::Colony* c = s.colony(i.planet);
+                return std::format("{}{}", s.galaxy.object(i.planet).name, c && c->homeworld ? " (homeworld)" : "");
+            }
+            case K::Technology:
+                return give ? std::format("{} (level {})", r.tech(i.tech).name, me.techLevel(i.tech))
+                            : std::format("{} (we have {})", r.tech(i.tech).name, me.techLevel(i.tech));
+            case K::Vehicle: {
+                const game::Vehicle* v = s.vehicle(i.vehicle);
+                if (!v) return "?";
+                const std::string name = v->count > 1 ? std::format("{} x{}", v->name, v->count) : v->name;
+                const std::string designs = v->mixed.empty() ? s.design(v->design).name : groupDesigns(s, *v, 2);
+                if (tab != PackageTab::Units) return std::format("{} ({})", name, designs);
+                int units = 0;
+                for (const game::UnitStack& u : v->cargo.units) units += u.count;
+                return std::format("{} ({}, {} unit{})", name, designs, units, units == 1 ? "" : "s");
+            }
+            case K::Treaty: return std::string(game::displayName(i.treaty));
+            case K::CommChannel: return s.empire(i.empire).name;
+            case K::Resources: break;
+        }
+        return packageItemText(r, s, i);
     }
 
     void packageEditor(UiContext& ui) {
+        const game::GameState& s = ui.state();
         const MessageNeeds n = messageNeeds(draft_.type);
         if (!n.request) giveSide_ = true;
         if (!n.offer) giveSide_ = false;
+        if (!packageTabEnabled(s.options, tab_)) tab_ = PackageTab::Resources;
         heading(ui, "Select Package");
         ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "%s: %s", std::string(game::displayName(draft_.type)).c_str(), tabName(tab_));
+        ImGui::TextColored(kTextDim, "%s: %s", typeLabel(ui, draft_.type).c_str(), std::string(packageTabName(tab_)).c_str());
         ImGui::BeginDisabled(!n.offer);
         if (ImGui::RadioButton("We give", giveSide_)) giveSide_ = true;
         ImGui::EndDisabled();
@@ -578,17 +632,14 @@ private:
         if (tab_ == PackageTab::Resources) {
             resourceInput(ui, side);
         } else {
-            const auto list = candidates(ui, tab_, giveSide_);
-            if (list.empty())
-                ImGui::TextColored(kTextDim, "%s", tab_ == PackageTab::Technology && !ui.state().options.allowTechTrades
-                                                       ? "Technology trades are disabled in this game."
-                                                       : "Nothing available.");
+            const auto list = packageChoices(ui.rules(), s, ui.session.player(), target_, tab_, giveSide_);
+            if (list.empty()) ImGui::TextColored(kTextDim, "Nothing available.");
             for (size_t i = 0; i < list.size(); ++i) {
                 ImGui::PushID(int(i));
-                const bool present = !isAnyItem(list[i].item) && std::any_of(side.begin(), side.end(), [&](const PackageItem& p) {
-                    return sameItem(p, list[i].item) && (p.kind != PackageItem::Kind::Treaty || p.treaty == list[i].item.treaty);
+                const bool present = !isAnyItem(list[i]) && std::any_of(side.begin(), side.end(), [&](const PackageItem& p) {
+                    return sameItem(p, list[i]) && (p.kind != PackageItem::Kind::Treaty || p.treaty == list[i].treaty);
                 });
-                if (ImGui::Selectable(list[i].label.c_str(), present) && !present) addItem(side, list[i].item);
+                if (ImGui::Selectable(choiceLabel(ui, tab_, giveSide_, list[i]).c_str(), present) && !present) addItem(side, list[i]);
                 ImGui::PopID();
             }
         }
@@ -628,10 +679,11 @@ private:
         }
     }
 
-    void packageButtons(UiContext&, Dialog& d) {
+    void packageButtons(UiContext& ui, Dialog& d) {
         for (int t = 0; t < int(PackageTab::Count); ++t) {
             const auto tab = static_cast<PackageTab>(t);
-            if (d.tab(tabName(tab), tab_ == tab)) tab_ = tab;
+            // Technology is dim when the game allows no technology trades.
+            if (d.tab(std::string(packageTabName(tab)).c_str(), tab_ == tab, packageTabEnabled(ui.state().options, tab))) tab_ = tab;
         }
         d.spacer();
         if (d.button("Clear Package")) (giveSide_ ? draft_.offer : draft_.request).clear();
@@ -712,9 +764,9 @@ private:
             draft_.type = counter;
             draft_.treaty = m->treaty;
             draft_.offer = m->request;  // what they asked of us
-            draft_.request = m->offer;
-            std::erase_if(draft_.offer, [](const PackageItem& i) { return isAnyItem(i); });
-            draft_.text = defaultMessageText(counter, draft_.treaty);
+            draft_.request = m->offer;   // "Any" items they asked for stay: Send asks for real ones
+            pick_ = textRng_();
+            fillText(ui);
             mode_ = Mode::Compose;
         }
         if (d.button("Reply")) {
@@ -726,25 +778,18 @@ private:
         if (d.button("Report")) openReport(ui);
     }
 
-    // The newest delivered message from the target that carried a package.
-    const game::DiplomaticMessage* lastOffer(const UiContext& ui) const {
-        const game::DiplomaticMessage* best = nullptr;
-        for (const auto& m : ui.state().messages)
-            if (m.from == target_ && m.to == ui.session.player() && m.delivered && (!m.offer.empty() || !m.request.empty()))
-                if (!best || m.sentTurn >= best->sentTurn) best = &m;
-        return best;
-    }
-
-    void lastOfferPopup(UiContext& ui) {
+    // View Trade, View Gift and View Tribute: the newest message from the
+    // target (replyableMessage), which lit the button.
+    void offerPopup(UiContext& ui) {
         if (showOffer_) {
-            ImGui::OpenPopup("Last Offer");
+            ImGui::OpenPopup("Their Offer");
             showOffer_ = false;
         }
         ImGui::SetNextWindowSize(ui.size({520, 440}), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ui.at({(frameW() - 520) * 0.5f, (frameH() - 440) * 0.5f}), ImGuiCond_Always);
-        if (!ImGui::BeginPopupModal("Last Offer", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings))
+        if (!ImGui::BeginPopupModal("Their Offer", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings))
             return;
-        if (const game::DiplomaticMessage* m = lastOffer(ui)) {
+        if (const game::DiplomaticMessage* m = replyableMessage(ui.state(), ui.session.player(), target_); m && offerView(m) != OfferView::None) {
             empireLabel(ui, m->from, true);
             messageBody(ui, *m);
         } else {
@@ -784,11 +829,15 @@ private:
     }
 
     EmpireId target_;
-    game::MessageId answering_;
+    game::MessageId answering_;      // opened from the Log's Send Reply
+    game::MessageId portraitReply_;  // opened from the portrait: the newest message, which the reply types answer
     game::MessageId replyTo_;
     bool started_ = false;
     Mode mode_ = Mode::Compose;
     game::DiplomaticMessage draft_;
+    std::string autoText_;           // the text we filled in, until the player edits it
+    uint64_t pick_ = 0;              // which line of the speech pool
+    std::minstd_rand textRng_{std::random_device{}()};   // the window's own, never GameState::rng
     std::string answerText_;
     PackageTab tab_ = PackageTab::Resources;
     bool giveSide_ = true;

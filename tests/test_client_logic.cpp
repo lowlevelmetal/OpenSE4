@@ -10,6 +10,7 @@
 #include "client/classic/turn_start.hpp"
 #include "game/commands.hpp"
 #include "game/diplomacy.hpp"
+#include "game/score.hpp"
 #include "game/turn.hpp"
 
 #include <doctest/doctest.h>
@@ -29,32 +30,56 @@ bool has(const std::vector<MessageType>& v, MessageType t) { return std::find(v.
 } // namespace
 
 TEST_CASE("client logic: message types follow the treaty and game options") {
+    // The original's list (spec 06 §4.2, confirmed: binary).
     GameOptions o;
     const auto war = sendableMessageTypes(Treaty::War, o);
     CHECK(has(war, MessageType::ProposeTreaty));
     CHECK(has(war, MessageType::Surrender));
     CHECK_FALSE(has(war, MessageType::DeclareWar));
     CHECK_FALSE(has(war, MessageType::BreakTreaty));
-    CHECK_FALSE(has(war, MessageType::ProposeTrade));
-    CHECK_FALSE(has(war, MessageType::RequestSupport));
+    // Trade and every request are offered at war too.
+    CHECK(has(war, MessageType::ProposeTrade));
+    CHECK(has(war, MessageType::RequestSupport));
+    CHECK(has(war, MessageType::RequestMakePeace));
+    // Grant independence is OpenSE4's (the original never lists it).
+    CHECK(has(war, MessageType::GrantIndependence));
 
     const auto none = sendableMessageTypes(Treaty::None, o);
     CHECK(has(none, MessageType::DeclareWar));
     CHECK_FALSE(has(none, MessageType::BreakTreaty));  // nothing to break
+    // Break Treaty only from Non-Aggression up: not under Non-Intercourse.
+    CHECK_FALSE(has(sendableMessageTypes(Treaty::NonIntercourse, o), MessageType::BreakTreaty));
+    CHECK(has(sendableMessageTypes(Treaty::NonAggression, o), MessageType::BreakTreaty));
 
     const auto trade = sendableMessageTypes(Treaty::TradeAlliance, o);
     CHECK(has(trade, MessageType::BreakTreaty));
     CHECK(has(trade, MessageType::ProposeTrade));
     CHECK(has(trade, MessageType::Gift));
+    CHECK(trade.front() == MessageType::General);
     // Replies are never composed from scratch.
     for (MessageType t : {MessageType::AcceptTreaty, MessageType::RefuseTrade, MessageType::CounterTreaty, MessageType::AcceptDemand})
         CHECK_FALSE(has(trade, t));
 
+    // Gifts off: no Gift or Tribute, but the requests for them stay.
     o.allowGifts = false;
     const auto noGifts = sendableMessageTypes(Treaty::TradeAlliance, o);
     CHECK_FALSE(has(noGifts, MessageType::Gift));
     CHECK_FALSE(has(noGifts, MessageType::Tribute));
-    CHECK_FALSE(has(noGifts, MessageType::DemandTribute));
+    CHECK(has(noGifts, MessageType::DemandGift));
+    CHECK(has(noGifts, MessageType::DemandTribute));
+
+    // Surrender and the demand for it only with Allow Surrender.
+    o.allowSurrender = false;
+    const auto noSurrender = sendableMessageTypes(Treaty::War, o);
+    CHECK_FALSE(has(noSurrender, MessageType::Surrender));
+    CHECK_FALSE(has(noSurrender, MessageType::DemandSurrender));
+    CHECK(has(sendableMessageTypes(Treaty::War, GameOptions{}), MessageType::DemandSurrender));
+
+    // A subjugated race proposes no treaty; Break Treaty and Declare War stay (spec 05 §3.2).
+    const auto subject = sendableMessageTypes(Treaty::Subjugation, GameOptions{}, true);
+    CHECK_FALSE(has(subject, MessageType::ProposeTreaty));
+    CHECK(has(subject, MessageType::BreakTreaty));
+    CHECK(has(subject, MessageType::DeclareWar));
 }
 
 TEST_CASE("client logic: message parameters, answers and counters") {
@@ -63,6 +88,15 @@ TEST_CASE("client logic: message parameters, answers and counters") {
     CHECK(messageNeeds(MessageType::ProposeTrade).request);
     CHECK(messageNeeds(MessageType::Gift).offer);
     CHECK_FALSE(messageNeeds(MessageType::Gift).request);
+    // A request for a gift or tribute carries what it asks for (spec 06 §4.2).
+    for (MessageType t : {MessageType::DemandGift, MessageType::DemandTribute}) {
+        CHECK(messageNeeds(t).request);
+        CHECK_FALSE(messageNeeds(t).offer);
+        CHECK_FALSE(tradePackage(t));
+    }
+    CHECK(tradePackage(MessageType::ProposeTrade));
+    CHECK(tradePackage(MessageType::CounterTrade));
+    CHECK_FALSE(tradePackage(MessageType::Gift));
     CHECK(messageNeeds(MessageType::DemandRemoveShips).system);
     CHECK(messageNeeds(MessageType::DemandLeavePlanet).planet);
     CHECK(messageNeeds(MessageType::GrantIndependence).ownPlanet);
@@ -81,15 +115,86 @@ TEST_CASE("client logic: message parameters, answers and counters") {
     CHECK(counterType(MessageType::CounterTrade) == MessageType::CounterTrade);
     CHECK(counterType(MessageType::Gift) == MessageType::General);
 
+    // Non-Intercourse to Partnership, the current treaty included; never War or None.
     const auto treaties = proposableTreaties(Treaty::NonAggression);
-    CHECK(std::find(treaties.begin(), treaties.end(), Treaty::NonAggression) == treaties.end());
-    CHECK(std::find(treaties.begin(), treaties.end(), Treaty::War) == treaties.end());
-    CHECK(std::find(treaties.begin(), treaties.end(), Treaty::None) != treaties.end());  // peace from war
-    CHECK(std::find(treaties.begin(), treaties.end(), Treaty::Partnership) != treaties.end());
+    auto lists = [](const std::vector<Treaty>& v, Treaty t) { return std::find(v.begin(), v.end(), t) != v.end(); };
+    CHECK(lists(treaties, Treaty::NonAggression));
+    CHECK_FALSE(lists(treaties, Treaty::War));
+    CHECK_FALSE(lists(treaties, Treaty::None));
+    CHECK(treaties.front() == Treaty::NonIntercourse);
+    CHECK(treaties.back() == Treaty::Partnership);
+    CHECK(treaties.size() == 8);
+    CHECK(proposableTreaties(Treaty::War) == treaties);
+    // The package's Treaty tab: War included, None and the current one not.
+    const auto tab = packageTreaties(Treaty::NonAggression);
+    CHECK(lists(tab, Treaty::War));
+    CHECK_FALSE(lists(tab, Treaty::None));
+    CHECK_FALSE(lists(tab, Treaty::NonAggression));
+    CHECK(lists(tab, Treaty::Partnership));
 
     CHECK(defaultMessageText(MessageType::ProposeTreaty, Treaty::TradeAlliance).find("Trade Alliance") != std::string::npos);
     CHECK(toneName(0) == "Pleading");
     CHECK(toneName(2) == "Demanding");
+}
+
+// Communicate opened from a portrait answers the newest message from that
+// empire (spec 06 §4.2, confirmed: binary).
+TEST_CASE("client logic: the portrait's reply types answer the newest message in its window") {
+    CHECK(replyTypes(MessageType::ProposeTreaty) ==
+          std::vector<MessageType>{MessageType::AcceptTreaty, MessageType::RefuseTreaty, MessageType::CounterTreaty});
+    CHECK(replyTypes(MessageType::CounterTreaty) == replyTypes(MessageType::ProposeTreaty));
+    CHECK(replyTypes(MessageType::ProposeTrade) ==
+          std::vector<MessageType>{MessageType::AcceptTrade, MessageType::RefuseTrade, MessageType::CounterTrade});
+    CHECK(replyTypes(MessageType::Gift) == std::vector<MessageType>{MessageType::AcceptGift, MessageType::RefuseGift});
+    CHECK(replyTypes(MessageType::Tribute) == replyTypes(MessageType::Gift));
+    CHECK(replyTypeName(MessageType::AcceptGift, MessageType::Tribute) == "Accept Tribute");
+    CHECK(replyTypeName(MessageType::RefuseGift, MessageType::Tribute) == "Refuse Tribute");
+    CHECK(replyTypeName(MessageType::AcceptGift, MessageType::Gift) == std::string(displayName(MessageType::AcceptGift)));
+    for (MessageType d : {MessageType::DemandGift, MessageType::DemandSurrender, MessageType::RequestAttackPlanet, MessageType::DemandStopAttacks})
+        CHECK(replyTypes(d) == std::vector<MessageType>{MessageType::AcceptDemand, MessageType::RefuseDemand});
+    CHECK(replyTypes(MessageType::General).empty());
+    CHECK(replyTypes(MessageType::DeclareWar).empty());
+    CHECK(replyAccepts(MessageType::AcceptTrade) == true);
+    CHECK(replyAccepts(MessageType::RefuseDemand) == false);
+    CHECK_FALSE(replyAccepts(MessageType::CounterTrade).has_value());
+    CHECK_FALSE(replyAccepts(MessageType::ProposeTreaty).has_value());
+
+    GameState s;
+    s.empires.resize(3);
+    for (uint32_t i = 0; i < 3; ++i) s.empires[i].id = EmpireId{i};
+    const EmpireId low{0u}, me{1u}, high{2u};
+    s.turn = 10;
+    auto message = [&](EmpireId from, uint32_t dated, MessageType type) {
+        DiplomaticMessage m;
+        m.id = MessageId{static_cast<uint32_t>(s.messages.size() + 1)};
+        m.from = from;
+        m.to = me;
+        m.type = type;
+        m.delivered = true;
+        m.dated = dated;
+        s.messages.push_back(m);
+        return m.id;
+    };
+    // After the date − 2: dated 9 or 10, not 8.
+    message(high, 8, MessageType::Gift);
+    CHECK(replyableMessage(s, me, high) == nullptr);
+    const MessageId nine = message(high, 9, MessageType::ProposeTrade);
+    REQUIRE(replyableMessage(s, me, high) != nullptr);
+    CHECK(replyableMessage(s, me, high)->id == nine);
+    CHECK(offerView(replyableMessage(s, me, high)) == OfferView::Trade);
+    // Only the newest counts, whatever its type.
+    const MessageId ten = message(high, 10, MessageType::General);
+    CHECK(replyableMessage(s, me, high)->id == ten);
+    CHECK(offerView(replyableMessage(s, me, high)) == OfferView::None);
+    CHECK(replyableMessage(s, high, me) == nullptr);   // nothing from us to them
+    // In a simultaneous game, from a lower player number: after the date − 1.
+    message(low, 9, MessageType::Tribute);
+    CHECK(replyableMessage(s, me, low) != nullptr);
+    s.options.simultaneous = true;
+    CHECK(replyableMessage(s, me, low) == nullptr);
+    CHECK(replyableMessage(s, me, high) != nullptr);   // a higher number keeps two turns
+    message(low, 10, MessageType::Tribute);
+    CHECK(offerView(replyableMessage(s, me, low)) == OfferView::Tribute);
 }
 
 // GitHub issue #4: a demand left unanswered kept Empires' "Inbox: 1 waiting"
@@ -106,6 +211,11 @@ TEST_CASE("client logic: a message waits for a reply only while the Log lists it
         DiplomaticMessage m;
         m.to = me;
         m.type = type;
+        m.treaty = Treaty::NonAggression;
+        PackageItem cash;   // a request for a gift names what it wants (spec 06 §4.2)
+        cash.kind = PackageItem::Kind::Resources;
+        cash.resources = {1000, 0, 0};
+        if (type == MessageType::DemandGift) m.request = {cash};
         REQUIRE(apply(r, s, them, cmd::SendMessage{m}).ok);
         const MessageId id = s.messages.back().id;
         diplomacy::deliverMessages(ctx);
@@ -158,6 +268,297 @@ TEST_CASE("client logic: contacts and treaty visibility") {
     CHECK_FALSE(treatyVisibleTo(s, me, a, b));
     s.empire(me).relation(a).treaty = s.empire(a).relation(me).treaty = Treaty::Partnership;
     CHECK(treatyVisibleTo(s, me, a, b));  // allies share what they know
+    // From Non-Aggression up (spec 05 §3.2, confirmed: binary); Non-Intercourse is not enough.
+    s.empire(me).relation(a).treaty = s.empire(a).relation(me).treaty = Treaty::NonAggression;
+    CHECK(treatyVisibleTo(s, me, a, b));
+    CHECK(treatyVisibleTo(s, me, b, a));
+    s.empire(me).relation(a).treaty = s.empire(a).relation(me).treaty = Treaty::NonIntercourse;
+    CHECK_FALSE(treatyVisibleTo(s, me, a, b));
+}
+
+namespace {
+
+void holdTreaty(GameState& s, EmpireId a, EmpireId b, Treaty t, bool aDominant = false) {
+    for (auto [x, y] : {std::pair{a, b}, std::pair{b, a}}) {
+        Relation& rel = s.empire(x).relation(y);
+        rel.contact = true;
+        rel.treaty = t;
+        rel.dominant = (t == Treaty::Subjugation || t == Treaty::Protectorate) && (x == a) == aDominant;
+    }
+}
+
+} // namespace
+
+// The Treaty Grid's cells and the Empires window's lines (spec 06 §1.5,
+// confirmed: binary).
+TEST_CASE("client logic: the Treaty Grid's cells, the treaty roles and the status line") {
+    GameState s = newEngineGame(5, 4, 12);
+    const EmpireId me{0u}, a{1u}, b{2u}, c{3u};
+    holdTreaty(s, me, a, Treaty::NonAggression);
+    holdTreaty(s, a, b, Treaty::Subjugation, true);   // a dominates b
+    holdTreaty(s, b, c, Treaty::TradeAlliance);
+    holdTreaty(s, me, c, Treaty::None);
+
+    CHECK(treatyCode(Treaty::War) == "War");
+    CHECK(treatyCode(Treaty::Subjugation) == "Sub");
+    CHECK(treatyCode(Treaty::Protectorate) == "Pro");
+    CHECK(treatyCode(Treaty::Partnership) == "P");
+    CHECK(treatyCode(Treaty::None).empty());
+
+    CHECK(treatyGridCell(s, me, me, a) == "NA");
+    CHECK(treatyGridCell(s, me, a, me) == "NA");
+    CHECK(treatyGridCell(s, me, me, c).empty());   // None: blank
+    CHECK(treatyGridCell(s, me, me, me).empty());
+    // a holds Non-Aggression with us, so its treaties show, with the roles in (row, column) order.
+    CHECK(treatyGridCell(s, me, a, b) == "Sub (D, S)");
+    CHECK(treatyGridCell(s, me, b, a) == "Sub (S, D)");
+    // b and c: we hold Non-Aggression or better with neither.
+    CHECK(treatyGridCell(s, me, b, c).empty());
+    CHECK(treatyGridCell(s, me, a, c).empty());   // no contact
+    holdTreaty(s, me, c, Treaty::War);
+    CHECK(treatyGridCell(s, me, c, me) == "War");
+
+    CHECK(treatyRoles(s.empire(a).relation(b)) == "(We Dominate Them)");
+    CHECK(treatyRoles(s.empire(b).relation(a)) == "(They Dominate Us)");
+    holdTreaty(s, a, b, Treaty::Protectorate, false);   // b protects a
+    CHECK(treatyRoles(s.empire(a).relation(b)) == "(They Protect Us)");
+    CHECK(treatyRoles(s.empire(b).relation(a)) == "(We Protect Them)");
+    CHECK(treatyRoles(s.empire(me).relation(a)).empty());
+
+    // The status line: Message Sent first, then the newest message from them.
+    CHECK(empireStatusLine(s, me, a).empty());
+    s.turn = 10;
+    auto from = [&](EmpireId x, MessageType type, Treaty treaty = Treaty::None) {
+        DiplomaticMessage m;
+        m.id = MessageId{static_cast<uint32_t>(s.messages.size() + 1)};
+        m.from = x;
+        m.to = me;
+        m.type = type;
+        m.treaty = treaty;
+        m.delivered = true;
+        m.dated = s.turn;
+        s.messages.push_back(m);
+    };
+    from(a, MessageType::ProposeTrade);
+    CHECK(empireStatusLine(s, me, a) == "Offered Trade");
+    from(a, MessageType::Tribute);
+    CHECK(empireStatusLine(s, me, a) == "Offered Tribute");
+    from(a, MessageType::ProposeTreaty, Treaty::NonAggression);   // the treaty we hold: nothing to say
+    CHECK(empireStatusLine(s, me, a).empty());
+    from(a, MessageType::CounterTreaty, Treaty::TradeAlliance);
+    CHECK(empireStatusLine(s, me, a) == "Proposed Treaty: Trade Alliance");
+    s.empire(me).relation(a).messageSentThisTurn = true;
+    CHECK(empireStatusLine(s, me, a) == "Message Sent");
+    s.turn = 13;   // out of the window
+    s.empire(me).relation(a).messageSentThisTurn = false;
+    CHECK(empireStatusLine(s, me, a).empty());
+}
+
+// Select Package's lists (spec 05 §3.4, spec 06 §1.5, confirmed: binary).
+TEST_CASE("client logic: Select Package lists what the original lists") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 3, 12);
+    addHomeShips(s, r);
+    const EmpireId me{0u}, them{1u}, third{2u};
+    holdTreaty(s, me, them, Treaty::NonAggression);
+    holdTreaty(s, them, third, Treaty::None);
+    Knowledge& k = s.empire(me).knowledge;
+    k.explored.assign(s.galaxy.systems.size(), 0);
+    k.explored[0] = k.explored[2] = 1;
+    using K = PackageItem::Kind;
+    auto kinds = [](const std::vector<PackageItem>& v, K kind) { return std::all_of(v.begin(), v.end(), [&](const PackageItem& i) { return i.kind == kind; }); };
+    auto anyFirst = [](const std::vector<PackageItem>& v) { return !v.empty() && isAnyItem(v.front()) && std::none_of(v.begin() + 1, v.end(), isAnyItem); };
+
+    // Systems: every system we have explored, on both sides, no "Any".
+    for (bool give : {true, false}) {
+        const auto systems = packageChoices(r, s, me, them, PackageTab::Systems, give);
+        REQUIRE(systems.size() == 2);
+        CHECK(kinds(systems, K::System));
+        CHECK(systems[0].system == SystemId{0u});
+        CHECK(systems[1].system == SystemId{2u});
+    }
+    // Star charts: the same systems, with "Any" on the side we ask for.
+    CHECK(packageChoices(r, s, me, them, PackageTab::StarCharts, true).size() == 2);
+    const auto charts = packageChoices(r, s, me, them, PackageTab::StarCharts, false);
+    CHECK(charts.size() == 3);
+    CHECK(anyFirst(charts));
+    CHECK(kinds(charts, K::StarChart));
+
+    // Planets: ours; theirs in explored systems after "Any".
+    const auto ours = packageChoices(r, s, me, them, PackageTab::Planets, true);
+    REQUIRE(ours.size() == 1);
+    CHECK(ours[0].planet == homeworld(s, me).planet);
+    const SystemId theirHome = s.galaxy.object(homeworld(s, them).planet).system;
+    k.explored[theirHome.index()] = 0;
+    CHECK(packageChoices(r, s, me, them, PackageTab::Planets, false).size() == 1);   // "Any" alone
+    k.explored[theirHome.index()] = 1;
+    const auto theirs = packageChoices(r, s, me, them, PackageTab::Planets, false);
+    REQUIRE(theirs.size() == 2);
+    CHECK(anyFirst(theirs));
+    CHECK(theirs[1].planet == homeworld(s, them).planet);
+
+    // Ships: ours; theirs that we see, after "Any".
+    const auto ships = packageChoices(r, s, me, them, PackageTab::Ships, true);
+    CHECK(ships.size() == 3);
+    CHECK(kinds(ships, K::Vehicle));
+    CHECK(packageChoices(r, s, me, them, PackageTab::Ships, false).size() == 1);
+    VehicleId seen;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == them && !seen.valid()) seen = v.id;
+    k.visibleVehicles = {seen};
+    CHECK(packageChoices(r, s, me, them, PackageTab::Ships, false).size() == 2);
+    // Units: the ships carrying units only.
+    CHECK(packageChoices(r, s, me, them, PackageTab::Units, true).empty());
+    Vehicle* loaded = nullptr;
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == me && !loaded) loaded = &v;
+    REQUIRE(loaded);
+    loaded->cargo.units = {UnitStack{loaded->design, 2}};
+    const auto units = packageChoices(r, s, me, them, PackageTab::Units, true);
+    REQUIRE(units.size() == 1);
+    CHECK(units[0].vehicle == loaded->id);
+    const auto askUnits = packageChoices(r, s, me, them, PackageTab::Units, false);
+    REQUIRE(askUnits.size() == 1);   // "Any" alone: the ship we see carries none
+    CHECK(isAnyItem(askUnits[0]));
+
+    // Technology: only with technology trades; "Any" on the side we ask for.
+    CHECK(packageTabEnabled(s.options, PackageTab::Technology));
+    const auto techAsk = packageChoices(r, s, me, them, PackageTab::Technology, false);
+    CHECK(anyFirst(techAsk));
+    s.options.allowTechTrades = false;
+    CHECK_FALSE(packageTabEnabled(s.options, PackageTab::Technology));
+    CHECK(packageTabEnabled(s.options, PackageTab::Resources));
+    CHECK(packageChoices(r, s, me, them, PackageTab::Technology, false).empty());
+    s.options.allowTechTrades = true;
+
+    // Treaty: every treaty but None and the current one, War included.
+    const auto treaties = packageChoices(r, s, me, them, PackageTab::Treaty, true);
+    CHECK(treaties.size() == size_t(Treaty::Count) - 2);
+    CHECK(kinds(treaties, K::Treaty));
+    CHECK(std::any_of(treaties.begin(), treaties.end(), [](const PackageItem& i) { return i.treaty == Treaty::War; }));
+
+    // Comm channels: the empires we have met; asked for, those they have met and we have not. No "Any".
+    CHECK(packageChoices(r, s, me, them, PackageTab::CommChannels, true).empty());
+    const auto channels = packageChoices(r, s, me, them, PackageTab::CommChannels, false);
+    REQUIRE(channels.size() == 1);
+    CHECK(channels[0].empire == third);
+    holdTreaty(s, me, third, Treaty::None);
+    CHECK(packageChoices(r, s, me, them, PackageTab::CommChannels, false).empty());
+    const auto give = packageChoices(r, s, me, them, PackageTab::CommChannels, true);
+    REQUIRE(give.size() == 1);
+    CHECK(give[0].empire == third);
+
+    CHECK(packageChoices(r, s, me, them, PackageTab::Resources, true).empty());
+    CHECK(packageTabName(PackageTab::StarCharts) == "Star Charts");
+    CHECK(packageTabName(PackageTab::CommChannels) == "Comm Channels");
+}
+
+// Scores, Comparisons and Victory Conditions (spec 05 §5, spec 06 §1.5, confirmed: binary).
+TEST_CASE("client logic: the score figures, ranks, comparison rows and victory marks") {
+    CHECK(scoreFigure(0) == "0.0K");
+    CHECK(scoreFigure(12345) == "12.3K");
+    CHECK(scoreFigure(12350) == "12.4K");
+    CHECK(scoreFigure(999'949) == "999.9K");
+    CHECK(scoreFigure(4'500'000) == "4.5M");
+    CHECK(populationFigure(2500) == "2.5B");
+    CHECK(populationFigure(1'200'000) == "1.2T");
+    CHECK(rankText(1) == "1st");
+    CHECK(rankText(2) == "2nd");
+    CHECK(rankText(3) == "3rd");
+    CHECK(rankText(4) == "4th");
+    CHECK(rankText(11) == "11th");
+    CHECK(rankText(21) == "21th");   // as the original writes it
+    CHECK(denseRanks({50, 80, 50, 10}) == std::vector<int>{2, 1, 2, 3});
+    CHECK(denseRanks({}).empty());
+
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 3, 12);
+    const EmpireId me{0u}, a{1u}, b{2u};
+    // The rows of our statistics record only, by turn; a turn not recorded is a gap.
+    auto row = [](EmpireId e, uint32_t turn, int64_t score) {
+        StatisticsRow x;
+        x.empire = e;
+        x.stats.turn = turn;
+        x.stats.score = score;
+        return x;
+    };
+    s.empire(me).history.push_back(TurnStats{});
+    s.empire(me).statistics = {row(me, 1, 10), row(a, 1, 20), row(me, 2, 11), row(me, 3, 12), row(a, 3, 22)};
+    const auto rowsA = comparisonRows(s, me, a);
+    REQUIRE(rowsA.size() == 2);
+    CHECK(rowsA[0].turn == 1);
+    CHECK(rowsA[1].turn == 3);
+    CHECK(comparisonRows(s, me, me).size() == 3);
+    CHECK(comparisonRows(s, me, b).empty());
+    s.empire(a).alive = false;   // destroyed, but recorded: still listed
+    CHECK(comparisonEmpires(s, me) == std::vector<EmpireId>{me, a});
+    s.empire(a).alive = true;
+    // A game saved before the record: the history while the score is visible.
+    s.empire(me).statistics.clear();
+    s.empire(b).history = {TurnStats{}, TurnStats{}};
+    s.options.scoreDisplay = 2;
+    CHECK(comparisonRows(s, me, b).size() == 2);
+    s.options.scoreDisplay = 0;
+    CHECK(comparisonRows(s, me, b).empty());
+
+    // Victory Conditions' columns read Score Display one step off.
+    s.options.scoreDisplay = 0;
+    CHECK(victoryColumnVisible(s, me, me));
+    CHECK_FALSE(victoryColumnVisible(s, me, a));
+    holdTreaty(s, me, a, Treaty::NonAggression);
+    CHECK(victoryColumnVisible(s, me, a));   // "own only" shows the Non-Aggression partners
+    s.options.scoreDisplay = 1;
+    CHECK(victoryColumnVisible(s, me, b));   // "partners" shows everyone
+    s.empire(b).alive = false;
+    CHECK_FALSE(victoryColumnVisible(s, me, b));
+    s.empire(b).alive = true;
+
+    // The marks: nothing in a row that is off; the years mark every empire once the date has come.
+    VictoryConditions& v = s.options.victory;
+    CHECK_FALSE(victoryRowOn(v, VictoryRow::Years));
+    CHECK_FALSE(victoryMark(r, s, VictoryRow::Years, me));
+    v.years = true;
+    v.yearsValue = 1;
+    s.turn = 9;
+    CHECK_FALSE(victoryMark(r, s, VictoryRow::Years, me));
+    s.turn = 10;
+    CHECK(victoryMark(r, s, VictoryRow::Years, me));
+    CHECK(victoryMark(r, s, VictoryRow::Years, a));
+    v.score = true;
+    v.scoreValue = 0;
+    CHECK(victoryMark(r, s, VictoryRow::Score, me));
+    v.scoreValue = game::score::empireScore(r, s, me) + 1;
+    CHECK_FALSE(victoryMark(r, s, VictoryRow::Score, me));
+    v.peace = true;
+    v.peaceYears = 1;
+    s.peacefulTurns = 9;
+    CHECK_FALSE(victoryMark(r, s, VictoryRow::Peace, b));
+    s.peacefulTurns = 10;
+    CHECK(victoryMark(r, s, VictoryRow::Peace, b));
+}
+
+// The text a new message starts with (spec 06 §4.2, confirmed: binary).
+TEST_CASE("client logic: a new message's text comes from the race's speech pools") {
+    GameState s = newEngineGame(5, 2, 12);
+    const EmpireId me{0u}, them{1u};
+    CHECK(messageSpeechPool(s, me, them, MessageType::ProposeTreaty) == "Send Propose Treaty");
+    CHECK(messageSpeechPool(s, me, them, MessageType::DemandGift) == "Send Want a gift");
+    CHECK(messageSpeechPool(s, me, them, MessageType::AcceptGift, MessageType::Tribute) == "Send Accept Tribute");
+    CHECK(messageSpeechPool(s, me, them, MessageType::RefuseGift, MessageType::Gift) == "Send Refuse Gift");
+    // Accept or Refuse Demand: Friend from Non-Aggression up.
+    CHECK(messageSpeechPool(s, me, them, MessageType::AcceptDemand, MessageType::DemandLeavePlanet) == "Response Enemy YES Leave planet");
+    holdTreaty(s, me, them, Treaty::NonAggression);
+    CHECK(messageSpeechPool(s, me, them, MessageType::RefuseDemand, MessageType::DemandLeavePlanet) == "Response Friend NO Leave planet");
+    // A line of the pool, its tokens filled in.
+    DiplomaticMessage draft;
+    draft.to = them;
+    draft.type = MessageType::ProposeTreaty;
+    draft.treaty = Treaty::TradeAlliance;
+    const std::string text = messageText(engineRules(), s, me, draft, MessageType::General, 3);
+    CHECK(text.find("Trade Alliance") != std::string::npos);
+    CHECK(text.find("[%") == std::string::npos);
+    // Without a race to speak for, OpenSE4's own text.
+    CHECK(messageText(engineRules(), s, EmpireId{}, draft, MessageType::General, 3) == defaultMessageText(MessageType::ProposeTreaty, Treaty::TradeAlliance));
 }
 
 TEST_CASE("client logic: package items and Any placeholders") {
@@ -493,20 +894,27 @@ TEST_CASE("client logic: History window lists") {
     CHECK(historyEmpires(s, me) == std::vector<EmpireId>{me, met, gone});
     CHECK(historyEmpires(s, met) == std::vector<EmpireId>{me, met});
 
+    // Oldest first, as the original reads its file (spec 06 §4.3, confirmed: binary).
     const auto general = historyLines(r, s, me, EmpireId{}, false);
     REQUIRE(general.size() == 2);
-    CHECK(general[0].text == "A storm formed");  // newest first, also within a turn
-    CHECK(general[1].text == "A comet passed");
-    CHECK(general[1].where == std::optional<Location>(Location{SystemId{0u}, Sector{3, 4}}));
+    CHECK(general[0].text == "A comet passed");  // in the record's order within a turn
+    CHECK(general[1].text == "A storm formed");
+    CHECK(general[0].where == std::optional<Location>(Location{SystemId{0u}, Sector{3, 4}}));
 
     const auto ours = historyLines(r, s, me, me, false);
     REQUIRE(ours.size() == 2);
-    CHECK(ours[0].text == "Colonized Somewhere");
-    CHECK(ours[1].turn == 0);  // the founding comes last
+    CHECK(ours[0].turn == 0);  // the founding comes first
+    CHECK(ours[1].text == "Colonized Somewhere");
     const auto theirs = historyLines(r, s, me, gone, false);
     REQUIRE(theirs.size() == 2);
-    CHECK(theirs[0].text == "Treaty with the Gone ended");
-    CHECK(theirs[0].turn == 9);
+    CHECK(theirs[1].text == "Treaty with the Gone ended");
+    CHECK(theirs[1].turn == 9);
+
+    // The decade headings over the lines.
+    CHECK(decadeHeading(0) == "2400 - 2410");
+    CHECK(decadeHeading(99) == "2400 - 2410");
+    CHECK(decadeHeading(100) == "2410 - 2420");
+    CHECK(decadeHeading(1234) == "2520 - 2530");
 }
 
 TEST_CASE("client logic: reordering a list") {

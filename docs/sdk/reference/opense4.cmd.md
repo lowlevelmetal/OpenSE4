@@ -434,7 +434,7 @@ Replaces the intelligence queue. A project keeps its progress while it stays in 
 send_message(message: Optional[Dict[str, Any]] = None, minister: bool = False) -> Dict[str, Any]
 ```
 
-Sends a diplomatic message. The engine gives it its id, sender and date. minister marks a message the computer player or a Politics minister writes, whose requests about a third empire are not checked as a player's are.
+Sends a diplomatic message. The engine gives it its id, sender and date. A human player's message is refused when the original's Communicate window would not send it: a request about a third empire must name an empire it has met; a proposal names a treaty from Non-Intercourse to Partnership, and a subjugated race proposes none; Break Treaty needs Non-Aggression or better; a trade has items on both sides and no "Any" item on the side it gives; a gift or tribute holds items, a request for one names what it wants; Surrender and the demand for it need Allow Surrender. minister marks a message the computer player or a Politics minister writes, which is not checked so.
 
 - `message`: The message.
 - `minister`: Written by a minister.
@@ -442,14 +442,15 @@ Sends a diplomatic message. The engine gives it its id, sender and date. ministe
 ## `answer_message`
 
 ```python
-answer_message(message: Optional[Ref] = None, accept: bool = False, text: str = '') -> Dict[str, Any]
+answer_message(message: Optional[Ref] = None, accept: bool = False, text: str = '', minister: bool = False) -> Dict[str, Any]
 ```
 
-Answers a message delivered to us: accept or refuse, with a text.
+Answers a message delivered to us: accept or refuse, with a text. A human player whose race is subjugated cannot accept a treaty. minister marks an answer the computer player or a Politics minister gives, which is not checked so.
 
 - `message`: The message answered.
 - `accept`: Accept (false by default: refuse).
 - `text`: The reply's text.
+- `minister`: Given by a minister.
 
 ## `decide_war`
 
@@ -882,7 +883,7 @@ A unit_stack (docs/sdk/commands.md).
 ## `interface_options`
 
 ```python
-interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1, designs_tab: int = 0) -> Dict[str, Any]
+interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1, designs_tab: int = 0, empires_tab: int = 0) -> Dict[str, Any]
 ```
 
 The Empire Options switches and what the windows remember. Only auto_claim_colonized changes the game. Sort keys are five column numbers plus one, newest first, 0 for none.
@@ -934,6 +935,7 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 - `designs_stats_view`: The Designs window shows statistics.
 - `scenario_page`: In a game of one of the original's scenarios, the page of its text shown last (its place in the file, from 1; 1 by default).
 - `designs_tab`: The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs, 3 enemy unit designs.
+- `empires_tab`: The Empires window's tab: 0 Treaty, 1 Trade, 2 Tariff.
 
 ## `build`
 

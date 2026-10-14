@@ -565,6 +565,7 @@ private:
         u.designsTab = static_cast<uint8_t>(std::clamp(int{o.designsTab} - 1, 0, 3));
         u.designsStatsView = o.designsStatsView;
         u.designsHideObsolete = o.designsHideObsolete;
+        u.empiresTab = static_cast<uint8_t>(std::clamp(int{o.politicsTab} - 1, 0, 2));
         u.shipsShown = 0;
         for (size_t k = 0; k < o.shipsShown.size(); ++k)
             if (o.shipsShown[k]) u.shipsShown = static_cast<uint8_t>(u.shipsShown | (1u << k));

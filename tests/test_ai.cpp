@@ -2125,6 +2125,9 @@ TEST_CASE("ai: a simultaneous political step counts the messages delivered since
     DiplomaticMessage demand;
     demand.to = cpu;
     demand.type = MessageType::DemandTribute;
+    demand.request.resize(1);   // it names what it wants (spec 06 §4.2)
+    demand.request[0].kind = PackageItem::Kind::Resources;
+    demand.request[0].resources = {1000, 0, 0};
     REQUIRE(apply(r, s, human, cmd::SendMessage{demand}).ok);
     DiplomaticMessage war = demand;
     war.type = MessageType::DemandSurrender;

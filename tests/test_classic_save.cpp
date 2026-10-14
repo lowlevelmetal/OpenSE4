@@ -582,6 +582,8 @@ TEST_CASE("classic save: OpenSE4 games survive export and import, in both turn s
         s.empires[0].interfaceOptions.designsHideObsolete = true;
         s.empires[0].interfaceOptions.designsStatsView = true;
         REQUIRE(validateState(s, &r).empty());
+        // The Empires window's tab travels as the Politics window's (spec 08 §3.6.7).
+        s.empires[0].interfaceOptions.empiresTab = 2;
 
         // Export, encode, decode: the same values.
         const ClassicSave a = exportOrFail(r, s);

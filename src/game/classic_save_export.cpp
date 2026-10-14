@@ -622,6 +622,7 @@ private:
         o.autoClaim = u.autoClaimColonized;
         o.planetsTab = clampByte(u.planetsTab + 1);
         o.shipsTab = clampByte(u.shipsTab + 1);
+        o.politicsTab = clampByte(u.empiresTab + 1);
         o.queuesTab = clampByte(u.queuesTab + 1);
         o.designsTab = clampByte(u.designsTab + 1);
         o.designsStatsView = u.designsStatsView;

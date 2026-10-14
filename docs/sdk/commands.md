@@ -625,8 +625,14 @@ project added again starts from nothing.
 ### `send_message`
 
 Sends a diplomatic message. The engine gives it its id, sender and date.
-`minister` marks a message the computer player or a Politics minister writes,
-whose requests about a third empire are not checked as a player's are.
+A human player's message is refused when the original's Communicate window
+would not send it: a request about a third empire must name an empire it has
+met; a proposal names a treaty from Non-Intercourse to Partnership, and a
+subjugated race proposes none; Break Treaty needs Non-Aggression or better; a
+trade has items on both sides and no "Any" item on the side it gives; a gift
+or tribute holds items, a request for one names what it wants; Surrender and
+the demand for it need Allow Surrender. `minister` marks a message the
+computer player or a Politics minister writes, which is not checked so.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -639,13 +645,17 @@ whose requests about a third empire are not checked as a player's are.
 
 ### `answer_message`
 
-Answers a message delivered to us: accept or refuse, with a text.
+Answers a message delivered to us: accept or refuse, with a text. A human
+player whose race is subjugated cannot accept a treaty. `minister` marks an
+answer the computer player or a Politics minister gives, which is not checked
+so.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `message` | message id, or null | The message answered. |
 | `accept` | bool | Accept (false by default: refuse). |
 | `text` | text | The reply's text. |
+| `minister` | bool | Given by a minister. |
 
 ```json
 {"kind": "answer_message", "message": 40, "accept": true, "text": "Agreed."}
@@ -1283,6 +1293,7 @@ plus one, newest first, 0 for none.
 | `designs_stats_view` | bool | The Designs window shows statistics. |
 | `scenario_page` | int | In a game of one of the original's scenarios, the page of its text shown last (its place in the file, from 1; 1 by default). |
 | `designs_tab` | int | The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs, 3 enemy unit designs. |
+| `empires_tab` | int | The Empires window's tab: 0 Treaty, 1 Trade, 2 Tariff. |
 
 ## Enumerations the commands use
 

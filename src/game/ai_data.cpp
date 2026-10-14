@@ -883,6 +883,37 @@ bool parseTreatyName(std::string_view text, Treaty& out) {
     return false;
 }
 
+namespace {
+
+void replaceAll(std::string& text, std::string_view token, std::string_view value) {
+    for (size_t pos = text.find(token); pos != std::string::npos; pos = text.find(token, pos + value.size()))
+        text.replace(pos, token.size(), value);
+}
+
+} // namespace
+
+std::string fillSpeech(const GameState& s, std::string text, EmpireId usId, EmpireId target, EmpireId other, Treaty proposed, SystemId system,
+                       ObjectId planet) {
+    auto who = [&](EmpireId e) -> const Empire* { return e.valid() && e.index() < s.empires.size() ? &s.empire(e) : nullptr; };
+    const Empire* us = who(usId);
+    const Empire* them = who(target);
+    const Empire* third = who(other);
+    replaceAll(text, "[%OurEmperorTitle]", us ? us->leaderTitle : std::string{});
+    replaceAll(text, "[%OurEmperorName]", us ? us->leaderName : std::string{});
+    replaceAll(text, "[%OurEmpireName]", us ? us->name : std::string{});
+    replaceAll(text, "[%TargetEmperorTitle]", them ? them->leaderTitle : std::string{});
+    replaceAll(text, "[%TargetEmperorName]", them ? them->leaderName : std::string{});
+    replaceAll(text, "[%TargetEmpireName]", them ? them->name : std::string{});
+    replaceAll(text, "[%OtherEmperorTitle]", third ? third->leaderTitle : std::string{});
+    replaceAll(text, "[%OtherEmperorName]", third ? third->leaderName : std::string{});
+    replaceAll(text, "[%OtherEmpireName]", third ? third->name : std::string{});
+    replaceAll(text, "[%TreatyName]", us && them ? displayName(us->relation(them->id).treaty) : std::string_view{});
+    replaceAll(text, "[%ProposedTreatyName]", displayName(proposed));
+    replaceAll(text, "[%SystemName]", system.valid() && system.index() < s.galaxy.systems.size() ? s.galaxy.system(system).name : std::string{});
+    replaceAll(text, "[%PlanetName]", planet.valid() && planet.index() < s.galaxy.objects.size() ? s.galaxy.object(planet).name : std::string{});
+    return text;
+}
+
 const std::vector<std::string>* Speech::pool(std::string_view name) const {
     auto it = pools.find(datafile::normalizeKey(name));
     return it != pools.end() && !it->second.empty() ? &it->second : nullptr;

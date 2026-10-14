@@ -379,10 +379,18 @@ void io(Ar& ar, TurnStats& t) {
            t.ships, t.bases);
 }
 
+template <class Ar> void io(Ar& ar, StatisticsRow& r) { fields(ar, r.empire, r.stats); }
+
+template <class Ar>
+void io(Ar& ar, PartnerIncome& p) {
+    fields(ar, p.empire, p.trade, p.research, p.intelligence, p.tariffReceived, p.tariffGiven);
+}
+
 template <class Ar>
 void io(Ar& ar, EconomyReport& e) {
     fields(ar, e.colonies, e.trade, e.tariffsIn, e.remoteMining, e.otherIncome, e.tariffsOut, e.maintenance, e.construction,
            e.lostToStorage, e.undelivered, e.storageCap, e.research, e.intelligence);
+    if (formatVersion(ar) >= 10) fields(ar, e.partners);   // format 9 had no breakdown by empire
 }
 
 template <class Ar>
@@ -406,6 +414,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     if (ar.version() >= 8) fields(ar, o.designsHideObsolete, o.designsStatsView);   // format 7 files keep the defaults
     if (ar.version() >= 10) fields(ar, o.scenarioPage);                              // format 9 had no scenarios of the original
     if (ar.version() >= 10) fields(ar, o.designsTab);
+    if (formatVersion(ar) >= 10) fields(ar, o.empiresTab);   // format 9 files open Empires on Treaty
 }
 
 template <class Ar> void io(Ar& ar, Controller& c) { fields(ar, c.kind, c.mod, c.player, c.slot); }
@@ -429,6 +438,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.chooseColonyType, e.colonyTypeChoices, e.interfaceOptions);
     fields(ar, e.politicsMark);
     if (formatVersion(ar) >= 9) fields(ar, e.controller, e.script, e.modData);   // format 8 had no script players or mods' data
+    if (formatVersion(ar) >= 10) fields(ar, e.statistics);   // format 9 had no statistics record
     // The computer player's notes of the turn are not saved.
     unsaved(ar, e.aiNotes);
 }
@@ -638,7 +648,11 @@ template <class Ar> void io(Ar& ar, cmd::DeleteDesign& c) { fields(ar, c.design)
 template <class Ar> void io(Ar& ar, cmd::SetResearch& c) { fields(ar, c.queue, c.evenly, c.repeat); }
 template <class Ar> void io(Ar& ar, cmd::SetIntel& c) { fields(ar, c.queue, c.evenly, c.repeat); }
 template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message, c.minister); }
-template <class Ar> void io(Ar& ar, cmd::AnswerMessage& c) { fields(ar, c.message, c.accept, c.text); }
+template <class Ar>
+void io(Ar& ar, cmd::AnswerMessage& c) {
+    fields(ar, c.message, c.accept, c.text);
+    if (formatVersion(ar) >= 10) fields(ar, c.minister);   // format 9 had no minister mark on answers
+}
 template <class Ar> void io(Ar& ar, cmd::DecideWar& c) { fields(ar, c.target); }
 template <class Ar> void io(Ar& ar, cmd::SetInterfaceOptions& c) { fields(ar, c.options); }
 template <class Ar> void io(Ar& ar, cmd::CarryOutDemand& c) { fields(ar, c.demand); }
