@@ -1025,6 +1025,25 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
 - Repeat with a single order that completes without effect makes the vehicle idle. This is legal.
 - New orders are **appended**. Giving orders to a vehicle that already has some is a common player
   mistake, so the UI should show the queue.
+- **Where the player reads why an order failed** (confirmed: binary for Move and Colonize, the
+  same two ways inferred for the others). In a turn-based game, while the human whose turn it is
+  carries orders out (an order just given, or the orders carried over at the start of its
+  turn), a message box comes at once, titled after what failed, and nothing is logged. In a
+  simultaneous game the owner gets a log entry instead, "Unable to <order>", in the words of
+  the minister in charge (the Fleet Minister for a vehicle's order, the Planetary Minister for
+  a colony's: inferred). The boxes: "Move" (a vehicle that cannot move, such as one whose
+  space yard is building, or one with no route), "Colonize" (below), "Damage Taken" (a group
+  damaged on its way through a damaging sector), "Drop Cargo" or "Drop Troops", "Launch
+  Warning" and "Recover Warning" (nothing launched or recovered: the order is still done),
+  "Cannot Mothball", a retrofit's, a stellar manipulation's "Cannot <action>" and "Minefield"
+  (stopped by a minefield). The Colonize gives a computer player's failure in a turn-based
+  game no message; OpenSE4 logs a computer player's other failures as in a simultaneous game
+  (inferred). A battle on entering a sector fails the order with an entry and no box (the
+  battle is the news, inferred). OpenSE4 follows this since 2026-10-14 (`movement.cpp`
+  `tell`, `fail`, `logFailure`; the boxes are `TurnResult::messages`, shown by the client as
+  titled OK boxes over the view, spec 06 §2.7); before, every failure but a Colonize was a
+  Misc entry "<name>: <order> order cancelled" in both turn styles. When a warning comes for
+  Launch and Recover, and the titles other than Move and Colonize, are (inferred).
 - **Fleets:** a fleet has no list of its own; its orders are copies in the lists of its members
   at the fleet's location. Orders given to the fleet or to any member are appended to each of
   those lists, and every change to the list applies to each of them. The fleet acts through the

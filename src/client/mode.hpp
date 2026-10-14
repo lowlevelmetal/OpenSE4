@@ -88,6 +88,10 @@ public:
     }
     // The program's exit code once update() asked to quit (0: success).
     virtual int exitCode() const { return 0; }
+    // The window's close button, Alt+F4 or the system asked to quit: true
+    // when the mode asks the player first (its update() quits on Yes), false
+    // to quit at once.
+    virtual bool closeRequested() { return false; }
     // Called between ImGui::NewFrame() and ImGui::Render(): input, UI, labels.
     // Returns false when the app should quit.
     virtual bool update(const FrameState& fs) = 0;

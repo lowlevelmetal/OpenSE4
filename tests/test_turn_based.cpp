@@ -238,35 +238,170 @@ TEST_CASE("turn-based: each player's end-of-turn processing runs when it ends it
 
     endPlayerTurn(d.r(), d.s(), kB);
     CHECK(d.s().empire(kB).history.size() == 1);
-    // After the last player: the date advanced and the victory check ran.
+    // After the last player: the date advanced and the victory check ran. The
+    // game is completed but goes on for one more game turn, its last, which
+    // every player plays (spec 05 §6, confirmed: binary).
     CHECK(d.s().turn == 1);
+    CHECK_FALSE(d.s().gameOver);
+    CHECK(d.s().lastTurn);
+    CHECK(activePlayer(d.s()) == kA);
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {}))));
+    // Every score shows during the last turn (the Victory ending points to the Scores window).
+    d.s().options.scoreDisplay = 0;
+    CHECK(score::scoreVisible(d.s(), kA, kB));
+
+    // A saved game of the last turn keeps it.
+    auto loaded = deserializeState(serializeState(d.s()));
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->lastTurn);
+
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK(activePlayer(d.s()) == kB);
+    CHECK_FALSE(d.s().gameOver);
+    endPlayerTurn(d.r(), d.s(), kB);
+    // When the last turn wraps, the game is over before anything of the next
+    // game turn: the date stays, no statistics row is added.
     CHECK(d.s().gameOver);
+    CHECK(d.s().turn == 1);
+    CHECK(d.s().empire(kA).history.size() == 2);
     CHECK(activePlayer(d.s()) == EmpireId{});
     CHECK(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {}))));
 }
 
-TEST_CASE("turn-based: a human with nothing left plays a last turn, then is destroyed") {
-    // Spec 05 §6, spec 06 §7 Q83 (confirmed: binary): the destruction check
-    // comes when a human's turn comes up, but the human found defeated then
-    // plays that turn (the Lose ending announces it) and is marked dead at
-    // its end; the turn then passes on.
+TEST_CASE("turn-based: a simultaneous game's victory ends it at once") {
+    Duel d;
+    d.s().options.simultaneous = true;
+    d.s().options.victory.years = true;
+    d.s().options.victory.yearsValue = 0;
+    processTurn(d.r(), d.s(), {});
+    CHECK(d.s().gameOver);
+    CHECK_FALSE(d.s().lastTurn);
+}
+
+TEST_CASE("turn-based: a human with nothing left is destroyed at its turn start and plays that turn marked dead") {
+    // Spec 05 §6, spec 06 §7 Q83, Q99 (confirmed: binary): the destruction
+    // check comes at the end of a human's turn start; one found defeated is
+    // destroyed at once (the others are told, its treaties end) and plays
+    // that turn, its last, already marked dead; the Lose ending is due when
+    // it owned no colony and no vehicle as the turn came up.
     Duel d;
     for (Vehicle& v : d.s().vehicles)
         if (v.owner == kB) v.count = 0;
     d.s().removeDeadVehicles();
     resumeTurnBased(d.r(), d.s());
     CHECK(d.s().empire(kB).alive);  // not before its own turn
+    CHECK(ai::anyHumanLeft(d.s()));
     endPlayerTurn(d.r(), d.s(), kA);
-    // B's last turn: it is alive and it is its turn.
-    REQUIRE(d.s().empire(kB).alive);
-    CHECK(activePlayer(d.s()) == kB);
-    CHECK(d.s().turn == 0);
-    endPlayerTurn(d.r(), d.s(), kB);
+    // B's last turn: destroyed, and it is its turn.
     CHECK_FALSE(d.s().empire(kB).alive);
+    CHECK(activePlayer(d.s()) == kB);
+    CHECK(d.s().playerTurn.started);
+    CHECK(playsLastTurn(d.s(), kB));
+    CHECK(d.s().playerTurn.loseEnding);
+    CHECK(d.s().turn == 0);
+    CHECK(d.w.logged(kA, "Last Empire Standing"));
+    // A human still plays.
+    CHECK(ai::anyHumanLeft(d.s()));
+    // Its orders are refused: the empire is dead.
+    CHECK(hasRejection(applyLive(d.r(), d.s(), kB, cmd::SetOrders{})));
+    endPlayerTurn(d.r(), d.s(), kB);
+    CHECK_FALSE(playsLastTurn(d.s(), kB));
     // The game turn ended and A plays again, the last empire standing.
     CHECK(d.s().turn == 1);
     CHECK(activePlayer(d.s()) == kA);
-    CHECK(d.w.logged(kA, "Last Empire Standing"));
+    CHECK_FALSE(d.s().playerTurn.loseEnding);
+    // B's turn never comes again.
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK(d.s().turn == 2);
+    CHECK(activePlayer(d.s()) == kA);
+}
+
+TEST_CASE("turn-based: a human who loses everything in its own turn lives on until its next turn start") {
+    // Spec 06 §7 Q99 (confirmed: binary): no destruction check for a human at
+    // the end of its own turn; it is alive while the others play.
+    Duel d;
+    resumeTurnBased(d.r(), d.s());
+    endPlayerTurn(d.r(), d.s(), kA);
+    REQUIRE(activePlayer(d.s()) == kB);
+    for (Vehicle& v : d.s().vehicles)
+        if (v.owner == kB) v.count = 0;
+    d.s().removeDeadVehicles();
+    endPlayerTurn(d.r(), d.s(), kB);
+    CHECK(d.s().empire(kB).alive);
+    CHECK(activePlayer(d.s()) == kA);
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK_FALSE(d.s().empire(kB).alive);
+    CHECK(activePlayer(d.s()) == kB);
+    CHECK(d.s().playerTurn.loseEnding);
+}
+
+TEST_CASE("turn-based: a human left with units only is destroyed without the Lose ending") {
+    // The Lose ending's test (no colony, no vehicle) is narrower than the
+    // destruction test (no populated colony, no ship or base): units count
+    // for the first only (spec 06 §7 Q83).
+    Duel d;
+    for (Vehicle& v : d.s().vehicles)
+        if (v.owner == kB) v.count = 0;
+    d.s().removeDeadVehicles();
+    d.w.spawn(d.w.design(kB, "Sat", "Test Satellite Hull", {"Test Satellite Gun"}), at(d.a, 6, 6));
+    REQUIRE(score::defeated(d.r(), d.s(), kB));
+    REQUIRE_FALSE(score::ownsNothing(d.s(), kB));
+    resumeTurnBased(d.r(), d.s());
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK_FALSE(d.s().empire(kB).alive);
+    CHECK(playsLastTurn(d.s(), kB));
+    CHECK_FALSE(d.s().playerTurn.loseEnding);
+}
+
+TEST_CASE("turn-based: a failed order of the human whose turn it is is a message box; otherwise a log entry") {
+    // Spec 03 §8 (confirmed: binary for a move): a titled box at once and
+    // nothing logged; in a simultaneous game the minister's log entry.
+    {
+        Duel d;
+        const SystemId island = d.w.system("Island", 30, 30);   // no warp point leads there
+        d.w.exploreAll(kA);
+        resumeTurnBased(d.r(), d.s());
+        Order o;
+        o.kind = OrderKind::MoveTo;
+        o.location = at(island, 1, 1);
+        const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {o}));
+        CHECK_FALSE(hasRejection(res));
+        REQUIRE(res.messages.size() == 1);
+        CHECK(res.messages.front().empire == kA);
+        CHECK(res.messages.front().title == "Move");
+        CHECK_FALSE(d.w.logged(kA, "Unable to Move"));
+        CHECK(d.w.v(d.runner).orders.empty());
+    }
+    {
+        Duel d;
+        const SystemId island = d.w.system("Island", 30, 30);
+        d.w.exploreAll(kA);
+        d.s().options.simultaneous = true;
+        Order o;
+        o.kind = OrderKind::MoveTo;
+        o.location = at(island, 1, 1);
+        d.w.v(d.runner).orders = {o};
+        const std::vector<EmpireOrders> given{EmpireOrders{kA, 0, {}}, EmpireOrders{kB, 0, {}}};
+        const TurnResult res = processTurn(d.r(), d.s(), given);
+        CHECK(res.messages.empty());
+        CHECK(d.w.logged(kA, "Unable to Move"));
+    }
+}
+
+TEST_CASE("turn-based: the Lose mark is saved with the turn") {
+    // Save format 10: a game saved during the last turn of a human destroyed
+    // at its turn start loads with the Lose ending still due.
+    Duel d;
+    for (Vehicle& v : d.s().vehicles)
+        if (v.owner == kB) v.count = 0;
+    d.s().removeDeadVehicles();
+    resumeTurnBased(d.r(), d.s());
+    endPlayerTurn(d.r(), d.s(), kA);
+    REQUIRE(d.s().playerTurn.loseEnding);
+    auto loaded = deserializeState(serializeState(d.s()));
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->playerTurn.loseEnding);
+    CHECK(playsLastTurn(*loaded, kB));
 }
 
 TEST_CASE("turn-based: a computer player with nothing left is destroyed when its turn comes up") {

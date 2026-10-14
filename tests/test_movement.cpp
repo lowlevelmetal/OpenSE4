@@ -1594,7 +1594,7 @@ TEST_CASE("movement: load and drop cargo orders") {
     CHECK(w.v(carrier).location == at(a, 8, 7));
     w.order(carrier, mk(OrderKind::DropCargo, {}, {}, {}, fighter, -1));
     w.move();
-    CHECK(w.logged(kA, "Drop Cargo order cancelled"));
+    CHECK(w.logged(kA, "Unable to Drop Cargo"));
     CHECK(w.v(carrier).cargo.unitCount(fighter) == 3);
 }
 

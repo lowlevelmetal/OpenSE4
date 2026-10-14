@@ -48,6 +48,7 @@
 #include "game/commands.hpp"
 #include "game/players.hpp"
 #include "game/rules.hpp"
+#include "game/serialize.hpp"
 #include "game/state.hpp"
 #include "game/tactical.hpp"
 #include "game/turn.hpp"
@@ -104,6 +105,10 @@ class ClassicSession {
 public:
     ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player,
                    SessionKind kind = SessionKind::Local);
+    // Waits for a turn being processed in the background (setBackground).
+    ~ClassicSession();
+    ClassicSession(const ClassicSession&) = delete;
+    ClassicSession& operator=(const ClassicSession&) = delete;
     // Play by e-mail: `game` played by `turn.empire` (from beginPbemTurn).
     // With `draftsDir`, a turn in progress saved there (savePbemDraft) is
     // resumed: its commands are given again.
@@ -170,8 +175,23 @@ public:
     // ended the turn, processing when all have. Network: sends the orders.
     void endTurn();
     bool waitingForOthers() const { return waiting_; }
-    // Call every frame: picks up new states from the transport.
+    // Call every frame: picks up new states from the transport, and the turn
+    // processed in the background when it is done.
     void poll();
+
+    // A local or hotseat simultaneous game's turn processed in the
+    // background (the interactive client's): End Turn (and a battle's answer)
+    // starts the processing on a thread of its own, on a copy of the game,
+    // and returns at once; the windows meanwhile show the game as it was,
+    // and poll() takes the processed game when it is done. Off (the default:
+    // tests, automation, input scripts), the processing is done at once.
+    // The game comes out the same either way.
+    void setBackground(bool on) { background_ = on; }
+    // A turn is being processed in the background; and how far it has got
+    // (TurnOptions::progress: steps done, of the total), for the Progress
+    // window (spec 06 §1.7).
+    bool processing() const { return job_ != nullptr; }
+    std::pair<int, int> progress() const;
     void setTransport(std::unique_ptr<TurnTransport> transport) { transport_ = std::move(transport); }
     const TurnTransport* transport() const { return transport_.get(); }
     TurnTransport* transport() { return transport_.get(); }
@@ -195,10 +215,45 @@ public:
     // (in words) when the computer lacks the memory a verifier's Argon2id
     // work needs (net::PasswordWorkError).
     std::expected<std::string, std::string> empirePasswordValue(std::string_view password) const;
-    // Whether `password` opens the empire's turn (hotseat hand-over), by the
-    // same scheme as empirePasswordValue. True when it has no password. Fails
+    // Whether `password` opens the empire's turn in the Next Player window,
+    // by the same scheme as empirePasswordValue. True when it has no
+    // password. Spaces before and after are ignored and letter case counts
+    // (spec 06 §1.2.1, confirmed: binary); the password as typed is tried
+    // too, for one set with spaces around it (only its hash is kept). Fails
     // as empirePasswordValue does.
     std::expected<bool, std::string> passwordMatches(const game::Empire& e, std::string_view password) const;
+    // Whether the Next Player window asks for the empire's password: it has
+    // one, other than "master" in any letter case, which counts as none (a
+    // random computer player's, handed to a human; spec 06 §1.2.1, confirmed:
+    // binary). A verifier of a game on several machines cannot be told so.
+    bool passwordAsked(const game::Empire& e) const;
+    // The same for Login To Game (spec 06 §1.1, confirmed: binary): spaces
+    // before and after are ignored and so is letter case, as far as a hash
+    // allows: the trimmed password in small letters is tried first, then as
+    // typed (trimmed, and untrimmed), so a password set with capitals opens
+    // with those capitals only (OpenSE4 keeps no password itself).
+    std::expected<bool, std::string> loginPasswordMatches(const game::Empire& e, std::string_view password) const;
+    // Login To Game's Game Master row: the game's master password compared
+    // as above; a game without one takes an empty entry.
+    std::expected<bool, std::string> masterLoginMatches(std::string_view password) const;
+
+    // What a game opened from a saved game asks before it is played (spec 06
+    // §1.1, §1.2.1, spec 08 §5): every simultaneous game asks who signs in
+    // (Login To Game); a turn-based game's autosave opens the Next Player
+    // window for the player whose turn it is; a plain save asks nothing
+    // (confirmed: binary). Set by load(), taken once; None otherwise.
+    enum class SignIn { None, NextPlayer, Login };
+    SignIn takeSignIn() { return std::exchange(signIn_, SignIn::None); }
+    // The session was opened from a saved game (load()), not started anew.
+    bool fromSave() const { return fromSave_; }
+    // The header of the saved game this session was opened from (load()).
+    const game::SaveInfo& loadedInfo() const { return loadedInfo_; }
+    // Whether that game was made with this data set, as Login To Game checks
+    // before an empire signs in ("Invalid Data Files", confirmed: binary): a
+    // header with a data set's identity (a host's or e-mail game file) must
+    // name this one; OpenSE4's local saves keep only the game folder's name,
+    // and their mods are checked when they load.
+    bool dataSetMatches() const;
 
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }
@@ -237,11 +292,15 @@ public:
 
     // Saves and loads (the .gam equivalent).
     std::expected<void, std::string> save(const std::filesystem::path& file, const std::string& gameName) const;
-    // The game's Autosave choice (spec 01 §2.2), applied after a game turn has
-    // been processed here (local and hotseat games, either turn style): when
-    // the turns since 2400.0 are a multiple of N, into the saves folder's file
-    // named after that number's last digit (setup::autosaveName). Returns what
-    // was written, if anything.
+    // The game's Autosave choice (spec 01 §2.2), in local and hotseat games:
+    // when the turns since 2400.0 are a multiple of N, into the saves folder's
+    // file named after that number's last digit (setup::autosaveName), marked
+    // as an autosave (SaveInfo::autosave). A simultaneous game is saved after
+    // its turn has been processed here; a turn-based game at the start of the
+    // first human player's turn of each new game turn, before that turn's
+    // start (its endings, its orders carried over), so that loading it starts
+    // that turn again (spec 06 §6.1, confirmed: binary). Returns what was
+    // written, if anything.
     std::optional<std::filesystem::path> autosave();
     // Where the last autosave went, or why it failed (for the status line).
     const std::string& autosaveNote() const { return autosaveNote_; }
@@ -345,6 +404,15 @@ private:
     enum class Call { None, Issue, EndTurn, Resume, Process };
     void beginCall(Call call, std::optional<game::Command> command = std::nullopt);
     void runCall();
+    // The rest of runCall once the engine call has returned: a battle that
+    // stopped it waits to be shown; otherwise its results are taken.
+    void finishCall(game::TurnResult res);
+    // The background processing (setBackground): started by runCall, taken by poll().
+    struct Job;
+    bool background_ = false;
+    std::unique_ptr<Job> job_;
+    void startJob(const std::vector<game::BattleAnswer>* answers);
+    void pollJob();
     // A fault in the engine call (an exception other than a battle stop): the
     // game is put back as it was before the call (the engine's copy, or the
     // turn's start), and the call is dropped with its question and answers,
@@ -353,8 +421,9 @@ private:
     void dropCall(std::string_view why);
     // Whether this session's engine calls stop for battles to show (local and hotseat games).
     bool showsBattles() const;
-    // Who plays the human empires' turns in this session's turn-based calls.
-    game::LiveOptions liveOptions() const;
+    // Who plays the human empires' turns in this session's turn-based calls,
+    // and the autosave before a human player's turn starts.
+    game::LiveOptions liveOptions();
 
     std::shared_ptr<const game::Rules> rules_;
     game::GameState state_;
@@ -389,12 +458,23 @@ private:
     // Takes a turn-based call's messages and steps for the local player.
     void takeLive(game::TurnResult& res, bool turnStart);
     std::string autosaveNote_;
+    // Turn-based games: the game turn whose autosave was written (or whose
+    // first human turn this session began in): one autosave per game turn.
+    uint32_t autosavedTurn_ = 0;
+    // Writes `s` as the autosave of its date, if one is due.
+    std::optional<std::filesystem::path> autosaveOf(const game::GameState& s);
+    std::expected<void, std::string> saveState(const std::filesystem::path& file, const std::string& gameName, const game::GameState& s,
+                                               bool autosave) const;
+    SignIn signIn_ = SignIn::None;
+    bool fromSave_ = false;
+    game::SaveInfo loadedInfo_;
+    // A stored password hash or verifier against the forms of a typed one (passwordForms).
+    std::expected<bool, std::string> storedPasswordMatches(const std::string& stored, std::string_view password, bool foldCase) const;
     std::vector<std::pair<game::EmpireId, size_t>> strategic_;   // battles to watch, and for whom (takeStrategicBattles)
     Call call_ = Call::None;
     std::optional<game::Command> callCommand_;
     std::vector<game::EmpireOrders> callOrders_;   // Process: the humans' (already applied) orders
     size_t callBattles_ = 0;                  // GameState::combats before the call
-    uint32_t callTurn_ = 0;                   // GameState::turn before the call (a turn-based game turn ended: autosave)
     std::vector<game::BattleAnswer> answers_;
     game::CommandResult issued_;              // the result of the last Issue call that finished
     std::optional<game::BattleQuestion> battle_;

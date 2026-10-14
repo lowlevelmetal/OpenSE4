@@ -4,8 +4,10 @@
 //
 // Entry points for the spec 05 §8 turn order (turn.cpp):
 // - recordStatistics(ctx, e): step 2 of each empire's end-of-turn processing.
-// - checkDestruction(ctx, e): after each empire's end-of-turn processing
-//   (a human-controlled empire's after its last turn, spec 06 §7 Q83).
+// - checkDestruction(ctx, e): after each empire's end-of-turn processing in
+//   a simultaneous game (a human-controlled empire's after its last turn,
+//   spec 06 §7 Q83); at the end of each empire's turn start in a turn-based
+//   game (turn_based.cpp).
 // - checkVictory(ctx, date): once per game turn, after every empire's
 //   end-of-turn processing and before the event step, with the date already
 //   advanced for this turn.
@@ -46,22 +48,30 @@ TurnStats currentStats(const Rules& r, const GameState& s, EmpireId e);
 std::vector<EmpireId> ranking(const Rules& r, const GameState& s);
 // Whether `viewer` may see `other`'s score under the Score Display option
 // (spec 05 §5): own only; own plus the empires we hold Non-Aggression or
-// better with; everyone. Once the game is over every score is visible.
-// Destroyed empires are not shown.
+// better with; everyone. Once the game is over, or in a turn-based game's
+// last turn (GameState::lastTurn, whose Victory ending points to the Scores
+// window; inferred), every score is visible. Destroyed empires are not shown.
 bool scoreVisible(const GameState& s, EmpireId viewer, EmpireId other);
 // True if the empire has nothing left: no populated planet and no ship or
 // base; units do not count (spec 05 §6).
 bool defeated(const Rules& r, const GameState& s, EmpireId e);
+// The Lose ending's test (spec 06 §7 Q83, confirmed: binary): the empire owns
+// no colony (populated or not) and no vehicle (units included). Narrower
+// than `defeated`: an empire left with units only is destroyed without it.
+bool ownsNothing(const GameState& s, EmpireId e);
 
 // The destruction check of one empire (spec 05 §6, confirmed: binary): a
 // defeated empire is destroyed; every empire in contact with it is told, all
 // treaties with it return to "no contact", intelligence projects aimed at it
 // are removed and its remaining objects (empty colonies, units) go.
-// A human-controlled empire is marked dead only at the end of a last turn,
-// the turn whose start found it defeated and showed it the Lose ending
-// (spec 06 §7 Q83, confirmed: binary): `lastTurnPlayed` false spares a
-// defeated human found so for the first time, which then plays that turn.
-// Computer players are destroyed at once.
+// In a simultaneous game a human-controlled empire is marked dead only at the
+// end of a last turn, the turn whose start found it defeated and showed it
+// the Lose ending (spec 06 §7 Q83, confirmed: binary): `lastTurnPlayed`
+// false spares a defeated human found so for the first time, which then
+// plays that turn. Computer players are destroyed at once, and so is every
+// empire in a turn-based game, whose check comes at the end of the empire's
+// turn start: a human found defeated then plays that turn, its last, already
+// marked dead (spec 06 §7 Q99, confirmed: binary).
 void checkDestruction(TurnContext& ctx, EmpireId e, bool lastTurnPlayed = true);
 // Step 2 of an empire's end-of-turn processing (spec 05 §5, §8): appends this
 // turn's statistics to a living empire's history, and for a human player
@@ -134,10 +144,12 @@ bool galaxyAtPeace(const GameState& s);
 // The victory check (spec 05 §6, confirmed: binary). `date` is in turns
 // since 2400.0, already advanced for this turn. Before the "After X years"
 // qualifier's date nothing is checked and the peace counter stands still.
-// Meeting a condition ends the game (GameState::gameOver) without naming a
-// winner; GameState::winner is set to the best score (ties to the lower
-// empire number, neutral empires excluded) for the game-over screen
-// (OpenSE4 choice, inferred).
+// Meeting a condition ends the game without naming a winner: a turn-based
+// game plays one more game turn, its last (GameState::lastTurn, confirmed:
+// binary), and a simultaneous game is over at once (GameState::gameOver;
+// spec 05 open question 79). GameState::winner is set to the best score
+// (ties to the lower empire number, neutral empires excluded) for the
+// game-over screen (OpenSE4 choice, inferred).
 void checkVictory(TurnContext& ctx, uint32_t date);
 
 } // namespace opense4::game::score

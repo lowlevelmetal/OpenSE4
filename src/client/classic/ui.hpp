@@ -129,6 +129,7 @@ struct UiRequests {
     std::optional<game::ObjectId> selectPlanet;
     bool endTurn = false;
     bool quitToIntro = false;
+    bool newGame = false;    // leave this game for a new one's Game Setup (Game Menu → New)
     bool quitGame = false;
     // Pick a location in the main window, then call back (e.g. Set Waypoint).
     std::function<void(game::Location)> pickLocation;

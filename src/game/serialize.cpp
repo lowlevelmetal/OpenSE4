@@ -318,7 +318,7 @@ std::vector<uint64_t> statePartHashes(const GameState& s) {
         hashParts(s.messages),
         hashParts(s.pendingEvents),
         hashParts(s.combats),
-        hashParts(s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.arrivals),
+        hashParts(s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.lastTurn, s.winner, s.arrivals),
         hashParts(s.rng),
         hashParts(s.playerTurn),
         hashParts(s.startingPoints, s.leftFacilities),

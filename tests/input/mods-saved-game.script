@@ -31,6 +31,10 @@ wait-window game-menu
 click item:New in=game-menu
 click item:Yes in="New Game"
 wait-screen front
+# New opens the Game Setup (spec 06 §1.2); its Cancel goes to the intro.
+wait-for item:"Begin Game" in=front
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
 # The escort hull on, a quick game with it, saved as Modded.
 click item:Mods in=front
 wait-for item:"mod:test.escort-hull" in=front
@@ -73,6 +77,10 @@ wait-window game-menu
 click item:New in=game-menu
 click item:Yes in="New Game"
 wait-screen front
+# New opens the Game Setup (spec 06 §1.2); its Cancel goes to the intro.
+wait-for item:"Begin Game" in=front
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
 click item:"Load Game" in=front
 wait-for item:MODDED in=front
 click item:MODDED in=front
@@ -88,6 +96,10 @@ wait-window game-menu
 click item:New in=game-menu
 click item:Yes in="New Game"
 wait-screen front
+# New opens the Game Setup (spec 06 §1.2); its Cancel goes to the intro.
+wait-for item:"Begin Game" in=front
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
 click item:Mods in=front
 wait-for item:"on:test.escort-hull" in=front
 assert-present item:"load-order:test.escort-hull" in=front

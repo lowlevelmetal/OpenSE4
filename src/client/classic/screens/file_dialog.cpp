@@ -8,33 +8,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
-#include <chrono>
 #include <cmath>
-#include <ctime>
 #include <format>
 
 namespace opense4::client::classic {
 
 namespace {
-
-// A file time as system_clock time: what std::chrono::clock_cast gives, which
-// libc++ lacks. Like clock_cast, it uses the file clock's to_sys (libstdc++,
-// libc++) or else its to_utc (MSVC) and the UTC clock's to_sys.
-template <class Clock, class Duration>
-std::chrono::system_clock::time_point toSystemClock(std::chrono::time_point<Clock, Duration> t) {
-    using Sys = std::chrono::system_clock::duration;
-    if constexpr (requires { Clock::to_sys(t); }) {
-        return std::chrono::time_point_cast<Sys>(Clock::to_sys(t));
-    } else {
-        const auto utc = Clock::to_utc(t);
-        return std::chrono::time_point_cast<Sys>(decltype(utc)::clock::to_sys(utc));
-    }
-}
-
-std::string lowerAscii(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
 
 std::string upperAscii(std::string s) {
     for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -45,35 +24,6 @@ constexpr Vec2 kDialogSize{420, 520};
 constexpr float kRowH = 32.0f;
 
 } // namespace
-
-std::vector<FileEntry> listFiles(const std::filesystem::path& dir, std::string_view extension) {
-    std::vector<FileEntry> out;
-    std::error_code ec;
-    const std::string want = lowerAscii(std::string(extension));
-    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-        if (!entry.is_regular_file(ec) || lowerAscii(entry.path().extension().string()) != want) continue;
-        out.push_back({entry.path(), entry.path().stem().string(), entry.last_write_time(ec)});
-    }
-    // Newest first; files of the same moment by name (a total order: the
-    // directory's own order differs between platforms).
-    std::sort(out.begin(), out.end(), [](const FileEntry& a, const FileEntry& b) {
-        return a.modified != b.modified ? a.modified > b.modified : a.path.filename() < b.path.filename();
-    });
-    return out;
-}
-
-std::string fileDate(std::filesystem::file_time_type t) {
-    const std::time_t tt = std::chrono::system_clock::to_time_t(toSystemClock(t));
-    std::tm tm{};
-#ifdef _WIN32
-    localtime_s(&tm, &tt);
-#else
-    localtime_r(&tt, &tm);
-#endif
-    const int hour = tm.tm_hour % 12 == 0 ? 12 : tm.tm_hour % 12;
-    return std::format("{}/{}/{} {}:{:02}:{:02} {}", tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, hour, tm.tm_min, tm.tm_sec,
-                       tm.tm_hour < 12 ? "AM" : "PM");
-}
 
 std::filesystem::path& loadGameDirectory() {
     // The saves folder, and another one once Change Directory chose it. While
@@ -95,6 +45,7 @@ FileDialog::Result FileDialog::draw(const Painter& p, const char* window, UiCont
     Result result = Result::None;
     if (!scanned_) {
         files_ = listFiles(directory_, extension_);
+        sortFiles(files_, sort_);
         scanned_ = true;
     }
     const Vec2 min{std::floor((frameW() - kDialogSize.x) * 0.5f), std::floor((frameH() - kDialogSize.y) * 0.5f)};
@@ -124,6 +75,16 @@ FileDialog::Result FileDialog::draw(const Painter& p, const char* window, UiCont
         dl->AddText(body, bodySize, P(214, 37 + 3 - kTextLead), imColor(palette::kLabel), "Date");
         dl->AddLine(P(211, 37), P(211, 56), imColor(palette::kFrame), lw);
         dl->AddLine(P(11, 56), P(409, 56), imColor(palette::kFrame), lw);
+        // A click on a heading sorts by its column.
+        auto heading = [&](const char* id, float x0, float x1, FileSortKey key) {
+            ImGui::SetCursorScreenPos(P(x0, 37));
+            if (ImGui::InvisibleButton(id, p.size({x1 - x0, 19}))) {
+                sort_.click(key);
+                sortFiles(files_, sort_);
+            }
+        };
+        heading("##sortname", 11, 211, FileSortKey::Name);
+        heading("##sortdate", 211, 409, FileSortKey::Date);
         ImGui::SetCursorScreenPos(P(11, 57));
         beginList(p, "##files", p.size({398, 382}), kRowH, ImGuiChildFlags_None, false);
         const float rowW = ImGui::GetContentRegionAvail().x;

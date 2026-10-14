@@ -12,6 +12,7 @@
 #include "game/players.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
+#include "sdk/worker.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -20,6 +21,7 @@
 #include <fstream>
 #include <random>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -65,6 +67,36 @@ void writePlayerRecords(const std::vector<game::score::PlayerRecords>& records) 
     }
 }
 
+// A password as the sign-in windows compare it (spec 06 §1.2.1, confirmed:
+// binary): without the spaces (and other control characters) before and
+// after it, and for Login To Game in small letters.
+std::string trimPassword(std::string_view p) {
+    size_t a = 0, b = p.size();
+    while (a < b && static_cast<unsigned char>(p[a]) <= ' ') ++a;
+    while (b > a && static_cast<unsigned char>(p[b - 1]) <= ' ') --b;
+    return std::string(p.substr(a, b - a));
+}
+
+std::string lowerPassword(std::string p) {
+    for (char& c : p)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return p;
+}
+
+// The forms of a typed password to try against a stored hash, best first,
+// each once: OpenSE4 keeps only the hash of the password as it was set.
+std::vector<std::string> passwordForms(std::string_view typed, bool foldCase) {
+    std::vector<std::string> out;
+    auto add = [&](std::string p) {
+        if (std::find(out.begin(), out.end(), p) == out.end()) out.push_back(std::move(p));
+    };
+    const std::string trimmed = trimPassword(typed);
+    if (foldCase) add(lowerPassword(trimmed));
+    add(trimmed);
+    add(std::string(typed));
+    return out;
+}
+
 } // namespace
 
 uint64_t ClassicSession::nextSessionSerial() {
@@ -75,6 +107,10 @@ uint64_t ClassicSession::nextSessionSerial() {
 ClassicSession::ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player, SessionKind kind)
     : rules_(std::move(rules)), state_(std::move(state)), player_(player), kind_(kind) {
     ended_.assign(state_.empires.size(), 0);
+    // The game turn the session begins in has no autosave of its own: its
+    // first human turn may already be under way, and a game loaded from its
+    // autosave must not write it again (inferred).
+    autosavedTurn_ = state_.turn;
     // A PBEM game file already holds the player's turn (loadPbemGame).
     if (turnBased() && kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem) resumeTurnBased();
     if (turnBased() && kind_ == SessionKind::NetworkClient) waiting_ = !myTurn();
@@ -212,16 +248,67 @@ std::expected<std::string, std::string> ClassicSession::empirePasswordValue(std:
     return game::hashPassword(password);
 }
 
-std::expected<bool, std::string> ClassicSession::passwordMatches(const game::Empire& e, std::string_view password) const {
-    if (e.passwordHash.empty()) return true;
-    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0) {
-        try {
-            return net::checkPassword(e.passwordHash, password, multiplayerGameId_);
-        } catch (const net::PasswordWorkError& error) {
-            return std::unexpected(std::string(error.what()));
+std::expected<bool, std::string> ClassicSession::storedPasswordMatches(const std::string& stored, std::string_view password, bool foldCase) const {
+    const bool verifier = kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0;
+    for (const std::string& form : passwordForms(password, foldCase)) {
+        if (form.empty()) continue;
+        if (verifier) {
+            try {
+                if (net::checkPassword(stored, form, multiplayerGameId_)) return true;
+            } catch (const net::PasswordWorkError& error) {
+                return std::unexpected(std::string(error.what()));
+            }
+        } else if (game::hashPassword(form) == stored) {
+            return true;
         }
     }
-    return game::hashPassword(password) == e.passwordHash;
+    return false;
+}
+
+bool ClassicSession::dataSetMatches() const {
+    if (loadedInfo_.dataSet.find('#') == std::string::npos) return true;
+    return game::sameDataSet(loadedInfo_, *rules_);
+}
+
+bool ClassicSession::passwordAsked(const game::Empire& e) const {
+    if (e.passwordHash.empty()) return false;
+    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0) return true;
+    // "master" in every mix of capitals and small letters.
+    static const std::vector<std::string> masters = [] {
+        std::vector<std::string> out;
+        constexpr std::string_view word = "master";
+        for (unsigned bits = 0; bits < (1u << word.size()); ++bits) {
+            std::string w(word);
+            for (size_t i = 0; i < w.size(); ++i)
+                if ((bits >> i) & 1u) w[i] = static_cast<char>(w[i] - 'a' + 'A');
+            out.push_back(game::hashPassword(w));
+        }
+        return out;
+    }();
+    return std::find(masters.begin(), masters.end(), e.passwordHash) == masters.end();
+}
+
+std::expected<bool, std::string> ClassicSession::passwordMatches(const game::Empire& e, std::string_view password) const {
+    if (e.passwordHash.empty()) return true;
+    return storedPasswordMatches(e.passwordHash, password, false);
+}
+
+std::expected<bool, std::string> ClassicSession::loginPasswordMatches(const game::Empire& e, std::string_view password) const {
+    if (e.passwordHash.empty()) return true;
+    return storedPasswordMatches(e.passwordHash, password, true);
+}
+
+std::expected<bool, std::string> ClassicSession::masterLoginMatches(std::string_view password) const {
+    if (masterVerifier_.empty()) return trimPassword(password).empty();
+    for (const std::string& form : passwordForms(password, true)) {
+        if (form.empty()) continue;
+        try {
+            if (net::checkPassword(masterVerifier_, form, multiplayerGameId_)) return true;
+        } catch (const net::PasswordWorkError& e) {
+            return std::unexpected(std::string(e.what()));
+        }
+    }
+    return false;
 }
 
 void ClassicSession::answer(bool enter) {
@@ -272,10 +359,20 @@ void ClassicSession::resumeTurnBased() { beginCall(Call::Resume); }
 // (docs/MULTIPLAYER.md).
 bool ClassicSession::showsBattles() const { return kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat; }
 
-game::LiveOptions ClassicSession::liveOptions() const {
+game::LiveOptions ClassicSession::liveOptions() {
     game::LiveOptions o;
     // Local and hotseat games stop when no human is left (spec 06 §1.2.1).
     o.endWithoutHumans = kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat;
+    // The autosave: at the start of the first human player's turn of each new
+    // game turn, before that turn starts (spec 06 §6.1, confirmed: binary).
+    // A call that a battle stops is made again: the game turn's autosave is
+    // written once.
+    if (o.endWithoutHumans)
+        o.beforeHumanTurn = [this](const game::GameState& s) {
+            if (s.turn == autosavedTurn_) return;
+            autosavedTurn_ = s.turn;
+            autosaveOf(s);
+        };
     return o;
 }
 
@@ -336,7 +433,6 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
     call_ = call;
     callCommand_ = std::move(command);
     callBattles_ = state_.combats.size();
-    callTurn_ = state_.turn;
     answers_.clear();
     fought_.clear();
     battle_.reset();
@@ -378,8 +474,84 @@ void ClassicSession::noteMovesBefore(Call call) {
     }
 }
 
+// A simultaneous turn processed on a thread of its own (setBackground): the
+// engine works on a copy of the game, with the answers given so far; the
+// session takes the copy and the results when it is done (pollJob).
+struct ClassicSession::Job {
+    std::thread thread;
+    std::atomic<bool> finished{false};
+    std::atomic<int> stepsDone{0}, stepsTotal{0};
+    game::GameState state;
+    game::TurnResult result;
+    std::exception_ptr failure;
+};
+
+ClassicSession::~ClassicSession() {
+    // A turn being processed cannot be stopped: it is waited for, and dropped.
+    if (job_ && job_->thread.joinable()) job_->thread.join();
+}
+
+std::pair<int, int> ClassicSession::progress() const {
+    if (!job_) return {0, 0};
+    return {job_->stepsDone.load(), job_->stepsTotal.load()};
+}
+
+void ClassicSession::startJob(const std::vector<game::BattleAnswer>* answers) {
+    auto job = std::make_unique<Job>();
+    job->state = state_;
+    Job* j = job.get();
+    std::shared_ptr<const game::Rules> rules = rules_;
+    std::vector<game::EmpireOrders> orders = callOrders_;
+    std::optional<std::vector<game::BattleAnswer>> given;
+    if (answers) given = *answers;
+    job->thread = std::thread([j, rules = std::move(rules), orders = std::move(orders), given = std::move(given)] {
+        try {
+            // The engine's frames on a stack as large as the script players' own.
+            sdk::Worker worker;
+            worker.run([&] {
+                game::TurnOptions options;
+                options.battles = given ? &*given : nullptr;
+                options.progress = [j](int done, int total) {
+                    j->stepsTotal.store(total);
+                    j->stepsDone.store(done);
+                };
+                j->result = game::processTurn(*rules, j->state, orders, options);
+            });
+        } catch (...) {
+            j->failure = std::current_exception();
+        }
+        j->finished.store(true, std::memory_order_release);
+    });
+    job_ = std::move(job);
+}
+
+void ClassicSession::pollJob() {
+    if (!job_ || !job_->finished.load(std::memory_order_acquire)) return;
+    std::unique_ptr<Job> job = std::move(job_);
+    job->thread.join();
+    if (job->failure) {
+        std::string why = "an unknown exception";
+        try {
+            std::rethrow_exception(job->failure);
+        } catch (const std::exception& e) {
+            why = e.what();
+        } catch (...) {
+        }
+        dropCall(why);
+        std::rethrow_exception(job->failure);
+    }
+    // A battle that stops the processing leaves the game as it was: the copy goes.
+    if (!job->result.battle) state_ = std::move(job->state);
+    finishCall(std::move(job->result));
+}
+
 void ClassicSession::runCall() {
     const std::vector<game::BattleAnswer>* answers = showsBattles() ? &answers_ : nullptr;
+    if (call_ == Call::Process && background_) {
+        ++engineCalls_;
+        startJob(answers);
+        return;
+    }
     game::TurnResult res;
     if (call_ != Call::None) ++engineCalls_;
     try {
@@ -402,6 +574,10 @@ void ClassicSession::runCall() {
         dropCall("an unknown exception");
         throw;
     }
+    finishCall(std::move(res));
+}
+
+void ClassicSession::finishCall(game::TurnResult res) {
     ++revision_;
     if (res.battle) {
         // The call stopped at a battle (or ground fight) to show; the game is as it was.
@@ -463,14 +639,12 @@ void ClassicSession::runCall() {
             takeLive(res, true);
             clearOrders();
             waiting_ = false;
-            if (state_.turn != callTurn_) autosave();  // the game turn was processed (spec 01 §2.2)
             if (onNewTurn) onNewTurn();
             break;
         case Call::Resume:
             nextHuman();
             takeResult(res);
             takeLive(res, true);
-            if (state_.turn != callTurn_) autosave();
             break;
         case Call::Process:
             // A simultaneous turn: the new turn begins for the first human.
@@ -601,12 +775,14 @@ void ClassicSession::endTurn() {
     beginCall(Call::Process);
 }
 
-std::optional<std::filesystem::path> ClassicSession::autosave() {
+std::optional<std::filesystem::path> ClassicSession::autosave() { return autosaveOf(state_); }
+
+std::optional<std::filesystem::path> ClassicSession::autosaveOf(const game::GameState& s) {
     if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem) return std::nullopt;  // the host keeps the game
-    const auto name = setup::autosaveName(state_.options.autosaveTurns, state_.turn);
+    const auto name = setup::autosaveName(s.options.autosaveTurns, s.turn);
     if (!name) return std::nullopt;
     const std::filesystem::path file = savesDir() / (*name + ".gam");
-    if (auto saved = save(file, *name); !saved) {
+    if (auto saved = saveState(file, *name, s, true); !saved) {
         autosaveNote_ = std::format("Autosave failed: {}", saved.error());
         log::warn("{}", autosaveNote_);
         return std::nullopt;
@@ -617,6 +793,7 @@ std::optional<std::filesystem::path> ClassicSession::autosave() {
 }
 
 void ClassicSession::poll() {
+    pollJob();
     if (!transport_) return;
     auto s = transport_->pollState();
     if (!s) return;
@@ -703,6 +880,11 @@ void ClassicSession::setPlayer(game::EmpireId e) {
 }
 
 void ClassicSession::replaceState(game::GameState s) {
+    if (job_) {
+        // A turn processed in the background is dropped with the game it was for.
+        if (job_->thread.joinable()) job_->thread.join();
+        job_.reset();
+    }
     state_ = std::move(s);
     turnStart_.reset();
     movesBefore_ = {};
@@ -728,14 +910,20 @@ void ClassicSession::simulateTurns(int n) {
 }
 
 std::expected<void, std::string> ClassicSession::save(const std::filesystem::path& file, const std::string& gameName) const {
+    return saveState(file, gameName, state_, false);
+}
+
+std::expected<void, std::string> ClassicSession::saveState(const std::filesystem::path& file, const std::string& gameName, const game::GameState& s,
+                                                           bool autosave) const {
     game::SaveInfo info;
     info.gameName = gameName;
     info.gameId = multiplayerGameId_;  // a network or PBEM game stays one: its passwords are verifiers
     info.masterPasswordVerifier = masterVerifier_;
     info.dataSet = rules_->data().dataDir.parent_path().filename().string();
-    info.turn = state_.turn;
-    for (const game::Empire& e : state_.empires) info.empires.push_back(e.name);
-    auto saved = game::saveGame(file, state_, info);
+    info.turn = s.turn;
+    info.autosave = autosave;
+    for (const game::Empire& e : s.empires) info.empires.push_back(e.name);
+    auto saved = game::saveGame(file, s, info);
     // Every game saved, Save Game and every autosave alike, becomes the one
     // Resume Game loads (docs/spec/06 §6.1, §7 Q53).
     if (saved) rememberSavedGame(file.string());
@@ -831,6 +1019,13 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     // its import approximated goes to the log file only.
     if (!scenario) session->importNotes_ = std::move(importNotes);
     session->scenarioStart_ = scenario != nullptr;
+    // What the game asks before it is played (spec 06 §1.1, §1.2.1, spec 08
+    // §5, confirmed: binary): who signs in to a simultaneous game; the player
+    // whose turn it is, for a turn-based game's autosave.
+    if (!session->turnBased()) session->signIn_ = SignIn::Login;
+    else if (loaded->second.autosave) session->signIn_ = SignIn::NextPlayer;
+    session->loadedInfo_ = std::move(loaded->second);
+    session->fromSave_ = true;
     return session;
 }
 

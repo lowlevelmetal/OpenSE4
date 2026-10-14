@@ -94,7 +94,7 @@ bool scoreVisible(const GameState& s, EmpireId viewer, EmpireId other) {
     if (!validEmpire(s, other)) return false;
     if (viewer == other) return true;
     if (!s.empire(other).alive) return false;
-    if (s.gameOver) return true;
+    if (s.gameOver || s.lastTurn) return true;
     switch (s.options.scoreDisplay) {
         case 0: return false;
         case 1: return validEmpire(s, viewer) && atPeace(s, viewer, other);
@@ -110,11 +110,21 @@ bool defeated(const Rules& r, const GameState& s, EmpireId e) {
     return true;
 }
 
+bool ownsNothing(const GameState& s, EmpireId e) {
+    for (const auto& c : s.colonies)
+        if (c && c->owner == e) return false;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == e && v.count > 0) return false;
+    return true;
+}
+
 void checkDestruction(TurnContext& ctx, EmpireId id, bool lastTurnPlayed) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!validEmpire(s, id) || !s.empire(id).alive || !defeated(r, s, id)) return;
-    // A human plays one last turn first (spec 06 §7 Q83).
+    // In a simultaneous game a human plays one last turn first (spec 06 §7
+    // Q83); a turn-based game destroys it at its turn start and lets it play
+    // that turn marked dead (turn_based.cpp).
     if (s.empire(id).kind == PlayerKind::Human && !lastTurnPlayed) return;
     Empire& e = s.empire(id);
     e.alive = false;
@@ -283,7 +293,7 @@ bool galaxyAtPeace(const GameState& s) {
 void checkVictory(TurnContext& ctx, uint32_t date) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    if (s.gameOver) return;
+    if (s.gameOver || s.lastTurn) return;
     const VictoryConditions& v = s.options.victory;
     const int64_t now = date;
     // "After X years": nothing is checked before then, and the peace counter stands still.
@@ -334,10 +344,14 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     else if (techMet) reason = std::format("an empire has researched {}% of its technology", v.techPercentValue);
     else reason = std::format("the quadrant has been at peace for {} years", v.peaceYears);
 
-    // The game ends; the original names no winner. The best score (neutral
-    // empires aside, ties to the lower number) is kept for the game-over
-    // screen (OpenSE4 choice, inferred).
-    s.gameOver = true;
+    // The game ends; the original names no winner. A turn-based game first
+    // plays one more game turn, its last, which every player plays (spec 05
+    // §6, confirmed: binary); a simultaneous game ends at once (OpenSE4's,
+    // spec 05 open question 79). The best score (neutral empires aside, ties
+    // to the lower number) is kept for the game-over screen (OpenSE4 choice,
+    // inferred).
+    if (s.options.simultaneous) s.gameOver = true;
+    else s.lastTurn = true;
     s.winner = {};
     int64_t best = 0;
     for (const auto& [id, sc] : scores)

@@ -10,6 +10,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
+#include "client/classic/widgets.hpp"
 #include "client/input.hpp"
 #include "client/script/items.hpp"
 #include "client/ui/theme.hpp"
@@ -89,7 +90,11 @@ std::expected<ClassicMode::DataSet, std::string> ClassicMode::readDataSet(const 
         return std::unexpected(error);
     }
     auto loaded = mods::loadDataSet(gameRoot, dataDir, *modSet);
-    if (!loaded.ruleset || !loaded.diagnostics.errors.empty()) {
+    // The installed data alone with errors: the original lists them, a window
+    // per data file, and (inferred) goes on with what loaded. With mods the
+    // errors are theirs: the game starts without them, or not at all.
+    const bool goOn = loaded.ruleset && modSet->empty();
+    if (!loaded.ruleset || (!loaded.diagnostics.errors.empty() && !goOn)) {
         std::string error = modSet->empty() ? std::format("The data set at {} has errors:\n", dataDir.string())
                                             : std::format("The data set at {} with the mods {} has errors:\n", dataDir.string(),
                                                           ruleset::describeMods(modSet->records()));
@@ -97,6 +102,8 @@ std::expected<ClassicMode::DataSet, std::string> ClassicMode::readDataSet(const 
         return std::unexpected(error);
     }
     DataSet d;
+    d.errors = std::move(loaded.diagnostics.errors);
+    for (const std::string& e : d.errors) log::warn("Data file error: {}", e);
     d.rules = std::make_shared<const game::Rules>(std::move(*loaded.ruleset), gameRoot);
     d.files = assets::InstallFiles(gameRoot);
     for (const mods::Package& p : modSet->packages) {
@@ -119,6 +126,14 @@ mods::ModChoice ClassicMode::modChoice(std::vector<std::string> ids) const {
 }
 
 void ClassicMode::useDataSet(DataSet d) {
+    // The errors to show, a window per data file, in the order they came.
+    dataErrors_.clear();
+    for (std::string& e : d.errors) {
+        const std::string file = e.substr(0, std::min(e.find_first_of(": "), e.size()));
+        auto it = std::find_if(dataErrors_.begin(), dataErrors_.end(), [&](const DataFileErrors& f) { return f.file == file; });
+        if (it == dataErrors_.end()) it = dataErrors_.insert(dataErrors_.end(), DataFileErrors{file, dataDir_ / file, {}});
+        it->errors.push_back(std::move(e));
+    }
     // Whatever drew with the old art has been drawn: it goes now.
     rules_ = std::move(d.rules);
     Art::setColorSource(nullptr);
@@ -709,8 +724,12 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     }
     logSeen_ = session_->me().log.size();  // what the game brought is not news
     importNotes_ = session_->takeImportNotes();
-    handoffPlayer_ = {};
-    handoff_ = false;
+    messageBoxes_.clear();
+    quitAsked_ = false;
+    beginSignIn(session_->takeSignIn(), session_->fromSave());
+    // A simultaneous turn is processed in the background behind the Progress
+    // window; a script's run waits for it within the frame, as before.
+    session_->setBackground(!options_.scripted);
     front_.reset();
     // A game of one of the original's scenarios reads its pages again from
     // the scenario's stem, by its name in the scenario folder when the stem
@@ -807,6 +826,7 @@ std::optional<std::string> ClassicMode::resumeLesson(learn::LessonKind kind, con
         auto session = ClassicSession::load(rules_, lessonPlaceFile(kind, slug));
         if (session) {
             loaded = std::move(*session);
+            loaded->takeSignIn();   // a lesson's own game: nobody signs in
         } else {
             log::warn("{}", session.error());
             problem = "Its saved game could not be read";
@@ -1075,6 +1095,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             // top of the title screens (client/window_hit.hpp), where no window lies.
             addWindowDragArea(ImVec2(0, 0), ImVec2(ImGui::GetIO().DisplaySize.x, ctx.at({0, kFrontTitleBand}).y));
             front_->draw(ctx);
+            if (!dataErrors_.empty()) drawDataErrors(ctx);
         }
         if (started) startGame(std::move(started));
         if (nextFrontScreen_ && !session_) front_ = std::move(nextFrontScreen_);
@@ -1157,23 +1178,32 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     const script::ItemScope mainScope("main");
     if (!pendingSelect_.empty() && !selectForAutomation(pendingSelect_)) pendingSelect_.clear();
 
-    // Hotseat: when the turn passes to another human, hide the map until that
-    // player starts their turn (with their password, if they set one).
-    if (session_->kind() == SessionKind::Hotseat && session_->player() != handoffPlayer_) {
-        handoffPlayer_ = session_->player();
-        handoff_ = true;
+    // Before a player plays, the map hidden: the Next Player window at each
+    // human player's turn when several empires are human-controlled (with
+    // the player's password, if one was set), and what a loaded game asks
+    // (spec 06 §1.1, §1.2.1).
+    if (signIn_ == SignInWindow::None && nextPlayerDue()) {
+        signIn_ = SignInWindow::NextPlayer;
+        signInPassword_.clear();
+        signInError_.clear();
+        signInFailures_ = 0;
         scenarioCheckDue_ = true;   // after the hand-over, the player's page of the turn (spec 06 §5.6)
-        handoffPassword_.clear();
-        handoffError_.clear();
         screens_.clear();
         parentOf_.clear();
         // Battles the previous player was to watch stay theirs (the Log's Combat Replay keeps them).
         strategicQueue_.clear();
     }
-    if (handoff_) {
+    if (signIn_ != SignInWindow::None) {
         lock_.set({});
+        modalOpen_ = true;
         addWindowDragArea(ImVec2(0, 0), ImVec2(ImGui::GetIO().DisplaySize.x, ui.at({0, kFrontTitleBand}).y));
-        drawHandoff(ui);
+        if (signIn_ == SignInWindow::NextPlayer) drawNextPlayer(ui);
+        else drawLogin(ui);
+        if (quitAsked_) drawQuitQuestion(ui);
+        if (ui.requests.quitToIntro) {
+            leaveToFront(FrontId::Intro);
+            return true;
+        }
         return !ui.requests.quitGame;
     }
 
@@ -1216,8 +1246,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // result, a host's question) or a message box (a failed Colonize). The key
     // that answers one (N, Enter) is not also a main-window key (Change Name,
     // End Turn).
+    const bool completed = gameCompleted();
+    const bool processing = session_->processing();
     const bool prompted = asking || battleAsking || choosing.has_value() || gate.hold || skipped || confirmEndTurn_ || !lessonError_.empty() ||
-                          !importNotes_.empty() || !messageBoxes_.empty() ||
+                          !importNotes_.empty() || !messageBoxes_.empty() || completed || quitAsked_ || processing ||
                           ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool modalOpen = !screens_.empty() || prompted || session_->tactical() != nullptr;
     modalOpen_ = modalOpen;
@@ -1227,6 +1259,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (asking) drawEntryQuestion(ui);
     if (choosing) drawColonyTypeChoice(ui, *choosing);
     if (!messageBoxes_.empty() && gate.questions && !battleAsking) drawMessageBox(ui);
+    // The last turn is over: once its moves and battles are shown (spec 05 §6).
+    if (completed && gate.endings && !battleAsking && screens_.empty() && messageBoxes_.empty()) drawGameCompleted(ui);
 
     // Windows, oldest first; the newest draws on top. Every window is modal:
     // only the one in front takes input, the ones behind it wait (ui.behind).
@@ -1306,6 +1340,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             confirmEndTurn_ = false;
         }
     }
+    if (quitAsked_) drawQuitQuestion(ui);
+    if (session_->processing()) drawProgress(ui);
     // The turn may have ended in this frame: its moves start to glide now, and
     // what its start opens waits for them.
     if (!skipped) openTurnStartWindows(ui, turnStartGate(ui));
@@ -1340,17 +1376,12 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         openScreen(ScreenId::LoadGame, std::move(args));
     }
     if (ui.requests.quitToIntro) {
-        ui.requests.quitToIntro = false;
-        keepLessonPlace();
-        forgetPlayerFailures();
-        screens_.clear();
-        parentOf_.clear();
-        lesson_.reset();
-        lock_.set({});
-        ui_.reset();
-        session_.reset();
-        front_ = makeFrontScreen(FrontId::Intro);
-        cueMusic(MusicCue::IntroOpened);
+        leaveToFront(FrontId::Intro);
+        return true;
+    }
+    // Game Menu → New: this game goes and the Game Setup opens (spec 06 §1.2).
+    if (ui.requests.newGame) {
+        leaveToFront(FrontId::GameSetup);
         return true;
     }
     // The learning system: a lesson chosen in the Learn window, or what the
@@ -1399,6 +1430,35 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     updateLock(ui);
     if (options_.lessonCheck) lessonCheckReport(ui);
     return !ui.requests.quitGame;
+}
+
+// The data files' errors at start-up (spec 06 §1.1, confirmed: binary for the
+// window): a window per data file titled after the file and its path, the
+// errors listed, Close; then the next file's. The original goes on afterwards
+// (inferred), and so does OpenSE4, with what loaded.
+void ClassicMode::drawDataErrors(const MenuContext& ctx) {
+    const DataFileErrors& f = dataErrors_.front();
+    const Vec2 size{560, 400};
+    ImGui::SetNextWindowPos(ctx.at({std::floor((frameW() - size.x) * 0.5f), std::floor((frameH() - size.y) * 0.5f)}));
+    ImGui::SetNextWindowSize(ctx.size(size));
+    ImGui::PushFont(fonts_.regular, ctx.px(kTextSize));
+    // Modal over the intro; the title names the file, the id stays.
+    const std::string id = std::format("{} Errors: {}###dataerrors", f.file, f.path.string());
+    if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
+    bool close = false;
+    if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags)) {
+        const float buttonH = std::max(ctx.px(28), ImGui::GetFrameHeight());
+        ImGui::BeginChild("##errors", ImVec2(0, ImGui::GetContentRegionAvail().y - buttonH - ImGui::GetStyle().ItemSpacing.y), ImGuiChildFlags_Borders);
+        ImGui::PushTextWrapPos(0.0f);
+        for (const std::string& e : f.errors) ImGui::TextUnformatted(e.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndChild();
+        close = ImGui::Button("Close", ImVec2(-FLT_MIN, buttonH)) || okKey();
+        if (close) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::PopFont();
+    if (close) dataErrors_.pop_front();
 }
 
 // After loading a saved game of the original (docs/spec/08): what came
@@ -1678,15 +1738,16 @@ void ClassicMode::openTurnStartWindows(UiContext& ui, const TurnStartGate& gate)
             for (FinaleKind k : endings) args.text += (args.text.empty() ? "" : ",") + std::string(finaleArgName(k));
             openScreen(ScreenId::Finale, std::move(args));
         }
-    // The Log last, when the player gets the turn (spec 06 §2.7, §4.1).
-    if (openLogOnTurn_ && !keepLogClosed_ && gate.log && !isOpen(ScreenId::Finale) && !isOpen(ScreenId::StrategicCombat)) {
+    // The Log last, when the player gets the turn (spec 06 §2.7, §4.1); none
+    // once the last turn is over (Game Completed comes instead).
+    if (openLogOnTurn_ && !keepLogClosed_ && gate.log && !isOpen(ScreenId::Finale) && !isOpen(ScreenId::StrategicCombat) && !gameCompleted()) {
         openLogOnTurn_ = false;
         if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});
     }
     // Then a scenario's page of the turn, over the Log (inferred: where the
     // original opens it among the turn's windows is not traced).
-    if (scenarioCheckDue_ && !handoff_ && gate.log && !isOpen(ScreenId::Finale) && !isOpen(ScreenId::StrategicCombat)) {
+    if (scenarioCheckDue_ && signIn_ == SignInWindow::None && gate.log && !isOpen(ScreenId::Finale) && !isOpen(ScreenId::StrategicCombat)) {
         scenarioCheckDue_ = false;
         openTurnPage(ui);
     }
@@ -1794,47 +1855,347 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
     ImGui::PopFont();
 }
 
-void ClassicMode::drawHandoff(UiContext& ui) {
+// ---- Signing in, the endings that leave the game, quitting --------------------------------------------
+
+std::optional<ClassicMode::TurnKey> ClassicMode::currentTurnKey() const {
+    const game::GameState& s = session_->state();
+    if (s.gameOver || session_->humansGone()) return std::nullopt;
+    // A turn-based game: only once the human's turn is under way (not while a
+    // battle of a computer player's turn waits to be shown).
+    if (session_->turnBased() && !session_->myTurn()) return std::nullopt;
+    return TurnKey{s.turn, session_->player()};
+}
+
+bool ClassicMode::nextPlayerDue() {
+    // The original's Next Player window comes at each human player's turn
+    // whenever more than one empire is human-controlled, destroyed ones
+    // included, so a hotseat game's last human sees it every turn (spec 06
+    // §1.2.1, confirmed: binary). Games on several machines sign in otherwise.
+    if (session_->kind() != SessionKind::Local && session_->kind() != SessionKind::Hotseat) return false;
+    const std::optional<TurnKey> key = currentTurnKey();
+    if (!key || key == signInKey_) return false;
+    signInKey_ = key;
+    const auto& empires = session_->state().empires;
+    return std::count_if(empires.begin(), empires.end(), [](const game::Empire& e) { return e.kind == game::PlayerKind::Human; }) > 1;
+}
+
+void ClassicMode::beginSignIn(ClassicSession::SignIn ask, bool loaded) {
+    signIn_ = SignInWindow::None;
+    signInPassword_.clear();
+    signInError_.clear();
+    signInFailures_ = 0;
+    loginRow_ = -1;
+    // A new game: its first human turn has the Next Player window when one is
+    // due. A loaded game asks what its file asks, and nothing more for the
+    // turn it opens at (a plain save asks nothing, spec 08 §5).
+    signInKey_ = loaded ? currentTurnKey() : std::nullopt;
+    if (ask == ClassicSession::SignIn::NextPlayer) signIn_ = SignInWindow::NextPlayer;
+    if (ask == ClassicSession::SignIn::Login) signIn_ = SignInWindow::Login;
+}
+
+// The original's 276x188 Next Player window: the empire's picture and a line
+// naming the empire and asking its player to play; the password box when
+// the empire has one. Spaces around the password are ignored and letter case
+// counts; a wrong one says "Invalid Password:" over the box, and the fourth
+// wrong one in a row ends the game (spec 06 §1.2.1, confirmed: binary): the
+// original exits, OpenSE4 returns to the intro. Begin Turn and Quit Game are
+// OpenSE4's buttons.
+void ClassicMode::drawNextPlayer(UiContext& ui) {
     const game::Empire& e = ui.me();
-    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 250 * frameH() / kFrameH}));
-    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(400), ui.textPx(400)), 0));
+    const Vec2 size{276, 188};
+    const float width = std::max(ui.px(size.x), ui.textPx(size.x));
+    ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(width, 0));
     ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
     ImGui::Begin("Next Player", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
-    image(ui, art_->flag(e.race.style), {39, 27});
-    ImGui::SameLine();
-    ImGui::TextUnformatted(std::format("{} {}", e.name, e.empireType).c_str());
+    ui.promptWindow();
+    if (Sprite picture = art_->racePortrait(e.race.style)) {
+        image(ui, picture, {64, 64});
+        ImGui::SameLine();
+    } else if (Sprite flag = art_->flag(e.race.style)) {
+        image(ui, flag, {39, 27});
+        ImGui::SameLine();
+    }
+    ImGui::BeginGroup();
+    ImGui::PushTextWrapPos(width - ImGui::GetStyle().WindowPadding.x);
+    ImGui::TextWrapped("%s", std::format("{} {}", e.name, e.empireType).c_str());
+    ImGui::TextWrapped("%s", std::format("{} {}, it is your turn to play.", e.leaderTitle, e.leaderName).c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::EndGroup();
+    ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("Game date %s. Other players, please look away.", formatDate(ui.state().turn).c_str());
+    ImGui::PopTextWrapPos();
     ImGui::Spacing();
-    const bool needsPassword = !e.passwordHash.empty();
+    const bool needsPassword = session_->passwordAsked(e);
     bool begin = false;
     if (needsPassword) {
-        ImGui::TextUnformatted("Password");
+        ImGui::TextColored(signInFailures_ > 0 ? ImVec4(1, 0.5f, 0.4f, 1) : kLabelBlue, "%s", signInFailures_ > 0 ? "Invalid Password:" : "Password:");
         if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-        char buffer[128] = {};
-        std::snprintf(buffer, sizeof buffer, "%s", handoffPassword_.c_str());
-        if (ImGui::InputText("##password", buffer, sizeof buffer, ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue))
-            begin = true;
-        handoffPassword_ = buffer;
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (inputString("##password", signInPassword_, 127, ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue)) begin = true;
     }
     // The Next Player notice: Esc or Enter continue (spec 06 §3.4); with a
     // password, Enter in its field submits it.
-    const ImVec2 button(std::max(ui.px(140), ui.textPx(140)), std::max(ui.px(30), ImGui::GetFrameHeight()));
-    if (ImGui::Button("Begin Turn", button) || (!needsPassword && okKey())) begin = true;
+    const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    const ImVec2 button(w, std::max(ui.px(28), ImGui::GetFrameHeight()));
+    if (ImGui::Button("Begin Turn", button) || (!needsPassword && !quitAsked_ && okKey())) begin = true;
     ImGui::SameLine();
-    if (ImGui::Button("Quit Game", button)) ui.requests.quitGame = true;
+    if (ImGui::Button("Quit Game", button)) quitAsked_ = true;
     if (begin) {
-        const std::expected<bool, std::string> matches = needsPassword ? session_->passwordMatches(e, handoffPassword_) : true;
+        const std::expected<bool, std::string> matches = needsPassword ? session_->passwordMatches(e, signInPassword_) : true;
+        signInPassword_.clear();
         if (matches && *matches) {
-            handoff_ = false;
-            handoffPassword_.clear();
-        } else {
-            handoffError_ = matches ? std::string("Wrong password.") : matches.error();
-            handoffPassword_.clear();
+            signIn_ = SignInWindow::None;
+            signInFailures_ = 0;
+            signInError_.clear();
+        } else if (!matches) {
+            signInError_ = matches.error();
+        } else if (++signInFailures_ >= 4) {
+            log::info("Next Player: a fourth wrong password ends the game");
+            ui.requests.quitToIntro = true;
         }
     }
-    if (!handoffError_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", handoffError_.c_str());
+    if (!signInError_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", signInError_.c_str());
     ImGui::End();
     ImGui::PopFont();
+}
+
+// Login To Game, when a simultaneous game is loaded (spec 06 §1.1, confirmed:
+// binary): a row per empire (its flag, its name or "Dead", its emperor's
+// name, blank when dead) and a "Game Master (Host)" row; the password box,
+// Login and Cancel. Spaces around the password and letter case are ignored
+// (ClassicSession::loginPasswordMatches). An empire signs in only with the
+// data set its game was made with ("Invalid Data Files"). OpenSE4 has no
+// host view of its own on one machine: Game Master goes on to the first
+// human player's turn, with the Next Player window (inferred), and a
+// destroyed or computer-controlled empire's row signs nobody in. Cancel
+// returns to the intro.
+void ClassicMode::drawLogin(UiContext& ui) {
+    const game::GameState& s = ui.state();
+    const int rows = static_cast<int>(s.empires.size()) + 1;
+    const int master = rows - 1;
+    const Vec2 size{420, 0};
+    ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(size.x), ui.textPx(size.x)), 0));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    ImGui::Begin("Login To Game", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
+    ui.promptWindow();
+    const float rowH = std::max(ui.px(22), ImGui::GetTextLineHeightWithSpacing());
+    const float listH = rowH * float(rows) + ImGui::GetStyle().WindowPadding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + ui.px(2);
+    ImGui::BeginChild("##logins", ImVec2(0, std::min(ui.px(320), listH)), ImGuiChildFlags_Borders);
+    const float nameX = ui.px(30), leaderX = std::max(ui.px(210), ui.textPx(210));
+    for (int i = 0; i < rows; ++i) {
+        ImGui::PushID(i);
+        const ImVec2 at = ImGui::GetCursorPos();
+        if (ImGui::Selectable("##row", loginRow_ == i, ImGuiSelectableFlags_AllowOverlap, ImVec2(0, rowH))) {
+            loginRow_ = i;
+            signInError_.clear();
+        }
+        // Input scripts find a row by its empire's name.
+        script::reportItem(i == master ? std::string("login:Game Master") : "login:" + s.empires[static_cast<size_t>(i)].name);
+        ImGui::SetCursorPos(ImVec2(at.x + nameX, at.y));
+        if (i == master) {
+            ImGui::TextUnformatted("Game Master");
+            ImGui::SameLine(leaderX);
+            ImGui::TextUnformatted("(Host)");
+        } else {
+            const game::Empire& e = s.empires[static_cast<size_t>(i)];
+            ImGui::SetCursorPos(at);
+            if (Sprite flag = art_->flag(e.race.style, false)) {
+                image(ui, flag, {20, 14});
+                ImGui::SameLine();
+            }
+            ImGui::SetCursorPos(ImVec2(at.x + nameX, at.y));
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(empireColor(s, e.id)), "%s", e.alive ? e.name.c_str() : "Dead");
+            if (e.alive) {
+                ImGui::SameLine(leaderX);
+                ImGui::TextUnformatted(std::format("{} {}", e.leaderTitle, e.leaderName).c_str());
+            }
+        }
+        ImGui::SetCursorPos(ImVec2(at.x, at.y + rowH));
+        ImGui::PopID();
+    }
+    ImGui::Dummy(ImVec2(0, 0));   // the last row's place, as an item
+    ImGui::EndChild();
+    ImGui::TextColored(kLabelBlue, "Password");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    const bool enter = inputString("##loginpassword", signInPassword_, 127, ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+    if (!signInError_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", signInError_.c_str());
+    ImGui::Spacing();
+    const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    const ImVec2 button(w, std::max(ui.px(28), ImGui::GetFrameHeight()));
+    const bool login = ImGui::Button("Login", button) || enter;
+    ImGui::SameLine();
+    const bool cancel = ImGui::Button("Cancel", button) || (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !quitAsked_);
+    ImGui::End();
+    ImGui::PopFont();
+    if (cancel) {
+        ui.requests.quitToIntro = true;
+        return;
+    }
+    if (!login) return;
+    const std::string typed = std::exchange(signInPassword_, {});
+    if (loginRow_ < 0 || loginRow_ >= rows) {
+        signInError_ = "Pick the empire to sign in as.";
+        return;
+    }
+    if (loginRow_ == master) {
+        const std::expected<bool, std::string> ok = session_->masterLoginMatches(typed);
+        if (!ok || !*ok) {
+            signInError_ = ok ? std::string("Invalid password.") : ok.error();
+            return;
+        }
+        // Our stand-in for the host view: the first human player's turn, signed in there.
+        for (const game::Empire& e : s.empires)
+            if (e.alive && e.kind == game::PlayerKind::Human) {
+                session_->setPlayer(e.id);
+                break;
+            }
+        signInKey_ = currentTurnKey();
+        signIn_ = SignInWindow::NextPlayer;
+        signInError_.clear();
+        signInFailures_ = 0;
+        return;
+    }
+    const game::Empire& e = s.empires[static_cast<size_t>(loginRow_)];
+    if (!e.alive) {
+        signInError_ = "That empire has been destroyed.";
+        return;
+    }
+    if (e.kind != game::PlayerKind::Human) {
+        signInError_ = "The computer plays that empire.";
+        return;
+    }
+    if (!session_->dataSetMatches()) {
+        signInError_ = "Invalid Data Files: this game was made with another data set.";
+        return;
+    }
+    const std::expected<bool, std::string> ok = session_->loginPasswordMatches(e, typed);
+    if (!ok || !*ok) {
+        signInError_ = ok ? std::string("Invalid password.") : ok.error();
+        return;
+    }
+    session_->setPlayer(e.id);
+    signInKey_ = currentTurnKey();
+    signIn_ = SignInWindow::None;
+    signInError_.clear();
+    log::info("Signed in to the game as {}", e.name);
+}
+
+void ClassicMode::leaveToFront(FrontId where) {
+    keepLessonPlace();
+    forgetPlayerFailures();
+    screens_.clear();
+    parentOf_.clear();
+    lesson_.reset();
+    lock_.set({});
+    ui_.reset();
+    session_.reset();
+    signIn_ = SignInWindow::None;
+    quitAsked_ = false;
+    confirmEndTurn_ = false;
+    messageBoxes_.clear();
+    strategicQueue_.clear();
+    front_ = makeFrontScreen(where);
+    cueMusic(MusicCue::IntroOpened);
+}
+
+bool ClassicMode::gameCompleted() const {
+    if (!session_ || !session_->turnBased()) return false;
+    const game::GameState& s = session_->state();
+    return s.gameOver && s.lastTurn;
+}
+
+// "Game Completed": every player has played the turn after the victory
+// check was met (spec 05 §6, confirmed: binary). The original then exits;
+// OpenSE4 returns to the intro.
+void ClassicMode::drawGameCompleted(UiContext& ui) {
+    constexpr const char* kId = "Game Completed###gamecompleted";
+    if (!ImGui::IsPopupOpen(kId)) ImGui::OpenPopup(kId);
+    ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(340), ui.textPx(340)), 0));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    bool ok = false;
+    if (ImGui::BeginPopupModal(kId, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                                 ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
+        ui.promptWindow();
+        ImGui::TextWrapped("Every player has played the last turn: the game is over. The scores stand as the last turn left them.");
+        ImGui::Spacing();
+        ok = ImGui::Button("OK", ImVec2(-FLT_MIN, std::max(ui.px(28), ImGui::GetFrameHeight()))) || okKey();
+        if (ok) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::PopFont();
+    if (ok) ui.requests.quitToIntro = true;
+}
+
+bool ClassicMode::closeRequested() {
+    // During a game the original asks before its window closes, by any means,
+    // except while a turn is processed (spec 06 §4.3, confirmed: binary); a
+    // script's run quits at once.
+    if (!session_ || options_.scripted || session_->processing()) return false;
+    quitAsked_ = true;
+    return true;
+}
+
+// The Progress window while a simultaneous turn is processed here (spec 06
+// §1.7, confirmed: binary): a small modal window, its caption centred over a
+// dark blue gauge from 0 to 100 %. The Hourglass shows meanwhile.
+void ClassicMode::drawProgress(UiContext& ui) {
+    pointers().request(Pointer::Hourglass);
+    const auto [done, total] = session_->progress();
+    const float fraction = total > 0 ? std::clamp(float(done) / float(total), 0.0f, 1.0f) : 0.0f;
+    const Vec2 size{300, 76};
+    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - size.x) * 0.5f), std::floor((frameH() - size.y) * 0.5f)}));
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(size.x), ui.textPx(size.x)), 0));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    // A window of its own, not a popup: it goes when the processing is done.
+    if (ImGui::Begin("Progress###progress", nullptr,
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | kPromptFlags)) {
+        ui.promptWindow();
+        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+        const char* caption = "Processing the turn";
+        const float w = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, (w - ImGui::CalcTextSize(caption).x) * 0.5f));
+        ImGui::TextUnformatted(caption);
+        ImGui::Spacing();
+        const ImVec2 a = ImGui::GetCursorScreenPos();
+        const ImVec2 b{a.x + w, a.y + ui.px(16)};
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(a, b, IM_COL32(0, 0, 0, 255));
+        dl->AddRectFilled(a, ImVec2(a.x + (b.x - a.x) * fraction, b.y), IM_COL32(0, 0, 128, 255));
+        dl->AddRect(a, b, imColor(palette::kFrameLight));
+        ImGui::Dummy(ImVec2(w, ui.px(16)));
+        script::reportItem(std::format("progress:{}", static_cast<int>(fraction * 100.0f)), a, b);   // input scripts
+    }
+    ImGui::End();
+    ImGui::PopFont();
+}
+
+void ClassicMode::drawQuitQuestion(UiContext& ui) {
+    constexpr const char* kId = "Quit###quitquestion";
+    if (!ImGui::IsPopupOpen(kId)) ImGui::OpenPopup(kId);
+    ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(320), ui.textPx(320)), 0));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    bool yes = false, no = false;
+    if (ImGui::BeginPopupModal(kId, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                                 ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
+        ui.promptWindow();
+        ImGui::TextWrapped("End this game and quit OpenSE4? Anything not saved is lost.");
+        ImGui::Spacing();
+        // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+        const std::optional<bool> key = yesNoKey();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        yes = ImGui::Button("Yes", ImVec2(w, std::max(ui.px(28), ImGui::GetFrameHeight()))) || key == true;
+        ImGui::SameLine();
+        no = ImGui::Button("No", ImVec2(w, std::max(ui.px(28), ImGui::GetFrameHeight()))) || key == false;
+        if (yes || no) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::PopFont();
+    if (yes || no) quitAsked_ = false;
+    if (yes) ui.requests.quitGame = true;
 }
 
 void ClassicMode::render(gfx::Renderer2D& r, const FrameState& fs) {
@@ -1842,7 +2203,7 @@ void ClassicMode::render(gfx::Renderer2D& r, const FrameState& fs) {
     const Vec2 topLeft = mapping_.fromFb({0, 0});
     const Vec2 bottomRight = mapping_.fromFb({fw, fh});
     r.begin(Mat4::ortho2D(topLeft.x, bottomRight.x, topLeft.y, bottomRight.y), fs.frame, mapping_.scale);
-    if (session_ && ui_ && !handoff_) main_.render(r, *ui_);
+    if (session_ && ui_ && signIn_ == SignInWindow::None) main_.render(r, *ui_);
     else r.rect(Rect{{mapping_.left, 0}, {mapping_.right, frameH()}}, Color::hex(0x000000));
     r.flush();
 }

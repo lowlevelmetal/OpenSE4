@@ -1,0 +1,33 @@
+# The autosave of a turn-based game and the Next Player window (spec 06 §1.2.1, §6.1): with
+# Autosave Every Turn, End Turn writes AutoSav1 at the start of the player's next turn, before
+# that turn starts; loading it opens the Next Player window (the map hidden), then the turn.
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --quick-start --empires=3 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 5
+click item:Close in=finale optional
+click item:Yes in=finale optional
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+click item:"Every Turn" in=options
+key Escape
+wait-closed options
+click tag:button:end-turn
+wait-for item:Yes in="End Turn"
+click item:Yes in="End Turn"
+wait-turn 1
+wait 5
+key Escape
+key F2
+wait-window game-menu
+click item:Load in=game-menu
+wait-for item:AUTOSAV1 in=load-game
+click item:AUTOSAV1 in=load-game
+wait-for item:"Begin Turn"
+screenshot next-player.png
+click item:"Begin Turn"
+wait-gone item:"Begin Turn"
+assert-turn 1

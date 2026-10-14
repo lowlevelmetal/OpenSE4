@@ -13,6 +13,7 @@
 #include "game/state.hpp"
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -35,14 +36,20 @@ std::string_view finaleKeyName(FinaleKind k);
 std::string_view finaleArgName(FinaleKind k);
 
 // The endings due when a turn begins for `player`, in the order they are
-// shown (spec 06 §7 Q83, confirmed: binary). In a local or hotseat game,
-// first: no living empire is human-controlled, Human Dead alone (the game
-// stops there; a host on different machines has no such check). Otherwise,
-// for a player whose empire is not yet marked dead: Lose when it owns no
-// colony and no vehicle (the start of its last turn; the engine marks it
-// dead when that turn ends, score::checkDestruction); then Victory when the
-// game is over; then Conquered when every other empire is dead (followed by
-// the question whether to play on). Without a player, only Victory.
+// shown (spec 06 §7 Q83, Q99, confirmed: binary). In a local or hotseat
+// game, first: no human-controlled empire is left (ai::anyHumanLeft: a
+// human playing its last turn counts), Human Dead alone (the game stops
+// there and the client returns to the intro; a host on different machines
+// has no such check). Otherwise, for a player still playing: Lose at the
+// start of its last turn, when it owns no colony and no vehicle (in a
+// turn-based game the engine's mark from the moment its turn came up,
+// PlayerTurn::loseEnding, the empire destroyed by then; in a simultaneous
+// game as it is, the engine marking it dead when that turn ends); then
+// Victory when the game is over, or in a turn-based game's last turn
+// (GameState::lastTurn); then Conquered when every other empire is dead
+// (followed by the question whether to play on). Without a player, only
+// Victory. Nothing once a turn-based game's last turn is over: the client's
+// Game Completed box comes instead.
 std::vector<FinaleKind> finaleKinds(const game::GameState& s, game::EmpireId player, SessionKind kind);
 
 // The pictures of a kind: `Num Finale <Kind> Pictures` names, each `Finale
@@ -52,8 +59,8 @@ std::vector<std::string> finalePictures(const ruleset::Settings& data, FinaleKin
 
 // Shows each ending as it comes: at each start of a turn (a new date, a new
 // player or, in a turn-based game, a new active empire; and the first call)
-// update() returns the endings due that were not already due at the previous
-// start of a turn, in order; nothing between turn starts.
+// update() returns the endings due that were not already due at that
+// player's previous start of a turn, in order; nothing between turn starts.
 class FinaleWatch {
 public:
     std::vector<FinaleKind> update(const game::GameState& s, game::EmpireId player, SessionKind kind);
@@ -65,7 +72,7 @@ private:
         bool operator==(const Key&) const = default;
     };
     std::optional<Key> key_;
-    std::vector<FinaleKind> due_;
+    std::map<game::EmpireId, std::vector<FinaleKind>> due_;
 };
 
 } // namespace opense4::client::classic

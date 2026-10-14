@@ -763,6 +763,19 @@ before the random event (§8) (confirmed: binary).
 binary). It announces that this is the last turn and points the players to the Scores
 window, where the ranking shows the result.
 
+**The last turn of a turn-based game** (confirmed: binary). The check runs as each game turn
+wraps and only sets the game's "completed" mark. The game goes on for one more full game turn:
+every computer player plays its turn, and every human gets the usual sign-in, then the Victory
+ending (this is the last turn; see the Scores window), then plays that turn as usual. At the
+next wrap, before any event or turn processing, an OK box titled "Game Completed" says the game
+is over and the program exits. OpenSE4 follows this since 2026-10-14 (`GameState::lastTurn`,
+save format 10; `score::checkVictory`, `turn_based.cpp` `endGameTurn`): the completed mark is
+`lastTurn`, the next wrap sets `gameOver` before the date advances, every score shows during
+the last turn as once the game is over (`score::scoreVisible`, inferred), and the client's Game
+Completed box returns to the intro (spec 06 §1.7). The original's saved games carry the mark
+(spec 08 §3.4). A simultaneous game ends at once when a condition is met in ours (open
+question 79).
+
 | Condition | Test (confirmed: binary) | Initial value |
 |---|---|---|
 | Score reaches X | Some living empire has score ≥ X. | 100,000 |
@@ -784,12 +797,21 @@ window, where the ranking shows the result.
 - **Destruction** (confirmed: binary): an empire is destroyed when it has no populated
   planet and no ship or base (units do not count). The check runs once per turn for each
   empire: in simultaneous games right after its end-of-turn processing, in turn-based games
-  when its turn comes up. Every empire in contact with it is told, all treaties with it
-  return to "no contact", intel projects aimed at it are removed, and its remaining objects
-  (empty colonies, units) are removed.
-  A human-controlled empire found defeated is marked dead only after its Lose window, at the
-  end of the last turn that began with it defeated (spec 06 §7 Q83, confirmed: binary): our
-  engine spares it at the check that first finds it defeated (`score::checkDestruction`).
+  at the end of the start of its turn, for computer players and humans alike (§8). Every
+  empire in contact with it is told, all treaties with it return to "no contact", intel
+  projects aimed at it are removed, and its remaining objects (empty colonies, units) are
+  removed.
+  In a simultaneous game a human-controlled empire found defeated is marked dead only after
+  its Lose window, at the end of the last turn that began with it defeated (spec 06 §7 Q83,
+  confirmed: binary): our engine spares it at the check that first finds it defeated
+  (`score::checkDestruction`). In a turn-based game nothing is checked for a human at the end
+  of its own turn, so one that lost everything during it is alive while the others play; at
+  its next turn the Lose window comes before the turn's start (when it owns no colony and no
+  vehicle), the check at that start's end destroys it, and it plays that turn, its last,
+  already marked dead (spec 06 §7 Q99, confirmed: binary). Ours since 2026-10-14
+  (`turn_based.cpp` `startPlayerTurn`; the Lose mark `PlayerTurn::loseEnding`, save format
+  10; `playsLastTurn`). A human left with units or empty colonies only is destroyed without
+  the Lose window.
 - **OpenSE4 choices** [I]: the game-over screen names the best score as the winner, with
   ties going to the lower empire number, while the game-over message names none. Neutral
   empires neither win nor count toward the last empire standing. When one empire is left
@@ -2729,7 +2751,10 @@ the date advances, then the design cleanup (every tenth turn), the contact check
 victory check and the event step run, as in steps 7–9 above; step 10's per-turn marks are not cleared in
 turn-based games. A player's turn starts like this:
 
-1. A human's turn starts with the destruction check (§6).
+1. Before a human's turn starts, the game shows the Next Player window (when several empires
+   are human-controlled), writes the autosave if one is due, and shows the endings due (the
+   Lose ending's test is made now, on the game as the turn comes up) (spec 06 §1.2.1, §6.1,
+   §7 Q99).
 2. The start-of-turn step: the AI state update and the ministers (all of them for a
    computer player, the Politics minister first) give their orders. Messages take effect
    when sent.
@@ -2742,8 +2767,9 @@ turn-based games. A player's turn starts like this:
    combat ending a Sentry, do not count. Each run counts afresh: this one, each
    simultaneous movement phase, and in a turn-based game each order a human gives, which
    runs the list at once (confirmed: binary).
-4. A computer player's destruction check comes only now, after its start-of-turn step. Its
-   turn then ends at once.
+4. The destruction check (§6) comes only now, after the start-of-turn step, for computer
+   players and humans alike. A computer player's turn then ends at once; a human destroyed
+   now plays this turn, its last, marked dead (spec 06 §7 Q99, confirmed: binary).
 
 A human then plays, and orders execute as they are given (spec 03 §6.3). The date stays
 the same for the whole game turn, so every player's start-of-turn and end-of-turn
@@ -2846,11 +2872,12 @@ Two treaty rules copy dates at step 6 of the receiving empire:
 **OpenSE4 mapping**: `processTurn` (`turn.cpp`) follows this order for a simultaneous game,
 and `empireEndOfTurn` is one empire's end-of-turn processing; the lines of a human
 player's files (step 2) come back in `TurnResult::records`. A turn-based game
-(`turn_based.cpp`) starts each player's turn as listed above (a human's destruction
-check, the start-of-turn step, the movement refill and every group's orders, a computer
-player's destruction check); `applyLive` carries out each order as it is given
+(`turn_based.cpp`) starts each player's turn as listed above (the Lose ending's mark, the
+start-of-turn step, the movement refill and every group's orders, the destruction check; the
+client's autosave comes before it through `LiveOptions::beforeHumanTurn`); `applyLive` carries out each order as it is given
 (`movement::runLive`), `endPlayerTurn` runs `empireEndOfTurn` and passes the turn on, and
-after the last player the date, design cleanup, victory check and event step run. Every step has a stable iteration order and draws its randomness from
+after the last player the date, design cleanup, victory check and event step run; after a
+last turn (§6) the game is over at once. Every step has a stable iteration order and draws its randomness from
 `GameState::rng`. Open questions 24 (both styles) and 32 (turn-based games) record how
 each detail of this section was settled; where the engine still differs from the rules
 above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the same calls
@@ -4531,3 +4558,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - Their targets keep no sight test, and nothing is added to avoid the loop: our computer
       players keep failing at a hidden planet as the original's do (spec 07 "The Colonize sight
       test", 2026-10-04, measures it).
+79. **Victory in a simultaneous game** (raised 2026-10-14 by §6 "The last turn of a
+    turn-based game"). In a turn-based game the victory check only marks the game completed,
+    every player plays one more game turn, and the next wrap ends the game. Does a
+    simultaneous game also play one more turn after the check is met (the host processing it
+    once more, the players told it is the last), and what do the players see when it ends?
+    OpenSE4 ends a simultaneous game at once, as before (`score::checkVictory`): the Victory
+    ending shows at the next turn's start, and the game plays no further turn (inferred).

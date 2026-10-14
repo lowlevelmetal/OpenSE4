@@ -1,0 +1,53 @@
+# Login To Game (spec 06 §1.1): loading a simultaneous game asks who signs in before the main
+# window shows; Game Master with a wrong password signs nobody in, the player's own row does
+# (it has no password). On the way, Save Game refusing a name that cannot be a file name
+# ("Invalid File Name.", titled Error) and Load Game's Date heading.
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --quick-start --turn-style=simultaneous --empires=3 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 5
+click item:Close in=finale optional
+click item:Yes in=finale optional
+key F2
+wait-window game-menu
+click item:"Save Game" in=game-menu
+wait-window save-game
+click item:##name in=save-game
+key Ctrl+A
+type "Bad?Name"
+click item:Save in=save-game
+wait-for item:window:Error
+screenshot invalid-name.png
+click item:OK in=Error
+wait-gone item:window:Error
+click item:##name in=save-game
+key Ctrl+A
+type "Zulu"
+key Enter
+wait-for item:Zulu in=save-game
+key Escape
+wait-closed save-game
+
+# Load Game: sorted by name; the Date heading sorts by date. Loading the game asks who signs in.
+key F2
+wait-window game-menu
+click item:Load in=game-menu
+wait-for item:ZULU in=load-game
+click item:##sortdate in=load-game
+click item:ZULU in=load-game
+wait-for item:"login:Game Master"
+screenshot login.png
+# Game Master with a wrong password signs nobody in (a local game has no master password).
+click item:"login:Game Master"
+click item:##loginpassword
+type "wrong"
+click item:Login
+wait 2
+assert-present item:"login:Game Master"
+# The player's own does: the main window comes.
+click item:"login:*" nth=1
+click item:Login
+wait-gone item:"login:Game Master"
+wait 3
+screenshot signed-in.png

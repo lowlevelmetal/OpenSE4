@@ -17,8 +17,10 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <limits>
 #include <memory>
+#include <vector>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -289,4 +291,27 @@ TEST_CASE("turn order: every vehicle comes from where it stands after its owner'
         const ruleset::VehicleType type = vehicleType(r, s, v);
         if (type == ruleset::VehicleType::Ship || type == ruleset::VehicleType::Base) CHECK(v.cameFrom == v.location);
     }
+}
+
+TEST_CASE("turn order: a simultaneous turn reports its progress in empires x 4 + 30 steps") {
+    // The Progress window's gauge (spec 06 §1.7, confirmed: binary; which
+    // steps count is ours, inferred).
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 3, 8, true);
+    const int total = static_cast<int>(s.empires.size()) * 4 + 30;
+    std::vector<int> seen;
+    TurnOptions o;
+    o.progress = [&](int done, int all) {
+        CHECK(all == total);
+        seen.push_back(done);
+    };
+    GameState plain = s;
+    processTurn(r, s, {}, o);
+    REQUIRE_FALSE(seen.empty());
+    CHECK(seen.front() == 0);
+    CHECK(seen.back() == total);
+    CHECK(std::is_sorted(seen.begin(), seen.end()));
+    // Watching changes nothing.
+    processTurn(r, plain, {});
+    CHECK(stateChecksum(plain) == stateChecksum(s));
 }

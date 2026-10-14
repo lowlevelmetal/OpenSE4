@@ -237,6 +237,14 @@ struct TurnOptions {
     std::function<void(int day, const GameState&)> movementDay;
     // Simultaneous games: an observer of each step (TurnContext::movementStep).
     std::function<void(const MovementStep&)> movementStep;
+    // Simultaneous games: how far the turn's processing has got, for the
+    // client's Progress window (spec 06 §1.7, confirmed: binary): steps done
+    // of a total of the number of empires × 4 + 30. Which steps count is ours
+    // (inferred): each empire's orders, messages, start of turn and end-of-turn
+    // processing, and each of the 30 movement days. A battle that stops the
+    // turn starts it again from 0. Observes only; called on the thread that
+    // processes the turn.
+    std::function<void(int done, int total)> progress;
 };
 
 struct TurnResult {
@@ -277,8 +285,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
 // training, its vehicles' came-from sectors reset (step 16), ground combat,
 // and the log pruned to this turn's entries. The destruction check
 // is the caller's: processTurn runs it right after; a turn-based game runs it
-// when the player ends the turn and checks destruction when the empire's next
-// turn comes up.
+// at the end of the empire's next turn start.
 void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers);
 
 // Applies one empire's command list, collecting rejections.
@@ -289,13 +296,15 @@ void applyOrders(const Rules& r, GameState& s, const EmpireOrders& orders, std::
 // Players take their turns one after another in empire order (destroyed
 // empires are skipped). A player's turn:
 //   1. starts (spec 05 §8 "Turn-based game", confirmed: binary): a human's
-//      destruction check (spec 05 §6); the start-of-turn step: AI state, the
-//      political step (counting everything since the empire's previous one)
-//      and the ministers that act while orders are given (all of them for a
-//      computer player, the Politics minister first), whose messages take
-//      effect at once; then its vehicles regain their movement and every
-//      group carries out its orders, the ministers' new ones included, at
-//      most 21 orders each; a computer player's destruction check;
+//      Lose mark (PlayerTurn::loseEnding, the client's ending); the
+//      start-of-turn step: AI state, the political step (counting everything
+//      since the empire's previous one) and the ministers that act while
+//      orders are given (all of them for a computer player, the Politics
+//      minister first), whose messages take effect at once; then its
+//      vehicles regain their movement and every group carries out its
+//      orders, the ministers' new ones included, at most 21 orders each; then
+//      the destruction check (spec 05 §6: a human destroyed then plays that
+//      turn, its last, marked dead: playsLastTurn);
 //   2. goes on while the player gives orders: each executes as it is given
 //      (applyLive). Moves spend movement points; a step into a sector with
 //      enemies fights there at once and the order fails (a human is asked
@@ -304,8 +313,11 @@ void applyOrders(const Rules& r, GameState& s, const EmpireOrders& orders, std::
 //      (empireEndOfTurn), and the turn passes to the next living empire.
 // After the last player the date advances, then the design cleanup (a new
 // year), the victory check and the event step run, and the per-turn flags
-// are cleared, as in a simultaneous turn. Computer players take their turns
-// in sequence the same way. GameState::playerTurn records whose turn it is.
+// are cleared, as in a simultaneous turn. A victory check that is met makes
+// the next game turn the last (GameState::lastTurn): every player plays it,
+// and when it ends the game is over, before anything else runs. Computer
+// players take their turns in sequence the same way. GameState::playerTurn
+// records whose turn it is.
 
 inline bool turnBased(const GameState& s) { return !s.options.simultaneous; }
 
@@ -322,9 +334,20 @@ struct LiveOptions {
     // nothing further is played. Hosts and automated runs leave it off and
     // play on.
     bool endWithoutHumans = false;
+    // Sees the game as it is right before a human player's turn starts (its
+    // turn due, not started), each time that happens in the call: the
+    // client's autosave, written at the start of the first human's turn of a
+    // game turn before that turn's start (spec 06 §6.1, confirmed: binary).
+    // Observes only.
+    std::function<void(const GameState&)> beforeHumanTurn;
 
     bool computerPlaysFor(EmpireId e) const;
 };
+
+// Turn-based games: `e` is a human-controlled empire destroyed at the start of
+// its turn that is still playing that turn, its last (spec 05 §6, spec 06 §7
+// Q99, confirmed: binary).
+bool playsLastTurn(const GameState& s, EmpireId e);
 
 // The empire whose turn it is (turn-based games): the one in progress, or
 // the first living empire when the next game turn has not started. Invalid

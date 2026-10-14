@@ -402,10 +402,11 @@ starting planet is a capital of colony type "Homeworld", and the home system is 
 when the game is created (`Empire::homeSystem`). A new game and Quick Start are
 turn-based. Maps are saved and loaded in our own format ([MAPS.md](MAPS.md),
 `map_file.hpp`) with starting points placed first; the game keeps the points a later Save
-Map writes (`GameState::startingPoints`). The autosave choices are applied after each
-processed game turn in local and hotseat games of either turn style, into files named
-after the last digit of the turn count, and can be changed during the game (Empire
-Options). Spec 01 §14 Q41–Q43 were answered from the executable; the engine follows them,
+Map writes (`GameState::startingPoints`). The autosave choices are applied in local and hotseat games of either turn style (after a
+simultaneous turn is processed; in a turn-based game, since 2026-10-14, at the start of the
+first human's turn of each game turn, before that turn starts, the file marked as an autosave
+so that loading it opens the Next Player window: spec 06 §6.1), into files named after the
+last digit of the turn count, and can be changed during the game (Empire Options). Spec 01 §14 Q41–Q43 were answered from the executable; the engine follows them,
 and since 2026-10-01 a comet or warp point entry of a system template is placed like any
 other entry (its position and a record drawn, its sector marked and recorded for `Same As`)
 and keeps an empty name for the letters of later planets there (Q43).
@@ -546,7 +547,10 @@ Q88–Q96 (their remaining choices are noted beside each answer):
   **endings** (Q83): the original's behaviour. A human-controlled empire found defeated plays a
   last turn (the Lose ending) and is marked dead at its end (`score::checkDestruction`), so a
   lone human sees Lose, then Human Dead at the next End Turn; the conquest of the galaxy shows
-  the Victory picture and asks whether to play on.
+  the Victory picture and asks whether to play on. Since 2026-10-14 a turn-based game destroys
+  the human at the end of that last turn's start, as the original does (Q99), plays one more
+  game turn after its victory check is met, every human seeing the Victory ending at its own
+  turn, and ends with the Game Completed box (spec 05 §6).
 - **Help** and the **Galaxy Map** (spec 07 session 5): the original's layout, frame, places and
   button slots; Help's Weap Mount tab and Manual button.
 
@@ -579,10 +583,16 @@ different:
 |---|---|---|---|
 | E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Moves shown in the system window (`ship_glides.cpp`, `turn_start.cpp`) | The moves of an engine call glide together once it has made them all, several steps of one group as one straight glide; a battle that stops the call is shown before the moves that led to it; a click or a key shows a turn's moves at once | Each group's steps animated one after another as they are made, a battle when it starts (spec 06 §2.4, §2.7, §7 Q112) | L |
-| Last turn of a human defeated in its own turn-based turn (`turn_based.cpp` `finishPlayerTurn`) | Marked dead at the end of that turn, without a Lose ending first | Marked dead only after its Lose window (spec 06 §7 Q83); the original's check when a human loses everything during its own turn is not described (inferred) | L |
 | Choosing one of the original's scenarios (`screens/learn_screens.cpp`) | The intro's Tutorial and Scenario open OpenSE4's Learn window; its Scenarios tab lists the original's scenarios beside the mods', and Start Game starts one. The scenario folder is the install's, or that of the last classic mod in use that has one | Tutorial starts the tutorial at once; Scenario opens the "Load Scenario" picker with Change Directory; the folder is that of the `Path.txt` mod when it has one (spec 06 §1.1, §5.6) | L |
 | Scenario pages in network and e-mail games (`classic_mode.cpp` `openTurnPage`) | Each player's own computer shows that player's page at the start of their turn | The host's turn processing shows every human's page on the host's screen; a network player never sees them (spec 06 §5.6) | L |
 | Scenario quirks not copied (`classic_scenario.hpp`) | `For Players` is a list of numbers; "Page i of n" counts i within the page's series; loading a scenario game from the intro keeps it one; a new game never carries the tutorial's flag; the page shown last is kept per empire | Player 1 also gets player 11's pages; i is the page's place in the whole file; Load Game and Resume Game from the intro drop scenario mode; the Game Menu's New keeps the tutorial's flag, "T" and pages (inferred); one page shown last for the game (spec 06 §5.6, spec 08 §3.4) | L |
+| The endings that end the game (`ClassicMode::leaveToFront`) | Game Completed, Human Dead, No to playing on after the conquest and a fourth wrong Next Player password return to the intro | The program exits (spec 06 §1.7) | L |
+| Victory in a simultaneous game (`score::checkVictory`) | The game ends at once: the Victory ending at the next turn's start, no further turn | Not described: a turn-based game plays one more game turn first (spec 05 §6, open question 79) | L |
+| Sign-in passwords (`ClassicSession::passwordMatches`, `loginPasswordMatches`) | Only a hash is kept: the trimmed password in small letters, then as typed, is tried, so a password set with capitals opens Login To Game only with them; "master" is recognised in a local game's hash only | The plain password: Next Player trims and keeps case, Login To Game trims and ignores case (spec 06 §1.1, §1.2.1) | L |
+| Login To Game's Game Master (`ClassicMode::drawLogin`) | Goes on to the first human's turn behind the Next Player window; a destroyed or computer-controlled empire's row signs nobody in; Cancel returns to the intro | The host's between-turns view (player 0) (spec 06 §1.1) | L |
+| Save Game (`screens/game_menu.cpp`) | OpenSE4's window: a name box, the saves, Save, Change Folder (the original's Change Directory), Save for SE IV; questions before overwriting and deleting; it stays open after saving | The Load Game dialog titled "Save Game": a click overwrites at once, New Save Game asks for the name; Delete Game deletes at once and also removes the file of the same name in `temp/` (spec 06 §1.2) | L |
+| Progress window (`ClassicMode::drawProgress`) | Shown while a local or hotseat simultaneous turn is processed, its steps ours | Also while the network host processes a turn and while a new game is created and its players placed (spec 06 §1.7) | L |
+| Data file errors at start-up (`ClassicMode::drawDataErrors`) | A window per data file, then the game goes on with what loaded (installed data without mods); mods with errors start the game without them | A window per data file; whether the game goes on is not known (spec 06 §1.1, inferred) | L |
 
 The 2026-10-11 audit of the original's designs, research and intelligence windows (spec 05
 §2.1, spec 06 §7 Q92–Q94 and Q99(c), confirmed: binary) brought these windows in line: the
@@ -640,7 +650,7 @@ the intro's "Loading:" and "Complete". What still differs, and OpenSE4's own add
   other than "Average" and the effect wording; Begin Game without a chosen portrait asks for
   one; Change Directory asks for a folder by name (with Default); the Compare Culture
   Modifiers window is our table; the pictures under the page buttons come from the seed;
-  Victory Conditions keeps whole years; the lists use the shared arrow column; loading a game shows no "Login To Game" list of its empires and the Game Master.
+  Victory Conditions keeps whole years; the lists use the shared arrow column.
 
 Since 2026-10-03 the battle windows follow session 5 and spec 06 §7 Q86, Q87, Q97 and Q98:
 Tactical Combat's places, panels, weapon cells and title-strip buttons, the Combat Piece

@@ -77,19 +77,37 @@ sit below; **Close is always the bottom slot** [S].
 | Game Setup (8 pages) | Configure a new game. Pages: Quadrant, Events, Technology, Player Settings, Players, Victory Conditions, Game Settings, Mechanics. | Full-screen; page buttons plus Begin Game / Cancel on every page. Quadrant page has a map preview with Generate Map Now and Load Map; Players page has Add New, Add Existing, Remove, Save To File [T]. Opens on the Players page with an empty list and forgets everything between games; every page's layout is in spec 07 session 5 (observed). | Intro → New Game; File Menu → New. |
 | Empire Setup (6 pages) | Create an empire. Pages: General, Environment, Culture, Characteristics, Advanced Traits, Description. | Full-screen; page buttons plus Create Empire / Cancel. General page has a race-style picture chooser with arrows (the race portrait and a ship of the style side by side), design-name-file picker, minister style [T], and Password and Email boxes. It starts empty; the ▽ buttons open 340×370 list pickers; layouts in spec 07 session 5 (observed). | Game Setup → Players → Add New. |
 | Culture Modifiers | Compare cultures. | List; Close. | Empire Setup → Culture. |
-| Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. A 420×520 dialog: "Save Game Name" and "Date" columns, names in capitals, Change Directory and Cancel under the list (observed, spec 07 session 5); Add Existing's "Load Empire" is the same dialog. | Intro; File Menu → Load. |
+| Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. A 420×520 dialog: "Save Game Name" and "Date" columns, names in capitals, Change Directory and Cancel under the list (observed, spec 07 session 5); Add Existing's "Load Empire" is the same dialog. It opens sorted by name, A to Z; a click on the "Save Game Name" or "Date" heading sorts by that column, dates newest first, with the usual five-key history of §7 Q24 (confirmed: binary; that a heading click does it, inferred). Ours since 2026-10-14 (`FileSortHistory`, `screens/file_list.hpp`), the history kept while the dialog is open. | Intro; File Menu → Load. |
 | Load Map | Pick a saved map. | (not documented) | Game Setup → Quadrant. |
 | Scenario chooser | Pick a scenario. | The Load Game picker in scenario mode, titled "Load Scenario": the first column "Scenario Filename", then Date. It lists the scenario folder's files whose lower-case name contains "_settings.txt", each as its name without that part in capitals, with the file's date; Change Directory and Cancel as in Load Game. A row starts the scenario with the stem folder + name (§5.6); Cancel does nothing. The Tutorial button starts the scenario folder's Tutorial without the picker (confirmed: binary). Ours: the Learn window's Scenarios tab lists them beside the mods' scenarios (§5.6). | Intro → Scenario. |
 | Credits | Rolling credits. | — | Intro. |
-| Login / password prompt | Enter an empire's (or the game master's) password before playing a turn. | — | Loading a multiplayer or password-protected save [T]. |
+| Login To Game | Pick who plays a simultaneous game that is loaded. | A row per empire: its flag, its name (or "Dead") and its emperor's name (blank when dead), then a "Game Master" row marked "(Host)"; a password box, Login and Cancel. Both passwords are compared trimmed and in small letters; a wrong one gives an invalid-password note. An empire signs in only when the game's data-set checksums match the install's ("Invalid Data Files"); Game Master opens the host's view (player 0), an empire that empire's turn. The TCP/IP host's continuation of a game lists the empires only (confirmed: binary). Ours since 2026-10-14: see below the table. | Loading any simultaneous game, on one machine or several, a single player's included [T]. |
+| Data File Errors | Report a data file's errors at start-up. | A window per data file with errors, its title naming the file and its path ("<File> ... Errors: <path>"), the list of errors and Close (confirmed: binary). Whether the game then goes on is (inferred). Ours since 2026-10-14: the same windows, one after another, over the intro, when the installed data has errors without mods; the client goes on with what loaded (inferred). Errors that come with mods start the game without the mods, or not at all for mods given on the command line, as before. | Program start. |
+
+**Login To Game in OpenSE4** (since 2026-10-14, `ClassicMode::drawLogin`): it opens when a
+simultaneous game is loaded from a saved game (Load Game, Resume Game, the Game Menu's Load,
+`--load`; not a tutorial's game resumed), before the main window shows. Our client differs:
+- OpenSE4 keeps only a hash of each password (or, in a network or e-mail host's file, a
+  verifier). The password typed is tried trimmed and in small letters, then trimmed as typed,
+  then as typed (`ClassicSession::loginPasswordMatches`): a password set in small letters, as
+  every imported one is, opens in any letter case, but one set with capitals opens only with
+  those capitals.
+- OpenSE4 has no host view on one machine: Game Master (with the game's master password, an
+  empty one in a local game) goes on to the first human player's turn behind the Next Player
+  window (§1.2.1), which asks that empire's password (inferred stand-in).
+- A destroyed empire's row, and a computer-controlled one's, sign nobody in.
+- Only a header that names a data set's identity (a host's or e-mail game file) is checked for
+  "Invalid Data Files"; OpenSE4's local saves keep the game folder's name, and their mods are
+  checked when they load.
+- Cancel returns to the intro.
 
 ### 1.2 Main window and the windows opened from its command buttons
 
 | Screen | Purpose | Regions / controls | Reached from |
 |---|---|---|---|
 | Main Window | Everything during a turn. | See §2. | Game start / load. |
-| Game Menu ("File Menu") | File operations. | Vertical buttons: New, Load, Save Game, Save Map, Save Empire, Players, Options, Delete Game, Quit, Close [T][S]. Save Map is enabled only when the game's setup lets players save the map; Save Empire asks whether to include the designs; Esc closes the menu (confirmed: binary). | F2 / first command button. |
-| Save Game, Delete Game | Name / remove a save. | Save Game: buttons New Save Game, Change Directory, Cancel; files go to the folder in §6.1 (confirmed: binary). | Game Menu. |
+| Game Menu ("File Menu") | File operations. | Vertical buttons: New, Load, Save Game, Save Map, Save Empire, Players, Options, Delete Game, Quit, Close [T][S]. Save Map is enabled only when the game's setup lets players save the map; Save Empire asks whether to include the designs; Esc closes the menu. New asks whether to cancel the game and start a new one; Yes drops the game and opens the eight-page Game Setup at once, over a blank backdrop with the star-map picture: its Begin Game starts the new game, its Cancel goes to the intro (confirmed: binary). Ours since 2026-10-14: New's Yes opens OpenSE4's Game Setup the same way, over its own background. | F2 / first command button. |
+| Save Game, Delete Game | Name / remove a save. | Save Game is the Load Game dialog titled "Save Game": the saves, name and date; New Save Game, Change Directory and Cancel. A click on a save overwrites it at once, without a question; New Save Game asks for the name ("New Save Game Name"), and a name that cannot be a file name gives "Invalid File Name." (titled "Error") and asks again; Change Directory saves to another folder this once; the window closes after saving, with no message. Delete Game is the same dialog: a click deletes that save, and a file of the same name in `temp/`, without a question, and closes. Files go to the folder in §6.1 (confirmed: binary). Our client differs: OpenSE4 keeps its own Save Game window (a name box, the saves listed, Save, Save for SE IV, Close) and asks before it overwrites or deletes a save. Since 2026-10-14 it has the original's Change Directory, captioned Change Folder (the whole caption does not fit our button): that window's saves go to another folder, the saves folder staying the default for the next one; and it refuses a name that cannot be a file name with that message (which names are refused is ours: `validSaveName`, `screens/file_list.hpp`). | Game Menu. |
 | Player Computer Control | Hand empires to the computer or take them back. | Check list titled "Empires Under Computer Control", 420x520, OK / Cancel: one row per empire in empire-number order (every empire, neutral and destroyed ones included) with a lamp, the empire's flag and its name; a lit lamp means computer-controlled. The same window serves the Combat Simulator [T] and Reset Passwords (§1.9). Rules in §1.2.1 (confirmed: binary). | Game Menu → Players. |
 | Options (per computer) | Sound, music, animation and autosave. | Lamp list under headings; Close. Full list in §1.9 (confirmed: binary). | Game Menu → Options. |
 | Designs | Browse and manage designs. | Design list; detail pane (stats, then either components or, with Stats\Strategy on, build/loss/kill counts and default strategy). Tabs: Ship Designs, Unit Designs, Enemy Ship Dsgn, Enemy Unit Dsgn; the window opens on the tab kept with the empire's options. Actions: Create, Copy, Edit, Upgrade, Make Obsolete, Hide Obsolete, Stats\Strategy, Simulator [T]. Which are lit, and what the enemy tabs list: §7 Q93 (confirmed: binary). | F3. |
@@ -115,7 +133,7 @@ sit below; **Close is always the bottom slot** [S].
 | Waypoints | Manage waypoints. | Waypoint list; quadrant map; ships heading there; yards auto-sending there; Set (returns to main window to pick a spot), Delete, Rename [T]. | Empire Status. |
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Launching, Formation); Add [T]. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
-| Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. | F1. |
+| Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. The original's Manual opens the installed `manual\SE4 Manual.htm` in the browser at once (confirmed: binary); ours opens OpenSE4's Manual window, and since 2026-10-14 the gap (slot 11) holds Original Manual, which opens the installed manual in the browser, when the install has one. | F1. |
 | Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). Ours: a weapon whose type the mount does not take keeps its plain figures (inferred, §7 Q113). | Help; Create Design. |
 | Galaxy Map | Enlarged strategic map. | See §2.6. | Right-click the galaxy panel. |
 
@@ -131,8 +149,8 @@ All rules of this subsection are (confirmed: binary).
 - When the game has a master password, an input box "Enter Game Master Password" comes
   first. Cancel does nothing; a wrong entry shows "Invalid Password" and the window does not
   open. This comparison is exact (letter case and spaces count), unlike the sign-in windows,
-  which ignore letter case and leading or trailing spaces. Without a master password the
-  window opens at once.
+  which ignore leading or trailing spaces, and Login To Game letter case too (§1.1; the Next
+  Player window keeps it, below). Without a master password the window opens at once.
 - Nothing else limits who may switch what. Whoever passes the password check may switch any
   empire: their own, other humans', computer players' and neutral ones.
 
@@ -188,8 +206,8 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
   remain.
 - **No human left:** in both of the loops above, after each End Turn the game checks whether
   any living empire is human-controlled. If none is, it shows the ending for "all human
-  players eliminated" with a Finale "Human Dead" picture and plays no further turn. The host's
-  processing of a game on different machines has no such check.
+  players eliminated" with a Finale "Human Dead" picture and plays no further turn: the
+  program exits. The host's processing of a game on different machines has no such check.
 - **Simultaneous on different machines, at the host** (Game Master view between turns): the
   switch goes into the next processed turn and into the game file sent out. A missing orders
   file of a computer-controlled empire is not reported. The host's stand-in rule (spec 05
@@ -215,6 +233,31 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
 - The simultaneous sign-in lists every empire, computer-controlled ones included, plus Game
   Master.
 
+**The Next Player window** (confirmed: binary).
+- It comes at each human player's turn whenever more than one empire is human-controlled,
+  destroyed ones included, so a hotseat game's last surviving human still sees it every turn.
+  In a turn-based game it comes before that player's turn starts: then the autosave if one is
+  due (§6.1), the endings (§1.9), and the turn's start (spec 05 §8).
+- A 276x188 window: the empire's picture and a line naming the empire and inviting its player,
+  and a password box when the empire has a password (not "master", above). Spaces before and
+  after the password are ignored and letter case counts (Login To Game, §1.1, ignores both).
+  A wrong password changes the box's label to "Invalid Password:"; the fourth wrong one in a
+  row exits the program.
+- Loading a game: an autosave or a hand-over file opens the Next Player window, then that
+  player's turn starts; a plain save asks nothing (spec 08 §5); every simultaneous game,
+  a single player's included, asks Login To Game (§1.1) instead.
+
+OpenSE4 follows this since 2026-10-14 (`ClassicMode::drawNextPlayer`, `nextPlayerDue`) in
+local and hotseat games, with the map hidden while it waits, its own Begin Turn and Quit Game
+buttons, the empire's race portrait, and a line of its own with the game date. Our client
+differs: OpenSE4 keeps only a hash of the password, so the password typed is tried trimmed,
+then as typed (one set with spaces around it); "master" is recognised in a local game's hash
+only, not in a network or e-mail game's verifier; and the fourth wrong password returns to
+the intro, where the original exits (§1.7). Before 2026-10-14 the window came only when the
+turn passed to another human, a loaded game counted only living humans, passwords were
+compared exactly, there was no limit on tries, and a loaded simultaneous game asked no
+sign-in.
+
 **The engine and client follow this subsection since 2026-10-01:**
 - The Players window (`playersPopup` in `src/client/classic/screens/game_menu.cpp`) is the
   check list above, every empire in number order, behind the master password when the game
@@ -230,7 +273,10 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
   round trip plays at Medium as in the original.
 - A local or hotseat game in which no living empire is human-controlled plays no further
   turn (`ClassicSession::humansGone`, `LiveOptions::endWithoutHumans`) and shows the Finale
-  "Human Dead" ending; hosts and automated runs play on.
+  "Human Dead" ending; hosts and automated runs play on. A human destroyed at the start of its
+  turn, playing that turn marked dead (spec 05 §6), still counts until the turn ends
+  (`ai::anyHumanLeft`). Our client differs: closing the ending returns to the intro, where the
+  original exits (§1.7, since 2026-10-14).
 - On a player's copy of a game on different machines (network or e-mail), the window
   changes only that copy; for the player's own empire the session also gives
   `cmd::SetMinisters` (every area and the fleets' flag) and `cmd::SetMinister` (complete
@@ -405,6 +451,27 @@ cultural, population-level and mood lines.
 | Movement log replay | Not a window: in simultaneous games the main window replays the host's 30-day movement (full, stepped by day, per ship, rewind) [T]. Exact behaviour: §7 Q51 (confirmed: binary). |
 | Tutorial / Scenario text window | A page of the scenario's text: title, a 128x128 picture, Previous and Next through its series; re-opened with Ctrl+H, and in the tutorial with the "T" buttons. Layout and rules in §5.6 (confirmed: binary). |
 | Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. Ours: §1.9 "Other Settings.txt keys". |
+| Game Completed | An OK box, titled "Game Completed", saying the game is over: at the first wrap of the game turn after a turn-based game's last turn (spec 05 §6), before anything of the next game turn runs (confirmed: binary). |
+| Progress | A small modal window, a caption centred over a dark blue gauge from 0 to 100 %: "processing the turn" while a simultaneous game's turn is processed at the host (not shown when the host runs without a window; the work counted in the number of empires × 4 + 30 steps), and "creating the galaxy" and "placing the players" while a new game starts (confirmed: binary). |
+
+**Endings that end the game** (confirmed: binary). Each of these ends the turn loop and exits
+the program: No to "Do you want to continue playing?" after the conquest of the galaxy; the
+Human Dead ending (§1.2.1 "No human left"); Game Completed; the fourth wrong password in the
+Next Player window (§1.2.1); and Yes to "shut down now?" after a turn of a turn-based game on
+different machines (No goes back to the intro). Our client differs: it returns to the intro
+instead, at each of them that it has (since 2026-10-14; the different-machines question is not
+OpenSE4's: its network and e-mail games hand turns over otherwise).
+
+**Progress and Game Completed in OpenSE4** (since 2026-10-14). A local or hotseat simultaneous
+game's turn is processed on a thread of its own behind the Progress window ("Processing the
+turn"), the windows meanwhile showing the game as it was (`ClassicSession::setBackground`,
+`ClassicMode::drawProgress`); the gauge counts the engine's steps (`TurnOptions::progress`: each
+empire's orders, messages, start of turn and end-of-turn processing, and the 30 movement days,
+inferred); a battle the Settings show restarts it from 0. A script's run processes the turn at
+once, without the window. Our client differs: the network host's processing and the start of a
+new game show no Progress window (the setup screens start the game at once). Game Completed is
+`ClassicMode::drawGameCompleted`, after the last turn's moves and battles are shown; its OK
+returns to the intro.
 
 ### 1.8 Planets, Construction Queues, Colonies and Ships\Units windows
 
@@ -712,7 +779,12 @@ Other Settings.txt keys the client must honour (confirmed: binary):
   `finale.hpp`): one picture of the kind's list drawn with a source of its own, a few words of
   ours, Scores and Close, the endings due at a turn's start one after another in the order of
   §7 Q83; the engine marks a human-controlled empire dead only at the end of the last turn
-  that began with it defeated (`score::checkDestruction`).
+  that began with it defeated (`score::checkDestruction`) in a simultaneous game, and at the
+  end of that turn's start in a turn-based game, which it then plays marked dead (§7 Q99,
+  since 2026-10-14). The Lose ending of a turn-based game reads the engine's mark from the
+  moment the turn came up (`PlayerTurn::loseEnding`); a turn-based game's last turn shows the
+  Victory ending to every human at its own turn, saying it is the last turn and pointing to
+  the Scores window, where every score shows (`score::scoreVisible`, inferred).
 - `Use Old Log Political Message Display`: the log layout (§4.1, §7 Q11).
 - `Create Log Text File for Game` is read but never used by the original: nothing to honour.
 
@@ -1872,11 +1944,15 @@ Claimed scheme over the empires picked with Select All, Allies, Enemies or Us.
 the shown system animated as they are made (§2.4), and a battle shown in a window interrupts
 whatever started it (§1.10.5); the Log opens only when the player gets the turn. So a
 turn-based End Turn shows, in this order: the computer players' moves and their battles; at
-the start of the human's turn the endings (the destruction check comes first, spec 05 §8,
-§7 Q83); then the human's own orders carried over, animated as they run, with the Attack
-Sector questions, the colony-type picker (shown when a colonize order completes, §1.3) and a
-failed Colonize's message box they raise; the Log last (confirmed: binary for each part;
-their order as a whole inferred from the turn's sequence). Since 2026-10-06 our client keeps
+the start of the human's turn the Next Player window (when several empires are
+human-controlled, §1.2.1), the autosave if due (§6.1), the endings (the Lose ending's test is
+made before the turn's start, the destruction check at its end, spec 05 §8, §7 Q99); then the
+human's own orders carried over, animated as they run, with the Attack Sector questions, the
+colony-type picker (shown when a colonize order completes, §1.3) and the message boxes of
+failed orders they raise (spec 03 §8); the Log last (confirmed: binary for each part; their
+order as a whole inferred from the turn's sequence). Our engine runs the whole turn start in
+the End Turn call, so the Next Player window comes before what that start shows, and the
+autosave is written by the session before the start runs (`LiveOptions::beforeHumanTurn`). Since 2026-10-06 our client keeps
 this order (`turnStartGate`, `client/classic/turn_start.hpp`; `ClassicMode`): first the moves
 of the shown system glide (§2.4 "Moves as they are made"), then the battles to watch (a
 network or e-mail game's, after the turn, §1.10.5), the endings, the questions, the picker
@@ -2390,6 +2466,12 @@ carry a package [T]. Types:
   manipulation, deleting research/intel projects, removing the first item of a
   construction queue) (confirmed: binary; which actions ask: §7 Q28, Q46); always-on
   prompts for surrender, quitting as TCP/IP host or player [S][M]. In every Yes/No prompt, Esc and Enter mean No (§3.4).
+- **Quit**: during a game, every close of the main window (its close button, Alt+F4, the Game
+  Menu's Quit) asks whether to end the game, Yes or No; No keeps playing. It is not asked
+  while a turn is processed, nor again once a quit was confirmed (confirmed: binary). Our
+  client asks the same since 2026-10-14 (`Mode::closeRequested`, `ClassicMode::drawQuitQuestion`;
+  the Game Menu's Quit has its own question), in the Next Player and Login To Game windows
+  too; a script's run quits at once.
 - **TCP/IP chat** with a sound on receipt [M].
 
 ### 4.4 Status icons
@@ -2966,8 +3048,16 @@ All of this subsection is (confirmed: binary).
   the name typed in the empire file picker (§7 Q72).
   Scenarios are listed from `Scenarios/*_Settings.txt`.
 - **Autosave** writes `AutoSav<d>.gam` into the save folder, where d is the last digit
-  of the turn number (ten rotating files), after turn processing whenever the turn
-  number is a multiple of the chosen interval (§1.9).
+  of the turn number (ten rotating files), whenever the turn number is a multiple of the
+  chosen interval (§1.9): in a simultaneous game after turn processing; in a turn-based game
+  at the start of the first human player's turn of each new game turn, after its Next Player
+  window and before its endings and its turn's start. The file is marked as an autosave, and
+  loading it opens the Next Player window, then that player's turn starts (spec 08 §3.1, §5).
+  OpenSE4 does the same since 2026-10-14 (`SaveInfo::autosave`, save format 10;
+  `ClassicSession` through `LiveOptions::beforeHumanTurn`): the autosave holds the game as it
+  was before that turn's start, which loading it runs again. It writes none for the game turn
+  a session begins in (a new or loaded game; inferred). Before, a turn-based game was saved
+  after the whole End Turn call, with that turn's start already made.
 - **Turn-based game on different machines.** After each player's turn the game is saved
   as `<game>_<player>_<turn>.gam` (plain numbers); the player is told the file name and
   asked whether to quit.
@@ -4601,9 +4691,9 @@ counterpart:
     alignment inside a column is ours: names left, numbers right; our header words and
     message text), and the endings at a turn's start in that order, one after another, a
     human-controlled empire marked dead at the end of its last turn (`score::checkDestruction`).
-    Our client differs: a human who loses everything during its own turn of a turn-based game
-    is marked dead at the end of that turn, without a Lose ending first (inferred); after the
-    conquest's question, No leaves the game for the intro (inferred).
+    Since 2026-10-14 a turn-based game follows Q99 (a): the destruction check comes at the end
+    of a human's turn start, and the human plays that turn marked dead. After the conquest's
+    question, No leaves the game for the intro, where the original exits (§1.7).
 84. **Player Computer Control and Reset Passwords: OpenSE4's choices (§1.2.1, §1.9).**
     Marked (inferred) in the code:
     - Our engine keeps neutrality and the computer-controlled mark in one field
@@ -5180,6 +5270,17 @@ Implementing Q83, Q84, Q88–Q96 and the session 5 windows on 2026-10-03 left th
     fleet member or colony given orders, or whose minister button was pressed. Do other
     commands (a rename, a construction queue change) mark an object too?
 
+    **Answer (a), (b)** (confirmed: binary): (a) No destruction check runs for a human at the
+    end of its own turn: one that lost everything during it is alive while the others play. At
+    its next turn's start, in order: the Next Player window (when several empires are
+    human-controlled), the autosave if due, the Lose ending (when it owns no colony and no
+    vehicle), the turn's start (orders carried over, ministers, Log); then the destruction
+    check destroys it at once (the others are told, its treaties end, it is marked dead), and
+    it plays that last turn marked dead. The spec's earlier "marked dead at the end of that
+    last turn" was not right for turn-based games. (b) No ends the game: the program exits
+    (§1.7). Our engine follows (a) since 2026-10-14 (`turn_based.cpp` `startPlayerTurn`,
+    `PlayerTurn::loseEnding`, `playsLastTurn`; spec 05 §6, §8), and our client returns to the
+    intro for (b).
     **Answer to (c)** (confirmed: binary): spec 05 §2.1 "Adding a project" and "A project's
     box". Intelligence Defense takes no target; every other project asks for the empire in
     "Select Empire" (no "Any"), then, by its type, in "Select Ship", "Select Planet",
