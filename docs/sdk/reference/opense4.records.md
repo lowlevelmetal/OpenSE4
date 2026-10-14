@@ -109,6 +109,7 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 | `design_condensed` | `bool` | The designer's condensed view. |
 | `designs_hide_obsolete` | `bool` | The Designs window hides obsolete designs. |
 | `designs_stats_view` | `bool` | The Designs window shows statistics. |
+| `empires_tab` | `int` | The Empires window's tab: 0 Treaty, 1 Trade, 2 Tariff. |
 
 ## `Order`
 

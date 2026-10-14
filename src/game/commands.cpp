@@ -905,14 +905,14 @@ struct Applier {
                 !emp().relation(third).contact)
                 return R::fail("Choose an empire we have met, other than the recipient");
         }
-        // A subjugated race's player cannot propose a treaty, not even to its
-        // master; Break Treaty and Declare War stay open to it (spec 05 §3.2,
-        // confirmed: binary). The original checks this in the player's
-        // Communicate window only, so a computer player's and a minister's
-        // messages are not checked; the engine checks every player's message.
-        if ((m.type == MessageType::ProposeTreaty || m.type == MessageType::CounterTreaty) && emp().kind == PlayerKind::Human &&
-            !c.minister && diplomacy::isSubjugated(s, e))
-            return R::fail("Subjugated races cannot propose treaties");
+        // What the player's Communicate window lets it send (spec 06 §4.2,
+        // spec 05 §3.2, confirmed: binary): a subjugated race proposes no
+        // treaty, a trade has items on both sides, and so on. The original
+        // checks it in the window only, so a computer player's and a
+        // minister's messages are not checked; the engine checks every
+        // message a player writes, so a network player cannot get round it.
+        if (emp().kind == PlayerKind::Human && !c.minister)
+            if (const std::string why = diplomacy::playerMessageProblem(s, e, m); !why.empty()) return R::fail(why);
         // The game option limits the message types a player picks; the
         // answer to a request for a gift or tribute (the computer player's,
         // spec 05 §7.4, which never reads the option) is always allowed.

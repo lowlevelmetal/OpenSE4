@@ -284,6 +284,17 @@ struct StatisticsRow {
     TurnStats stats;
 };
 
+// What one other empire gives us by trade and tariffs in the coming turn, for
+// the Empires window's Trade and Tariff tabs (spec 06 §1.5).
+struct PartnerIncome {
+    EmpireId empire;
+    Resources trade;            // minerals, organics and radioactives by trade (Trade Alliance up)
+    int64_t research = 0;       // research by trade (Trade and Research Alliance up)
+    int64_t intelligence = 0;   // intelligence by trade (Partnership)
+    Resources tariffReceived;   // its tariff, when it is our subject or protectorate
+    Resources tariffGiven;      // our tariff, when it is our master
+};
+
 // Income/expense breakdown of the last processed turn (Empire Status window).
 struct EconomyReport {
     Resources colonies, trade, tariffsIn, remoteMining, otherIncome;
@@ -292,6 +303,9 @@ struct EconomyReport {
     Resources storageCap;
     int64_t research = 0;
     int64_t intelligence = 0;
+    // The trade and tariffs above, empire by empire: one entry for each living
+    // empire with something to give or take, in empire order (save format 10).
+    std::vector<PartnerIncome> partners;
 };
 
 // What an empire knows about the galaxy (spec 01 §6).

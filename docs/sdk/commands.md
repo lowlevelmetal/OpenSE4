@@ -622,10 +622,14 @@ Replaces the intelligence queue.
 ### `send_message`
 
 Sends a diplomatic message. The engine gives it its id, sender and date.
-`minister` marks a message the computer player or a Politics minister writes,
-which is not checked as a player's is: a player's request about a third empire
-must name an empire it has met, and a player whose race is subjugated cannot
-propose a treaty.
+A human player's message is refused when the original's Communicate window
+would not send it: a request about a third empire must name an empire it has
+met; a proposal names a treaty from Non-Intercourse to Partnership, and a
+subjugated race proposes none; Break Treaty needs Non-Aggression or better; a
+trade has items on both sides and no "Any" item on the side it gives; a gift
+or tribute holds items, a request for one names what it wants; Surrender and
+the demand for it need Allow Surrender. `minister` marks a message the
+computer player or a Politics minister writes, which is not checked so.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -638,10 +642,10 @@ propose a treaty.
 
 ### `answer_message`
 
-Answers a message delivered to us: accept or refuse, with a text.
-`minister` marks an answer the computer player or a Politics minister gives,
-which is not checked as a player's is: a player whose race is subjugated
-cannot accept a treaty.
+Answers a message delivered to us: accept or refuse, with a text. A human
+player whose race is subjugated cannot accept a treaty. `minister` marks an
+answer the computer player or a Politics minister gives, which is not checked
+so.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1284,6 +1288,7 @@ plus one, newest first, 0 for none.
 | `design_condensed` | bool | The designer's condensed view. |
 | `designs_hide_obsolete` | bool | The Designs window hides obsolete designs. |
 | `designs_stats_view` | bool | The Designs window shows statistics. |
+| `empires_tab` | int | The Empires window's tab: 0 Treaty, 1 Trade, 2 Tariff. |
 
 ## Enumerations the commands use
 

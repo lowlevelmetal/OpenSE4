@@ -382,9 +382,15 @@ void io(Ar& ar, TurnStats& t) {
 template <class Ar> void io(Ar& ar, StatisticsRow& r) { fields(ar, r.empire, r.stats); }
 
 template <class Ar>
+void io(Ar& ar, PartnerIncome& p) {
+    fields(ar, p.empire, p.trade, p.research, p.intelligence, p.tariffReceived, p.tariffGiven);
+}
+
+template <class Ar>
 void io(Ar& ar, EconomyReport& e) {
     fields(ar, e.colonies, e.trade, e.tariffsIn, e.remoteMining, e.otherIncome, e.tariffsOut, e.maintenance, e.construction,
            e.lostToStorage, e.undelivered, e.storageCap, e.research, e.intelligence);
+    if (formatVersion(ar) >= 10) fields(ar, e.partners);   // format 9 had no breakdown by empire
 }
 
 template <class Ar>

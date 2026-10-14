@@ -783,6 +783,30 @@ TradeIncome computeTrade(const Rules& r, const GameState& s, EmpireId e) {
     return t;
 }
 
+// The trade and tariffs of the report empire by empire (the Empires window's
+// Trade and Tariff tabs, spec 06 §1.5): from each living partner what trade
+// brings (diplomacy::tradeFrom), from each subject or protectorate its tariff,
+// and to our master the tariff our income step takes (`ourTariff`).
+std::vector<PartnerIncome> partnersOf(const Rules& r, const GameState& s, EmpireId e, const Resources& ourTariff) {
+    std::vector<PartnerIncome> out;
+    if (!livingEmpire(s, e)) return out;
+    const EmpireId master = diplomacy::masterOf(s, e);
+    for (const Empire& x : s.empires) {
+        if (x.id == e || !x.alive) continue;
+        PartnerIncome p;
+        p.empire = x.id;
+        const diplomacy::Generated t = diplomacy::tradeFrom(r, s, e, x.id);
+        p.trade = max(t.resources, Resources{});
+        p.research = std::max<int64_t>(0, t.research);
+        p.intelligence = std::max<int64_t>(0, t.intelligence);
+        if (diplomacy::masterOf(s, x.id) == e) p.tariffReceived = max(diplomacy::tariffsPaid(r, s, x.id), Resources{});
+        if (master == x.id) p.tariffGiven = ourTariff;
+        if (!p.trade.isZero() || p.research > 0 || p.intelligence > 0 || !p.tariffReceived.isZero() || !p.tariffGiven.isZero())
+            out.push_back(p);
+    }
+    return out;
+}
+
 void deposit(Resources& bank, const Resources& amount) {
     for (size_t k = 0; k < 3; ++k) bank.v[k] = addCapped(bank.v[k], amount.v[k]);
 }
@@ -894,13 +918,15 @@ void applyStorageCap(TurnContext& ctx, EmpireId e) {
 
 EconomyReport incomeReport(const Rules& r, const GameState& s, EmpireId e) {
     if (!e.valid() || e.index() >= s.empires.size()) return {};
-    EconomyReport rep = reportFrom(computeIncome(r, s, e));
+    const Income inc = computeIncome(r, s, e);
+    EconomyReport rep = reportFrom(inc);
     if (s.empire(e).alive) {
         const TradeIncome t = computeTrade(r, s, e);
         rep.trade = t.trade;
         rep.tariffsIn = t.tariffsIn;
         rep.research += t.research;
         rep.intelligence += t.intelligence;
+        rep.partners = partnersOf(r, s, e, inc.tariffsOut);
     }
     return rep;
 }
@@ -917,6 +943,7 @@ void updateReports(const Rules& r, GameState& s) {
             rep.tariffsIn = t.tariffsIn;
             rep.research += t.research;
             rep.intelligence += t.intelligence;
+            rep.partners = partnersOf(r, s, id, inc.tariffsOut);
             Resources bank = s.empire(id).stockpile + inc.net() + t.trade + t.tariffsIn;
             rep.maintenance = maintenanceCost(r, s, id);
             bank = max(bank - rep.maintenance, Resources{});

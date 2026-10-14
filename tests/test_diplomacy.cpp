@@ -56,6 +56,17 @@ MessageId send(GameState& s, EmpireId from, EmpireId to, MessageType type, Treat
     return s.messages.back().id;
 }
 
+// A message the player's window would not send (a break treaty at war, a
+// surrender with the option off), as a minister or computer player may.
+MessageId sendUnchecked(GameState& s, EmpireId from, EmpireId to, MessageType type) {
+    DiplomaticMessage m;
+    m.to = to;
+    m.type = type;
+    const CommandResult res = apply(politicsRules(), s, from, cmd::SendMessage{m, true});
+    REQUIRE_MESSAGE(res.ok, res.error);
+    return s.messages.back().id;
+}
+
 MessageId answer(GameState& s, EmpireId who, MessageId id, bool accept) {
     const CommandResult res = apply(politicsRules(), s, who, cmd::AnswerMessage{id, accept, {}});
     REQUIRE_MESSAGE(res.ok, res.error);
@@ -293,9 +304,14 @@ TEST_CASE("diplomacy: break treaty and declare war are immediate") {
     CHECK(hasMood(ctx, kA, "New Treaty War"));
     CHECK(hasLog(s, kA, "War Declared"));
 
-    // Breaking a war is not a way to make peace.
+    // Breaking a war is not a way to make peace. The player's window offers
+    // Break Treaty only from Non-Aggression up (spec 06 §4.2).
     nextTurn(s);
-    send(s, kB, kA, MessageType::BreakTreaty);
+    DiplomaticMessage breakWar;
+    breakWar.to = kA;
+    breakWar.type = MessageType::BreakTreaty;
+    CHECK(apply(politicsRules(), s, kB, cmd::SendMessage{breakWar}).error == "There is no treaty to break");
+    sendUnchecked(s, kB, kA, MessageType::BreakTreaty);
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::War);
 }
@@ -339,16 +355,45 @@ TEST_CASE("diplomacy: subjugation breaks the subject's other treaties") {
     CHECK(s.empire(kA).relation(kC).dominant);
     CHECK(diplomacy::masterOf(s, kC) == kA);
 
-    // The subject cannot sign anything else.
+    // A subjugated race's player can neither propose nor accept a treaty, not
+    // even with its master; Break Treaty and Declare War stay (spec 05 §3.2,
+    // confirmed: binary). A protectorate is not subjugated.
+    CHECK(diplomacy::isSubjugated(s, kB));
+    CHECK_FALSE(diplomacy::isSubjugated(s, kC));
+    CHECK_FALSE(diplomacy::isSubjugated(s, kA));
+    nextTurn(s);
+    DiplomaticMessage propose;
+    propose.to = kC;
+    propose.type = MessageType::ProposeTreaty;
+    propose.treaty = Treaty::NonAggression;
+    CommandResult res = apply(politicsRules(), s, kB, cmd::SendMessage{propose});
+    CHECK_FALSE(res.ok);
+    CHECK(res.error == "Subjugated races cannot propose treaties");
+    propose.to = kA;
+    CHECK_FALSE(apply(politicsRules(), s, kB, cmd::SendMessage{propose}).ok);
+    // A minister's (or a computer player's) message is not checked, as in the original.
+    CHECK(apply(politicsRules(), s, kB, cmd::SendMessage{propose, true}).ok);
+    // Nor can it accept one.
+    const MessageId toSubject = send(s, kC, kB, MessageType::ProposeTreaty, Treaty::TradeAlliance);
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    res = apply(politicsRules(), s, kB, cmd::AnswerMessage{toSubject, true, {}});
+    CHECK_FALSE(res.ok);
+    CHECK(res.error == "Subjugated races cannot accept treaties");
+    CHECK(apply(politicsRules(), s, kB, cmd::AnswerMessage{toSubject, false, {}}).ok);   // refusing is fine
+    // Nothing in the engine stops a treaty itself: a package's treaty item still works.
     diplomacy::setTreaty(ctx, kC, kB, Treaty::MilitaryAlliance);
-    CHECK(s.empire(kC).relation(kB).treaty == Treaty::None);
-    CHECK(hasLog(s, kB, "Treaty Not Possible"));
+    CHECK(s.empire(kC).relation(kB).treaty == Treaty::MilitaryAlliance);
+    diplomacy::setTreaty(ctx, kC, kB, Treaty::None);
 
-    // Third-party treaties are visible to allies only.
+    // Third-party treaties are visible to the empires we hold Non-Aggression or
+    // better with (spec 05 §3.2, confirmed: binary).
     CHECK(diplomacy::treatyVisible(s, kC, kA, kC));
+    CHECK(diplomacy::treatyVisible(s, kC, kA, kB));   // C's Protectorate with A is above Non-Aggression
+    diplomacy::setTreaty(ctx, kC, kA, Treaty::None);
     CHECK_FALSE(diplomacy::treatyVisible(s, kC, kA, kB));
-    diplomacy::setTreaty(ctx, kC, kA, Treaty::MilitaryAlliance);
-    CHECK(diplomacy::treatyVisible(s, kC, kA, kB));  // A is C's ally
+    diplomacy::setTreaty(ctx, kC, kA, Treaty::NonAggression);
+    CHECK(diplomacy::treatyVisible(s, kC, kA, kB));  // C holds Non-Aggression with A
 
     CHECK(diplomacy::treatyTrigger(Treaty::Protectorate, false) == "New Treaty Protectorate (Sub)");
     CHECK(diplomacy::treatyTrigger(Treaty::NonIntercourse, false) == "New Treaty Non Intercourse");
@@ -599,7 +644,11 @@ TEST_CASE("diplomacy: surrender and independence") {
 
     // With Allow Surrender off the message does nothing (spec 05 §3.4).
     s.options.allowSurrender = false;
-    send(s, kA, kB, MessageType::Surrender);
+    DiplomaticMessage giveUp;
+    giveUp.to = kB;
+    giveUp.type = MessageType::Surrender;
+    CHECK(apply(politicsRules(), s, kA, cmd::SendMessage{giveUp}).error == "Surrender is not allowed in this game");
+    sendUnchecked(s, kA, kB, MessageType::Surrender);
     diplomacy::deliverMessages(ctx);
     CHECK(s.colony(homeA)->owner == kA);
     CHECK(s.empire(kA).stockpile == Resources{100, 200, 300});
@@ -1097,4 +1146,166 @@ TEST_CASE("diplomacy: a package's planet, vehicle and treaty entries; the treaty
     diplomacy::deliverMessages(ctx);
     for (const LogEntry& l : s.empire(kB).log)
         if (l.turn == s.turn) CHECK(l.title != "Planet Received");
+}
+
+// What the original's Communicate window lets a player send (spec 06 §4.2,
+// spec 05 §3.2, §3.4, confirmed: binary). The original checks it in the
+// window only; the engine checks every message a player writes, so a network
+// player cannot get round it, and lets the computer's and the ministers'
+// messages through as the original does.
+TEST_CASE("diplomacy: a player's messages are checked as the original's window checks them") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    setContact(s, kA, kC);
+    auto attempt = [&](MessageType type, Treaty treaty = Treaty::None, std::vector<PackageItem> offer = {}, std::vector<PackageItem> request = {},
+                       bool minister = false) {
+        DiplomaticMessage m;
+        m.to = kB;
+        m.type = type;
+        m.treaty = treaty;
+        m.offer = std::move(offer);
+        m.request = std::move(request);
+        const CommandResult res = apply(r, s, kA, cmd::SendMessage{m, minister});
+        if (res.ok) s.empire(kA).relation(kB).messageSentThisTurn = false;
+        return res;
+    };
+    PackageItem cash;
+    cash.resources = {1000, 0, 0};
+    PackageItem anyPlanet;
+    anyPlanet.kind = PackageItem::Kind::Planet;
+    PackageItem chart;
+    chart.kind = PackageItem::Kind::StarChart;
+    chart.system = SystemId{0u};
+
+    // Treaties: Non-Intercourse to Partnership, never War or None.
+    CHECK(attempt(MessageType::ProposeTreaty, Treaty::None).error == "Propose a treaty from Non-Intercourse to Partnership");
+    CHECK(attempt(MessageType::ProposeTreaty, Treaty::War).error == "Propose a treaty from Non-Intercourse to Partnership");
+    CHECK(attempt(MessageType::ProposeTreaty, Treaty::NonIntercourse).ok);
+    CHECK(attempt(MessageType::ProposeTreaty, Treaty::None, {}, {}, true).ok);   // a minister's is not checked
+    // Break Treaty needs Non-Aggression or better.
+    CHECK(attempt(MessageType::BreakTreaty).error == "There is no treaty to break");
+    TurnContext ctx = context(s);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::NonIntercourse);
+    CHECK_FALSE(attempt(MessageType::BreakTreaty).ok);
+
+    // A trade needs items on both sides; what we give is never "Any"; we may ask for "Any".
+    CHECK(attempt(MessageType::ProposeTrade, Treaty::None, {cash}).error == "A trade needs items on both sides");
+    CHECK(attempt(MessageType::ProposeTrade, Treaty::None, {}, {chart}).error == "A trade needs items on both sides");
+    CHECK(attempt(MessageType::ProposeTrade, Treaty::None, {anyPlanet}, {chart}).error ==
+          "A trade offer cannot contain unspecified \"Any\" items");
+    CHECK(attempt(MessageType::ProposeTrade, Treaty::None, {cash}, {anyPlanet}).ok);
+    // Trades are allowed at war.
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::War);
+    CHECK(attempt(MessageType::ProposeTrade, Treaty::None, {cash}, {chart}).ok);
+    CHECK(attempt(MessageType::DeclareWar).error == "We are already at war");
+
+    // A gift or tribute holds something; a request for one names what it wants, "Any" included.
+    CHECK(attempt(MessageType::Gift).error == "The package is empty");
+    CHECK(attempt(MessageType::Tribute, Treaty::None, {cash}).ok);
+    CHECK(attempt(MessageType::DemandGift).error == "The package is empty");
+    CHECK(attempt(MessageType::DemandTribute, Treaty::None, {}, {anyPlanet}).ok);
+    // The requests do not depend on the gifts option.
+    s.options.allowGifts = false;
+    CHECK(attempt(MessageType::DemandGift, Treaty::None, {}, {cash}).ok);
+    CHECK_FALSE(attempt(MessageType::Gift, Treaty::None, {cash}).ok);
+    s.options.allowGifts = true;
+
+    // Surrender and the demand for it need Allow Surrender.
+    s.options.allowSurrender = false;
+    CHECK(attempt(MessageType::Surrender).error == "Surrender is not allowed in this game");
+    CHECK(attempt(MessageType::DemandSurrender).error == "Surrender is not allowed in this game");
+    s.options.allowSurrender = true;
+    CHECK(attempt(MessageType::DemandSurrender).ok);
+
+    // A computer player's messages are not checked.
+    s.empire(kA).kind = PlayerKind::Computer;
+    CHECK(attempt(MessageType::Gift).ok);
+}
+
+// A subjugated race's player can accept no treaty; a minister's answer is
+// not checked (spec 05 §3.2, confirmed: binary).
+TEST_CASE("diplomacy: a minister's answer for a subjugated race is not checked") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    setContact(s, kB, kC);
+    TurnContext ctx = context(s);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::Subjugation, true);
+    REQUIRE(diplomacy::isSubjugated(s, kB));
+    const MessageId id = sendUnchecked(s, kC, kB, MessageType::ProposeTreaty);
+    s.messages.back().treaty = Treaty::NonAggression;
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    CHECK(apply(politicsRules(), s, kB, cmd::AnswerMessage{id, true, {}}).error == "Subjugated races cannot accept treaties");
+    CHECK(apply(politicsRules(), s, kB, cmd::AnswerMessage{id, true, {}, true}).ok);
+}
+
+// The Empires window's Trade and Tariff tabs read the economy report's
+// breakdown by empire (spec 06 §1.5, confirmed: binary).
+TEST_CASE("diplomacy: the economy report gives the trade and tariffs empire by empire") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    setContact(s, kA, kC);
+    TurnContext ctx = context(s);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeResearchAlliance);
+    diplomacy::setTreaty(ctx, kA, kC, Treaty::Subjugation, true);   // C pays A
+    for (int i = 0; i < 5; ++i) treatySteps(ctx);
+    const int64_t f = diplomacy::tradeFactor(r, s.empire(kA));
+    const auto genB = diplomacy::generated(r, s, kB);
+    const diplomacy::Generated fromB = diplomacy::tradeFrom(r, s, kA, kB);
+    for (Resource res : kResources) CHECK(fromB.resources[res] == diplomacy::tradeShare(genB.resources[res], 5, f));
+    CHECK(fromB.research == diplomacy::tradeShare(genB.research, 5, f));
+    CHECK(fromB.intelligence == 0);   // only in a Partnership
+    CHECK(diplomacy::tradeFrom(r, s, kA, kC).resources == Resources{});   // a subjugation trades nothing
+
+    const EconomyReport a = economy::incomeReport(r, s, kA);
+    auto entry = [](const EconomyReport& rep, EmpireId e) -> const PartnerIncome* {
+        for (const PartnerIncome& p : rep.partners)
+            if (p.empire == e) return &p;
+        return nullptr;
+    };
+    const PartnerIncome* b = entry(a, kB);
+    REQUIRE(b);
+    CHECK(b->trade == max(fromB.resources, Resources{}));
+    CHECK(b->research == fromB.research);
+    const PartnerIncome* c = entry(a, kC);
+    REQUIRE(c);
+    CHECK(c->tariffReceived == diplomacy::tariffsPaid(r, s, kC));
+    CHECK(c->tariffGiven == Resources{});
+    // The subject's report: the tariff it gives its master.
+    const PartnerIncome* master = entry(economy::incomeReport(r, s, kC), kA);
+    REQUIRE(master);
+    CHECK(master->tariffGiven == economy::incomeReport(r, s, kC).tariffsOut);
+    CHECK(master->tariffReceived == Resources{});
+}
+
+// A human player's statistics record (spec 05 §5, confirmed: binary): at its
+// end-of-turn processing, one row for every living empire whose score it may
+// see then, its own included.
+TEST_CASE("diplomacy: the statistics record holds the visible empires' rows only") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    setContact(s, kA, kC);
+    TurnContext ctx = context(s);
+    s.options.scoreDisplay = 1;   // own and Non-Aggression or better
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);
+    score::recordStatistics(ctx, kA);
+    auto rowsOf = [&](EmpireId e) {
+        return std::count_if(s.empire(kA).statistics.begin(), s.empire(kA).statistics.end(), [&](const StatisticsRow& x) { return x.empire == e; });
+    };
+    CHECK(rowsOf(kA) == 1);
+    CHECK(rowsOf(kB) == 1);
+    CHECK(rowsOf(kC) == 0);
+    CHECK(s.empire(kA).statistics.front().stats.turn == s.turn);
+    // The next turn the treaty is gone: no row for B, a gap.
+    nextTurn(s);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::None);
+    score::recordStatistics(ctx, kA);
+    CHECK(rowsOf(kA) == 2);
+    CHECK(rowsOf(kB) == 1);
+    // A computer player keeps no record.
+    s.empire(kC).kind = PlayerKind::Computer;
+    score::recordStatistics(ctx, kC);
+    CHECK(s.empire(kC).statistics.empty());
 }

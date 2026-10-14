@@ -170,7 +170,10 @@ void grantIndependence(TurnContext& ctx, const DiplomaticMessage& m) {
     const Colony* c = s.colony(m.planet);
     if (!c || c->owner != m.from) return;
     const std::string planet = s.galaxy.object(m.planet).name;
-    // The sender evacuates and abandons the planet; the recipient may settle it (inferred).
+    // An OpenSE4 extension: the original never offers the message and does
+    // nothing with it (spec 05 §3.4, confirmed: binary). Ours does what the
+    // manual describes: the sender evacuates and abandons the planet, and the
+    // recipient may settle it (inferred).
     s.colonies[m.planet.index()].reset();
     ctx.log(m.from, LogCategory::Politics, "Independence Granted",
             std::format("We have withdrawn from {} so that the {} may settle it.", planet, nameOf(s, m.to)), locationOf(s.galaxy, m.planet), "GiftGiven");
@@ -473,6 +476,47 @@ EmpireId masterOf(const GameState& s, EmpireId e) {
 bool isSubjugated(const GameState& s, EmpireId e) {
     const EmpireId master = masterOf(s, e);
     return master.valid() && s.empire(e).relation(master).treaty == Treaty::Subjugation;
+}
+
+bool proposableTreaty(Treaty t) { return t >= Treaty::NonIntercourse && t != Treaty::None && t < Treaty::Count; }
+
+std::string playerMessageProblem(const GameState& s, EmpireId from, const DiplomaticMessage& m) {
+    if (!validEmpire(s, from) || !validEmpire(s, m.to) || from == m.to) return "Invalid recipient";
+    const Treaty current = s.empire(from).relation(m.to).treaty;
+    auto anyItems = [](const std::vector<PackageItem>& side) { return std::any_of(side.begin(), side.end(), isPlaceholder); };
+    switch (m.type) {
+        case MessageType::ProposeTreaty:
+        case MessageType::CounterTreaty:
+            if (isSubjugated(s, from)) return "Subjugated races cannot propose treaties";
+            if (!proposableTreaty(m.treaty)) return "Propose a treaty from Non-Intercourse to Partnership";
+            break;
+        case MessageType::BreakTreaty:
+            if (current < Treaty::NonAggression) return "There is no treaty to break";
+            break;
+        case MessageType::DeclareWar:
+            if (current == Treaty::War) return "We are already at war";
+            break;
+        case MessageType::ProposeTrade:
+        case MessageType::CounterTrade:
+            if (m.offer.empty() || m.request.empty()) return "A trade needs items on both sides";
+            if (anyItems(m.offer)) return "A trade offer cannot contain unspecified \"Any\" items";
+            break;
+        case MessageType::Gift:
+        case MessageType::Tribute:
+            if (m.offer.empty()) return "The package is empty";
+            if (anyItems(m.offer)) return "A package we give cannot contain unspecified \"Any\" items";
+            break;
+        case MessageType::DemandGift:
+        case MessageType::DemandTribute:
+            if (m.request.empty()) return "The package is empty";
+            break;
+        case MessageType::Surrender:
+        case MessageType::DemandSurrender:
+            if (!s.options.allowSurrender) return "Surrender is not allowed in this game";
+            break;
+        default: break;
+    }
+    return {};
 }
 
 bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b) {

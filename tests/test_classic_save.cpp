@@ -560,8 +560,10 @@ TEST_CASE("classic save: OpenSE4 games survive export and import, in both turn s
     const Rules& r = test::engineRules();
     for (const bool simultaneous : {true, false}) {
         INFO("turn style: " << std::string(simultaneous ? "simultaneous" : "turn-based"));
-        const GameState s = playedGame(simultaneous, 12);
+        GameState s = playedGame(simultaneous, 12);
         REQUIRE(validateState(s, &r).empty());
+        // The Empires window's tab travels as the Politics window's (spec 08 §3.6.7).
+        s.empires[0].interfaceOptions.empiresTab = 2;
 
         // Export, encode, decode: the same values.
         const ClassicSave a = exportOrFail(r, s);
