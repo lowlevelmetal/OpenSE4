@@ -122,8 +122,10 @@ bool begin(UiContext& ui, SimulatorSetup setup, bool tactical, std::string& mess
     std::vector<game::EmpireId> sides = sim.sides;
     // A strategic simulation is fought in the Strategic Combat window as it is shown (spec 06 §1.10.4, §1.10.5).
     auto battle = std::make_unique<game::combat::TacticalBattle>(game::combat::startSimulation(ui.rules(), std::move(sim), !tactical));
+    // The simulator's battle needs no sight of an enemy (spec 04 §17): it starts
+    // whenever a side has something on the field.
     if (!battle->started()) {
-        message = "Nobody on the field can see an enemy.";
+        message = "Nothing on the field can fight.";
         return false;
     }
     // The battle windows show the sides as numbered boxes (spec 04 §17).
@@ -412,7 +414,7 @@ private:
 
     void add(UiContext& ui, SimulatorItem item) {
         message_.clear();
-        if (!simulatorAdd(ui.rules(), ui.state(), setup_, std::move(item))) message_ = "That is in the battle already.";
+        if (!simulatorAdd(ui.rules(), ui.state(), setup_, std::move(item))) message_ = "No more of that can be added.";
     }
 
     // "Empires Under Computer Control" for the ten sides (spec 06 §1.10.4, §7

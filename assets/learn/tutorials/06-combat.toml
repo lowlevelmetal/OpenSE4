@@ -130,8 +130,9 @@ manual = "combat#movement-in-combat"
 [[step]]
 title = "Fire"
 text = """
-**Click the enemy base to fire** every weapon that is switched on. Point at it first: the pointer
-shows whether your ship can reach it.
+**Click the enemy base to fire** the weapons ticked in the list on the right (every ready
+one, unless you click a weapon to untick it). Point at the base first: the pointer shows
+whether your ship can reach it.
 
 Out of range? Move closer, or press **End Turn** (`E`) and try in the next combat turn. Shields
 take the damage first, then armor, then everything else.
