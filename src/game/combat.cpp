@@ -377,6 +377,43 @@ Strategy parseStrategy(const ruleset::CombatStrategy& src) {
     return st;
 }
 
+ruleset::CombatStrategy newStrategyRecord(std::string name) {
+    // The target choice keys as the data files write them, in TargetKey order.
+    static constexpr std::array<std::string_view, 13> kKeyNames{
+        "None",    "Nearest", "Farthest",  "Largest", "Smallest",    "Most Damaged",         "Least Damaged",
+        "Fastest", "Slowest", "Strongest", "Weakest", "Has Weapons", "Does Not Have Weapons",
+    };
+    const Strategy defaults;
+    ruleset::CombatStrategy out;
+    out.name = std::move(name);
+    auto add = [&](std::string key, std::string value) { out.settings.emplace_back(std::move(key), std::move(value)); };
+    auto yesNo = [](bool b) { return std::string(b ? "True" : "False"); };
+    add("Primary Movement Strategy", std::string(identifier(defaults.primary)));
+    add("Secondary Movement Strategy", std::string(identifier(defaults.secondary)));
+    for (size_t i = 0; i < defaults.targeting.size(); ++i)
+        add(std::format("Targeting Priority {}", i + 1), std::string(kKeyNames[static_cast<size_t>(defaults.targeting[i])]));
+    add("Use Type Priority First", yesNo(defaults.typePriorityFirst));
+    for (size_t c = 0; c < kTargetCategories; ++c)
+        add(std::format("Type Priority {}", identifier(static_cast<TargetCategory>(c))), std::to_string(defaults.typePriority[c]));
+    for (size_t c = 0; c < kTargetCategories; ++c) add(std::format("Dont Fire On {}", identifier(static_cast<TargetCategory>(c))), "False");
+    add("Fighters Launch Group Amount", "5");
+    add("Drones Per Target", "3");
+    using C = TargetCategory;
+    for (size_t c = 0; c < kTargetCategories; ++c) {
+        const auto cat = static_cast<C>(c);
+        if (cat == C::SeekersOnUs || cat == C::SeekersOnOthers) continue;   // fixed in the original
+        const bool breaks = cat == C::Carriers || cat == C::ColonyShips || cat == C::Fighters || cat == C::Satellites || cat == C::Planets ||
+                            cat == C::Transports;
+        add(std::format("Break Formation {}", identifier(cat)), yesNo(breaks));
+    }
+    add("Damage Percent Per Ship", "80");
+    add("Damage Percent Per Planet", "100");
+    add("Damage Percent Per Fighter Group", "100");
+    add("Damage Percent Per Satellite Group", "100");
+    add("Damage Until All Weapons Gone", "False");
+    return out;
+}
+
 Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index) {
     if (!e.valid() || e.index() >= s.empires.size()) return Strategy{};
     const auto& list = s.empire(e).strategies;

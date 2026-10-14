@@ -96,6 +96,7 @@ Value codecDefaults() {
     types.emplace_back("resources", enc(Resources{}));
     types.emplace_back("queue_target", enc(cmd::QueueTarget{}));
     types.emplace_back("queue_item", enc(QueueItem{}));
+    types.emplace_back("queue_type", enc(QueueType{}));
     types.emplace_back("design", enc(Design{}));
     types.emplace_back("design_entry", enc(DesignEntry{}));
     types.emplace_back("research_project", enc(ResearchProject{}));

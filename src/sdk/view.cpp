@@ -209,7 +209,7 @@ private:
                    "race_age", Value(game::economy::raceAge(e.experience)))("home_system", id(e.homeSystem))(
                    "home_sector", e.homeSystem.valid() ? enc(e.homeSector) : Value())("claimed_systems", enc(e.claimedSystems))(
                    "systems_to_avoid", enc(e.systemsToAvoid))("tagged_minefields", enc(e.taggedMinefields))("waypoints", waypoints(e))(
-                   "notes", notes(e))("strategies", strategies(e))("design_types", enc(e.designTypes))("colony_types", enc(e.colonyTypes))(
+                   "notes", notes(e))("strategies", strategies(e))("design_types", enc(e.designTypes))("colony_types", enc(e.colonyTypes))("queue_types", enc(e.queueTypes))(
                    "repair_priorities", enc(e.repairPriorities))("colony_type_choices", enc(e.colonyTypeChoices))("questions", questions())(
                    "ai_difficulty", num(e.aiDifficulty))("mod_data", modData(e))
             .done();

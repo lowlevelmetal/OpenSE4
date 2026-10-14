@@ -3,6 +3,7 @@
 
 #include "game/commands.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
@@ -113,7 +114,7 @@ void mothballVehicle(Vehicle& v) {
     v.status = VehicleStatus::Mothballed;
     v.orders.clear();
     v.repeatOrders = false;
-    v.queue.items.clear();
+    economy::clearQueue(v.queue);  // its yard stops working (spec 06 §1.8.2)
     v.supply = 0;
     v.movement = 0;
 }

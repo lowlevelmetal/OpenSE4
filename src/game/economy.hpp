@@ -202,6 +202,12 @@ int upgradeCount(const Rules& r, const Colony& c, uint32_t target);
 // An upgrade item to `target` as the queue stores it: the target and the
 // count, both fixed when it is queued (cmd::QueueAdd sets them the same way).
 QueueItem upgradeItem(const Rules& r, const Colony& c, uint32_t target);
+// The original's clear of a queue (spec 02 §6.4, spec 06 §7 Q28, confirmed:
+// binary): Clear Queue, a ship whose space yard stops working (cloaked or
+// mothballed) and a planet handed to another empire by treaty. The items and
+// their progress, On Hold, Repeat Build and the automatic Move To waypoint go;
+// emergency mode and its turn counter stay, so slow mode still follows.
+void clearQueue(ConstructionQueue& q);
 // Whether the removal pass at the start of the queue's turn takes this item
 // (spec 02 §6.1, §13 Q53, confirmed: binary): in a ship's queue, its facility
 // and upgrade items; on a colony without a working space yard, its ship and

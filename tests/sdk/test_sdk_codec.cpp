@@ -133,6 +133,7 @@ TEST_CASE("sdk codec: every field of every command and of what it carries is enc
     CHECK_CODEC_FIELDS(Order);
     CHECK_CODEC_FIELDS(Sector);
     CHECK_CODEC_FIELDS(QueueItem);
+    CHECK_CODEC_FIELDS(QueueType);
     CHECK_CODEC_FIELDS(cmd::QueueTarget);
     CHECK_CODEC_FIELDS(Design);
     CHECK_CODEC_FIELDS(DesignEntry);

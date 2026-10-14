@@ -332,7 +332,17 @@ void checkCarried(const Rules& r, const GameState& a, const GameState& b) {
         CHECK(x.ministerStyle == y.ministerStyle);
         CHECK(x.useRaceMinisterStyle == y.useRaceMinisterStyle);
         CHECK(x.ministersForNewVehicles == y.ministersForNewVehicles);
-        CHECK((x.ministerAll ? kAllMinisters : x.ministers) == y.ministers);
+        CHECK(x.ministers == y.ministers);   // the switches as they are (spec 02 §10)
+        REQUIRE(x.queueTypes.size() == y.queueTypes.size());
+        for (size_t k = 0; k < x.queueTypes.size(); ++k) {
+            CHECK(x.queueTypes[k].name == y.queueTypes[k].name);
+            REQUIRE(x.queueTypes[k].items.size() == y.queueTypes[k].items.size());
+            for (size_t j = 0; j < x.queueTypes[k].items.size(); ++j) {
+                const QueueItem &p = x.queueTypes[k].items[j], &q = y.queueTypes[k].items[j];
+                CHECK((p.kind == q.kind && p.design == q.design && p.count == q.count));
+                if (p.kind != QueueItem::Kind::Vehicle) CHECK(p.facility == q.facility);
+            }
+        }
         CHECK(x.clearOrdersOnEncounter == y.clearOrdersOnEncounter);
         CHECK(x.avoidTaggedMinefields == y.avoidTaggedMinefields);
         CHECK(x.avoidRestrictedSystems == y.avoidRestrictedSystems);
@@ -1358,6 +1368,55 @@ TEST_CASE("classic save: a colony's destroyed facility counts carry over both wa
     save.objects[slot].colony->facilities.push_back({static_cast<uint16_t>(absent + 1), 0, 3});
     const GameState u = importOrFail(r, save);
     CHECK(u.colony(objectsBySlot(u).at(slot)->id)->destroyedFacilities == col->destroyedFacilities);
+}
+
+TEST_CASE("classic save: queue types, the minister switches and the remembered tabs carry over both ways (§3.6.6, §3.6.7, §3.6.9)") {
+    const Rules& r = test::engineRules();
+    GameState s = playedGame(true, 2, 101);
+    Empire& e = s.empire(EmpireId{0u});
+    REQUIRE_FALSE(e.designs.empty());
+    QueueItem ship;
+    ship.design = e.designs.front();
+    ship.count = 2;
+    QueueItem lab;
+    lab.kind = QueueItem::Kind::Facility;
+    lab.facility = test::facilityIndex(r, "Test Lab");
+    lab.count = 3;
+    e.queueTypes = {{"Outpost", {lab, ship}}, {"Empty", {}}};
+    e.ministers = ministerBit(Minister::Research) | ministerBit(Minister::Transports);
+    e.ministerAll = true;   // the Players window's full control is not a switch of the file
+    e.interfaceOptions.setQueueTab = 2;
+    e.interfaceOptions.coloniesTab = 5;
+
+    const ClassicSave save = exportOrFail(r, s);
+    const EmpireRecord& x = save.empires.front();
+    REQUIRE(x.queueTemplates.size() == 2);
+    CHECK(x.queueTemplates[0].name == "Outpost");
+    REQUIRE(x.queueTemplates[0].queue.items.size() == 2);
+    CHECK(x.queueTemplates[0].queue.items[0].kind == 1);
+    CHECK(x.queueTemplates[0].queue.items[0].item == lab.facility + 1);
+    CHECK(x.queueTemplates[0].queue.items[0].count == 3);
+    CHECK(x.queueTemplates[0].queue.items[1].kind == 2);
+    CHECK(x.queueTemplates[0].queue.items[1].item == ship.design.value + 1);
+    CHECK(x.queueTemplates[1].queue.items.empty());
+    for (size_t k = 0; k < x.ministers.size(); ++k) CHECK(x.ministers[k] == (((e.ministers >> k) & 1u) != 0));
+    CHECK(x.options.setQueueTab == 3);
+    CHECK(x.options.coloniesTab == 6);
+
+    const GameState t = importOrFail(r, save);
+    const Empire& y = t.empire(EmpireId{0u});
+    REQUIRE(y.queueTypes.size() == 2);
+    CHECK(y.queueTypes[0].name == "Outpost");
+    REQUIRE(y.queueTypes[0].items.size() == 2);
+    CHECK(y.queueTypes[0].items[0].kind == QueueItem::Kind::Facility);
+    CHECK(y.queueTypes[0].items[0].facility == lab.facility);
+    CHECK(y.queueTypes[0].items[0].count == 3);
+    CHECK(y.queueTypes[0].items[1].design == ship.design);
+    CHECK(y.queueTypes[0].items[1].count == 2);
+    CHECK(y.ministers == e.ministers);
+    CHECK_FALSE(y.ministerAll);   // no longer derived from the switches (all 25 on is still just switches)
+    CHECK(y.interfaceOptions.setQueueTab == 2);
+    CHECK(y.interfaceOptions.coloniesTab == 5);
 }
 
 // ---- Errors -----------------------------------------------------------------------------------------------------

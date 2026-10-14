@@ -6,7 +6,7 @@ The view, the rules view and the commands carry these types as maps ([view.md](.
 
 The types that the public modules extend are on their pages: `opense4.rules.Component`, `opense4.rules.Facility`, `opense4.rules.Hull`, `opense4.rules.Rules`, `opense4.rules.Tech`, `opense4.view.Battle`, `opense4.view.Colony`, `opense4.view.Design`, `opense4.view.Empire`, `opense4.view.Fleet`, `opense4.view.Game`, `opense4.view.Location`, `opense4.view.Message`, `opense4.view.MyEmpire`, `opense4.view.Resources`, `opense4.view.SpaceObject`, `opense4.view.System`, `opense4.view.Vehicle`, `opense4.view.View`.
 
-Contents: [`DesignSpec`](#designspec), [`DesignEntry`](#designentry), [`IntelProjectOrder`](#intelprojectorder), [`InterfaceOptions`](#interfaceoptions), [`Order`](#order), [`PackageItem`](#packageitem), [`PopulationGroup`](#populationgroup), [`QueueItem`](#queueitem), [`QueueTarget`](#queuetarget), [`ResearchProject`](#researchproject), [`Sector`](#sector), [`Square`](#square), [`Strategy`](#strategy), [`StrategySetting`](#strategysetting), [`TacticalOrder`](#tacticalorder), [`UnitStack`](#unitstack), [`Waypoint`](#waypoint), [`Ability`](#ability), [`AbilityKind`](#abilitykind), [`AbilityReport`](#abilityreport), [`AbilityTotal`](#abilitytotal), [`BattlePiece`](#battlepiece), [`Cargo`](#cargo), [`Characteristics`](#characteristics), [`ColonyOutput`](#colonyoutput), [`Culture`](#culture), [`DefaultStrategy`](#defaultstrategy), [`DesignFigures`](#designfigures), [`DestroyedFacility`](#destroyedfacility), [`EconomyReport`](#economyreport), [`EmpireSettings`](#empiresettings), [`EntryQuestion`](#entryquestion), [`FleetMovement`](#fleetmovement), [`Formation`](#formation), [`FormationSlot`](#formationslot), [`GalaxyPosition`](#galaxyposition), [`GameOptions`](#gameoptions), [`HappinessModel`](#happinessmodel), [`HappinessTrigger`](#happinesstrigger), [`IntelEntry`](#intelentry), [`IntelProject`](#intelproject), [`IntelState`](#intelstate), [`LogEntry`](#logentry), [`Ministers`](#ministers), [`ModOption`](#modoption), [`Mount`](#mount), [`OwnStrategy`](#ownstrategy), [`ParsedAbility`](#parsedability), [`PathResult`](#pathresult), [`PlanetSize`](#planetsize), [`Problem`](#problem), [`Queue`](#queue), [`QueueEntry`](#queueentry), [`Race`](#race), [`RaceCharacteristic`](#racecharacteristic), [`RacePreset`](#racepreset), [`RaceTier`](#racetier), [`RacialTrait`](#racialtrait), [`Relation`](#relation), [`Requirement`](#requirement), [`ResearchEntry`](#researchentry), [`ResearchForecast`](#researchforecast), [`ResearchLevel`](#researchlevel), [`ResearchState`](#researchstate), [`SectorType`](#sectortype), [`SightLevels`](#sightlevels), [`SystemNote`](#systemnote), [`SystemType`](#systemtype), [`TreatyEntry`](#treatyentry), [`TurnStats`](#turnstats), [`VehicleMovement`](#vehiclemovement), [`VictoryConditions`](#victoryconditions), [`WaypointSlot`](#waypointslot), [`Weapon`](#weapon).
+Contents: [`DesignSpec`](#designspec), [`DesignEntry`](#designentry), [`IntelProjectOrder`](#intelprojectorder), [`InterfaceOptions`](#interfaceoptions), [`Order`](#order), [`PackageItem`](#packageitem), [`PopulationGroup`](#populationgroup), [`QueueItem`](#queueitem), [`QueueTarget`](#queuetarget), [`QueueType`](#queuetype), [`ResearchProject`](#researchproject), [`Sector`](#sector), [`Square`](#square), [`Strategy`](#strategy), [`StrategySetting`](#strategysetting), [`TacticalOrder`](#tacticalorder), [`UnitStack`](#unitstack), [`Waypoint`](#waypoint), [`Ability`](#ability), [`AbilityKind`](#abilitykind), [`AbilityReport`](#abilityreport), [`AbilityTotal`](#abilitytotal), [`BattlePiece`](#battlepiece), [`Cargo`](#cargo), [`Characteristics`](#characteristics), [`ColonyOutput`](#colonyoutput), [`Culture`](#culture), [`DefaultStrategy`](#defaultstrategy), [`DesignFigures`](#designfigures), [`DestroyedFacility`](#destroyedfacility), [`EconomyReport`](#economyreport), [`EmpireSettings`](#empiresettings), [`EntryQuestion`](#entryquestion), [`FleetMovement`](#fleetmovement), [`Formation`](#formation), [`FormationSlot`](#formationslot), [`GalaxyPosition`](#galaxyposition), [`GameOptions`](#gameoptions), [`HappinessModel`](#happinessmodel), [`HappinessTrigger`](#happinesstrigger), [`IntelEntry`](#intelentry), [`IntelProject`](#intelproject), [`IntelState`](#intelstate), [`LogEntry`](#logentry), [`Ministers`](#ministers), [`ModOption`](#modoption), [`Mount`](#mount), [`OwnStrategy`](#ownstrategy), [`ParsedAbility`](#parsedability), [`PathResult`](#pathresult), [`PlanetSize`](#planetsize), [`Problem`](#problem), [`Queue`](#queue), [`QueueEntry`](#queueentry), [`Race`](#race), [`RaceCharacteristic`](#racecharacteristic), [`RacePreset`](#racepreset), [`RaceTier`](#racetier), [`RacialTrait`](#racialtrait), [`Relation`](#relation), [`Requirement`](#requirement), [`ResearchEntry`](#researchentry), [`ResearchForecast`](#researchforecast), [`ResearchLevel`](#researchlevel), [`ResearchState`](#researchstate), [`SectorType`](#sectortype), [`SightLevels`](#sightlevels), [`SystemNote`](#systemnote), [`SystemType`](#systemtype), [`TreatyEntry`](#treatyentry), [`TurnStats`](#turnstats), [`VehicleMovement`](#vehiclemovement), [`VictoryConditions`](#victoryconditions), [`WaypointSlot`](#waypointslot), [`Weapon`](#weapon).
 
 ## `DesignSpec`
 
@@ -109,6 +109,8 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 | `design_condensed` | `bool` | The designer's condensed view. |
 | `designs_hide_obsolete` | `bool` | The Designs window hides obsolete designs. |
 | `designs_stats_view` | `bool` | The Designs window shows statistics. |
+| `set_queue_tab` | `int` | The tab Set Construction Queue opens on (0 Ships, 1 Facilities, 2 Units, 3 Upgrades). |
+| `colonies_tab` | `int` | The Colonies window's tab (0 General to 8 Orders). |
 
 ## `Order`
 
@@ -175,6 +177,15 @@ A construction queue: a colony's (by its planet) or a vehicle's with a space yar
 | `planet_id` | `Optional[int]` | The id of `planet`. |
 | `vehicle` | `Optional[Vehicle]` | Or the vehicle. |
 | `vehicle_id` | `Optional[int]` | The id of `vehicle`. |
+
+## `QueueType`
+
+A named list of queue items with their counts (our queue types).
+
+| Property | Type | |
+|---|---|---|
+| `name` | `str` | Its name. |
+| `items` | `List[QueueItem]` | Its items, in order. |
 
 ## `ResearchProject`
 

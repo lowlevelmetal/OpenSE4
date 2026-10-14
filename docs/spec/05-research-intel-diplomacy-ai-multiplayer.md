@@ -1824,10 +1824,12 @@ binary).
          rule, every one made in Infrastructure, and 9 of them reached a queue with a yard
          (an empire whose list held only its homeworld, or whose K-th queue happened to be a
          yard colony); in two more games 55 placements did, 16 of them to a queue with a
-         yard (spec 07 "Battles, bases and the first turns under a debugger"). As the
-         commands refuse a base at a colony without a yard, the engine counts such a base as
-         queued and spends its share of the budget without queueing it, which is what the
-         original's construction step leaves (`ai_economy.cpp` `placeDefenseBase`). Since
+         yard (spec 07 "Battles, bases and the first turns under a debugger"). A colony
+         queue without a yard takes the base, as the original's queues take any ship (spec
+         02 §6.5 "Acceptance"), and the construction step's removal pass drops it (spec 02
+         §6.1); since 2026-10-13 the engine queues it there too (`ai_economy.cpp`
+         `placeDefenseBase`), where it used to count the base and spend on it without
+         queueing it. Since
          2026-10-02 `workingYard` passes over a cloaked yard ship, and `queueList` follows
          the system's list: every vehicle carries a stamp of when it was placed in or
          entered its system (`Vehicle::arrival`, saved with the game), and the planets come
@@ -1844,7 +1846,9 @@ binary).
          vehicle type.
        - Any other item goes to the queue with the smallest backlog in turns, then the
          highest rate. Ships need a space yard; the other units can use any colony's
-         queue.
+         queue. No ship or base is placed while the empire is at its ship limit (inferred,
+         question 79): the queues take such items (spec 02 §6.5), so the builder checks the
+         limit itself, as the engine's queues did before 2026-10-13.
        - A queue's **backlog** is the sum, over its items, of each item's turns: the
          largest, over the resources the queue has a positive rate for, of (what the item
          still costs ÷ that rate) rounded up. The first item counts only what is still
@@ -4496,3 +4500,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - Their targets keep no sight test, and nothing is added to avoid the loop: our computer
       players keep failing at a hidden planet as the original's do (spec 07 "The Colonize sight
       test", 2026-10-04, measures it).
+79. **Ships at the limit.** The original's queues take a ship or base at the ship limit;
+    the limit is met when one is built, and the item then waits, paid for again each turn
+    (spec 02 §6.5). Our computer players place no ship or base while the empire is at its
+    limit (§7.5 "Placement", `ShipBuilder::queueable`, inferred), which our queues used to
+    enforce for them. To verify in the executable: does the computer player's vehicle list
+    look at the ship limit before it places an item, and if not, does it fill its queues
+    with ships that wait there?

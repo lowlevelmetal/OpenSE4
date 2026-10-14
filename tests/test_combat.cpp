@@ -122,6 +122,31 @@ TEST_CASE("combat: strategy records become typed settings") {
     CHECK(cautious.typePriority[static_cast<size_t>(combat::TargetCategory::Ships)] == 1);
 }
 
+TEST_CASE("combat: the Strategies window's Add makes the original's new strategy (spec 04 §16)") {
+    using C = combat::TargetCategory;
+    const ruleset::CombatStrategy raw = combat::newStrategyRecord("Patrol");
+    CHECK(raw.name == "Patrol");
+    const combat::Strategy st = combat::parseStrategy(raw);
+    CHECK(st.fighterLaunchGroup == 5);
+    CHECK(st.dronesPerTarget == 3);
+    CHECK(st.damagePercentShip == 80);
+    CHECK(st.damagePercentPlanet == 100);
+    CHECK(st.damagePercentFighters == 100);
+    CHECK(st.damagePercentSatellites == 100);
+    CHECK_FALSE(st.damageUntilWeaponsGone);
+    for (C on : {C::Carriers, C::ColonyShips, C::Fighters, C::Satellites, C::Planets, C::Transports})
+        CHECK(st.breakFormation[static_cast<size_t>(on)]);
+    for (C off : {C::Bases, C::Ships, C::Mines, C::BasesNoWeapons, C::ShipsNoWeapons, C::Drones})
+        CHECK_FALSE(st.breakFormation[static_cast<size_t>(off)]);
+    // The rest are the neutral defaults, written out so the window shows them.
+    const combat::Strategy defaults;
+    CHECK(st.primary == defaults.primary);
+    CHECK(st.secondary == defaults.secondary);
+    CHECK(st.targeting == defaults.targeting);
+    CHECK(st.typePriority == defaults.typePriority);
+    for (bool dont : st.dontFireOn) CHECK_FALSE(dont);
+}
+
 TEST_CASE("combat: settings come from Settings.txt with stock defaults") {
     const combat::CombatSettings cs = combat::loadSettings(combatRules());
     CHECK(cs.spaceTurns == 30);

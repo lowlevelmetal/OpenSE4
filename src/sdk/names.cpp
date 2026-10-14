@@ -40,6 +40,7 @@ constexpr auto kCommandKindNames = std::to_array<std::string_view>({
     "set_ministers", "set_encounter_options", "enter_sector", "edit_design", "open_vehicle_report",
     "queue_replace_facility", "decide_war", "set_interface_options", "carry_out_demand", "use_demand_entry", "jettison_cargo",
     "cloak_colony", "analyze", "self_destruct", "fire_on", "set_email", "order_tagged", "set_fleet_leader", "mod_command",
+    "set_queue_types",
 });
 static_assert(kCommandKindNames.size() == kCommandKinds, "name the new command kind here");
 

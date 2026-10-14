@@ -1064,7 +1064,7 @@ ones a lesson is likely to wait for:
 The others: `SetVehicleStrategy`, `Rename`, `Scrap`, `Mothball`, `SetMinister`,
 `Retrofit`, `SetDesignObsolete`, `DeleteDesign`, `SetSystemFlags`, `SetSystemNote`,
 `TagMinefield`, `SetStrategy`, `SetRepairPriorities`, `SetDesignTypes`,
-`SetColonyTypes`, `SetEmpireOptions`, `SetMinisters`, `SetEncounterOptions`,
+`SetColonyTypes`, `SetQueueTypes`, `SetEmpireOptions`, `SetMinisters`, `SetEncounterOptions`,
 `EnterSector`, `OpenVehicleReport`, `QueueReplaceFacility`, `DecideWar`, `JettisonCargo`,
 `CloakColony`, `Analyze`, `SelfDestruct`, `FireOn`. Ending the turn is no command: wait for it
 with `turns_passed`.

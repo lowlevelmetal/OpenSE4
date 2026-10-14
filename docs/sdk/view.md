@@ -183,6 +183,7 @@ Each condition is a switch and its value.
 | `strategies` | list of own_strategy | Our combat strategies. |
 | `design_types` | list of text | Our design types. |
 | `colony_types` | list of text | Our colony types. |
+| `queue_types` | list of queue_type | Our queue types, which Fill Queue adds from. |
 | `repair_priorities` | list of text | The order repairs are made in. |
 | `colony_type_choices` | list of object id | New colonies waiting for us to choose their type (turn-based games). |
 | `questions` | list of entry_question | Moves waiting for an `enter_sector` answer (turn-based games). |

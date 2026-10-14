@@ -491,6 +491,11 @@ void fields(A& a, game::QueueItem& x) {
     a("spent", x.spent);
 }
 template <class A>
+void fields(A& a, game::QueueType& x) {
+    a("name", x.name);
+    a("items", x.items);
+}
+template <class A>
 void fields(A& a, game::cmd::QueueTarget& x) {
     a("planet", x.planet);
     a("vehicle", x.vehicle);
@@ -629,6 +634,8 @@ void fields(A& a, game::InterfaceOptions& x) {
     a("design_condensed", x.designCondensed);
     a("designs_hide_obsolete", x.designsHideObsolete);
     a("designs_stats_view", x.designsStatsView);
+    a("set_queue_tab", x.setQueueTab);
+    a("colonies_tab", x.coloniesTab);
 }
 template <class A>
 void fields(A& a, game::combat::Square& x) {
@@ -741,6 +748,7 @@ void fields(A& a, cmd::Scrap& x) {
     a("facility_planet", x.facilityPlanet);
     a("facility_slot", x.facilitySlot);
     a("move_first", x.moveFirst);
+    a("type_wide", x.typeWide);
 }
 template <class A>
 void fields(A& a, cmd::Mothball& x) {
@@ -939,6 +947,10 @@ void fields(A& a, cmd::SetDesignTypes& x) {
 template <class A>
 void fields(A& a, cmd::SetColonyTypes& x) {
     a("colony_types", x.colonyTypes);
+}
+template <class A>
+void fields(A& a, cmd::SetQueueTypes& x) {
+    a("queue_types", x.queueTypes);
 }
 template <class A>
 void fields(A& a, cmd::SetEmpireOptions& x) {

@@ -586,7 +586,7 @@ the import date; derive `lastWarTurn` from the ministers' "turns since war" (§3
 |---|---|---|---|
 | byte n, n × string | Design types | At most 250, no duplicates | `designTypes` |
 | byte n, n × string | Colony types | | `colonyTypes` |
-| byte n, n × (string, queue) | Queue templates | Named construction queues kept for reuse (the queue record of §3.8.7) | none in the game state; keep in the client's templates or drop |
+| byte n, n × (string, queue) | Queue types | The empire's named construction queues kept for reuse (the queue record of §3.8.7); Select Queue Type lists them (spec 02 §6.4) | `queueTypes`: the name and the items with their counts; the record's flags, counter, waypoint and progress are dropped on import and written as an idle queue on export |
 
 #### 3.6.7 Empire options
 
@@ -631,8 +631,8 @@ and 0-based in OpenSE4.
 | bool | Choose the colony type on colonization | `Empire::chooseColonyType` |
 | byte, byte | System and sector shown when the player's turn last ended (turn-based) | none; export the home system and sector |
 | bool | Claim colonized systems automatically | `autoClaimColonized` |
-| byte ×4 | Tabs of the Colonies, Planets, Ships\Units and Construction Queues windows | `planetsTab`, `shipsTab`, `queuesTab` (value − 1); Colonies: none |
-| byte | Set Construction Queue tab **(observed: changes when the tab is visited)** | none |
+| byte ×4 | Tabs of the Colonies, Planets, Ships\Units and Construction Queues windows | `coloniesTab`, `planetsTab`, `shipsTab`, `queuesTab` (value − 1; Colonies: 1 General .. 9 Orders) |
+| byte | Set Construction Queue tab: 1 Ships, 2 Facilities, 3 Units, 4 Upgrades, stored when the window closes **(confirmed: binary)** | `setQueueTab` (value − 1) |
 | byte | Designs window tab | none |
 | byte | Politics window tab | none |
 | byte | Log filter: 1 All, 2..8 Construction..Misc | `logFilter` = value − 1 |
@@ -672,7 +672,7 @@ The log position and scroll are not stored; import 0.
 | word n, n × byte | Systems to defend | | `aiMemory.defend` |
 | word n, n × byte | Attack targets, at most 3, may repeat | | `aiMemory.targets` |
 | string | Minister style folder | Empty: the race's own AI files | `ministerStyle` |
-| 25 × bool | Minister switches | In the order of OpenSE4's `Minister` enumeration (the fifth is Research, **observed**); a new human empire has all off (**observed** in a Quick Start and a Game Setup game) | `ministers` (bit k − 1); `ministerAll` = all 25 on (inferred) |
+| 25 × bool | Minister switches | In the order of OpenSE4's `Minister` enumeration (the fifth is Research, **observed**); a new human empire has all off (**observed** in a Quick Start and a Game Setup game). Complete AI only sets them all; it is no state of its own (spec 02 §10, **confirmed: binary**) | `ministers` (bit k − 1), both ways; `ministerAll` is not read from them or written into them |
 | bool | New vehicles get individual ministers | | `ministersForNewVehicles` |
 | bool | Computer makes no changes in simultaneous games | | `aiMinimalChanges` |
 | 20 × (byte, word) | Per player 1..20: anger (default 50); turns since war (default 999, 0 while at war) | | `Relation::anger`, `Relation::turnsSinceWar` |
@@ -1295,7 +1295,7 @@ memory between turns and have no source are a loss on import (§7.6).
 | `homeSystem`, `homeSector` | §3.6.1 | §3.6.1 |
 | `claimedSystems` | Systems' claimed sets | Same |
 | `systemsToAvoid`, `taggedMinefields`, `waypoints`, `repairPriorities` | §3.6.8 | §3.6.8 |
-| `designTypes`, `colonyTypes` | §3.6.6 | §3.6.6; queue templates: an empty list |
+| `designTypes`, `colonyTypes`, `queueTypes` | §3.6.6 | §3.6.6 |
 | `strategies` | §3.6.13 | §3.6.13 |
 | `designs` | Designs owned by the empire | (owner field of each design) |
 | `log` | §3.6.11 | §3.6.11 |
@@ -1304,7 +1304,8 @@ memory between turns and have no source are a loss on import (§7.6).
 | `aiState`, `aiTurnsInState`, `aiMemory.targets`, `staging`, `secured`, `defend`, `afterAttack` | §3.6.9 | §3.6.9 |
 | `aiMemory.avoid`, `attackSystems`, `metMinefield` | Not stored: default | — |
 | `aiMemory.designsFought` | The owner's own last-seen entry of each design (inferred) | Same |
-| `aiMinimalChanges`, `aiDifficulty`, `ministerStyle`, `useRaceMinisterStyle`, `ministersForNewVehicles`, `ministers`, `ministerAll` | §3.6.1, §3.6.9 | Same |
+| `aiMinimalChanges`, `aiDifficulty`, `ministerStyle`, `useRaceMinisterStyle`, `ministersForNewVehicles`, `ministers` | §3.6.1, §3.6.9 | Same |
+| `ministerAll` | Not stored: false (the Players window's computer control and a stand-in set it during play) | — |
 | `politicsMark` | Not stored: default | — |
 | `clearOrdersOnEncounter`, `avoidTaggedMinefields`, `avoidRestrictedSystems`, `chooseColonyType`, `interfaceOptions` | §3.6.7 | §3.6.7 |
 | `colonyTypeChoices` | Not stored: empty | — |
@@ -1393,7 +1394,7 @@ next turn does not continue OpenSE4's random sequence.
 | Direction | Lost or approximated |
 |---|---|
 | Both | Partial damage of a ship's parts (only destroyed or intact is stored); load and drop orders by cargo kind in the original versus by design in OpenSE4; the random sequence (reseeded from the seed); undelivered diplomatic messages; window memories that only one side has |
-| Import | The original's AI memory not covered by §3.6.9 (OpenSE4's `Relation` memory fields, `politicsMark`, `aiMemory.avoid`, `attackSystems`, `metMinefield` start at their defaults); `treatyTurn`, `lastWarTurn`, `foundedTurn`, `builtTurn` and the per-system last-seen turns are unknown; combat records exist only as log summaries; one-way warp links become links with no far end (OpenSE4 expects pairs); the queue templates; the original's game-master password |
+| Import | The original's AI memory not covered by §3.6.9 (OpenSE4's `Relation` memory fields, `politicsMark`, `aiMemory.avoid`, `attackSystems`, `metMinefield` start at their defaults); `treatyTurn`, `lastWarTurn`, `foundedTurn`, `builtTurn` and the per-system last-seen turns are unknown; combat records exist only as log summaries; one-way warp links become links with no far end (OpenSE4 expects pairs); the flags of a queue type's queue record; the original's game-master password |
 | Export | Fractional victory years cannot come from OpenSE4 (whole years only, no loss); OpenSE4's history and statistics unless the companion files are written; `arrival`, `cameFrom`, `immobileUntil` (blocked movement after sabotage or events is forgotten); OpenSE4's own log targets beyond the original's seven; passwords (§7.4) |
 
 Estimate: everything needed to rebuild a playable game is stored in the `.gam` and

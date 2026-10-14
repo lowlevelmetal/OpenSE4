@@ -122,6 +122,13 @@ int upgradeCount(const Rules& r, const Colony& c, uint32_t target) {
     return n;
 }
 
+void clearQueue(ConstructionQueue& q) {
+    q.items.clear();
+    q.onHold = false;
+    q.repeat = false;
+    q.autoWaypoint = -1;
+}
+
 QueueItem upgradeItem(const Rules& r, const Colony& c, uint32_t target) {
     QueueItem item;
     item.kind = QueueItem::Kind::Upgrade;

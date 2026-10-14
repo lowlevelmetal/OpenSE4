@@ -172,6 +172,9 @@ private:
         for (const Empire& e : s_.empires) {
             if (e.designTypes.size() > 250) return fail(std::format("the {} have {} design types; the original holds at most 250", e.name, e.designTypes.size()));
             if (e.colonyTypes.size() > 255 || e.systemsToAvoid.size() > 255) return fail(std::format("the {} have more than 255 colony types or systems to avoid", e.name));
+            if (e.queueTypes.size() > 255) return fail(std::format("the {} have {} queue types; the original holds at most 255", e.name, e.queueTypes.size()));
+            for (const QueueType& t : e.queueTypes)
+                if (t.items.size() > 255) return fail(std::format("the {} queue type {} has more than 255 items", e.name, t.name));
             if (e.techLevels.size() != d_.techAreas.size())
                 return fail(std::format("the {} know {} tech areas; the data set has {}", e.name, e.techLevels.size(), d_.techAreas.size()));
         }
@@ -523,6 +526,11 @@ private:
         // Name lists (§3.6.6).
         for (const std::string& t : e.designTypes) x.designTypes.push_back(text(t));
         for (const std::string& t : e.colonyTypes) x.colonyTypes.push_back(text(t));
+        for (const QueueType& t : e.queueTypes) {
+            ConstructionQueue q;
+            q.items = t.items;
+            x.queueTemplates.push_back({text(t.name), queue(q)});
+        }
         // Options (§3.6.7).
         x.options = empireOptions(e);
         // Waypoints, repair priorities, mine fields, systems to avoid (§3.6.8).
@@ -546,7 +554,7 @@ private:
         for (SystemId y : e.aiMemory.defend) x.defend.push_back(sys(y));
         for (SystemId y : e.aiMemory.targets) x.targets.push_back(sys(y));
         x.ministerStyle = text(e.ministerStyle);
-        for (size_t k = 0; k < x.ministers.size(); ++k) x.ministers[k] = e.ministerAll || ((e.ministers >> k) & 1u) != 0;
+        for (size_t k = 0; k < x.ministers.size(); ++k) x.ministers[k] = ((e.ministers >> k) & 1u) != 0;
         x.ministersForNewVehicles = e.ministersForNewVehicles;
         x.aiMinimalChanges = e.aiMinimalChanges;
         int drones = 0;
@@ -614,6 +622,8 @@ private:
         o.planetsTab = clampByte(u.planetsTab + 1);
         o.shipsTab = clampByte(u.shipsTab + 1);
         o.queuesTab = clampByte(u.queuesTab + 1);
+        o.setQueueTab = clampByte(u.setQueueTab + 1);
+        o.coloniesTab = clampByte(u.coloniesTab + 1);
         o.logFilter = clampByte(u.logFilter + 1);
         for (size_t k = 0; k < o.shipsShown.size(); ++k) o.shipsShown[k] = ((u.shipsShown >> k) & 1u) != 0;
         for (size_t k = 0; k < o.queuesShown.size(); ++k) o.queuesShown[k] = ((u.queuesShown >> k) & 1u) != 0;

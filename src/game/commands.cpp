@@ -419,10 +419,8 @@ struct Applier {
         if (!col) return R::fail("Not your planet");
         if (c.facilitySlot < 0 || static_cast<size_t>(c.facilitySlot) >= col->facilities.size()) return R::fail("No such facility");
         const uint32_t f = col->facilities[static_cast<size_t>(c.facilitySlot)];
-        int pct = static_cast<int>(r.setting("Scrap Facility Percent Returned", 30));
-        pct = std::max(pct, reclamationPercentAt(r, s, e, locationOf(s.galaxy, col->planet)));
         // round(cost × % / 100) of each resource (spec 02 §6.6, confirmed: binary).
-        emp().stockpile += Resources::from(r.facility(f).cost).percentRounded(pct);
+        emp().stockpile += Resources::from(r.facility(f).cost).percentRounded(facilityScrapPercent(r, s, e, col->planet, c.typeWide));
         col->facilities.erase(col->facilities.begin() + c.facilitySlot);
         // Scrap Facilities refreshes the cloak and sensor levels; a colony
         // that can no longer cloak is decloaked as by Decloak (spec 01 §6.9, §14 Q44).
@@ -1085,6 +1083,24 @@ struct Applier {
         emp().colonyTypes = c.colonyTypes;
         return {};
     }
+    R operator()(const cmd::SetQueueTypes& c) {
+        if (c.queueTypes.size() > kMaxQueueTypes) return R::fail(std::format("At most {} queue types", kMaxQueueTypes));
+        for (const QueueType& t : c.queueTypes) {
+            if (t.name.size() > 64) return R::fail("Queue type name too long");
+            if (t.items.size() > kMaxQueueTypeItems) return R::fail(std::format("At most {} items in a queue type", kMaxQueueTypeItems));
+            for (const QueueItem& item : t.items) {
+                if (item.count < 1 || item.count > 65535) return R::fail("Invalid count in a queue type");
+                if (item.kind == QueueItem::Kind::Vehicle ? !item.design.valid() || item.design.index() >= s.designs.size()
+                                                           : item.facility >= r.data().facilities.size())
+                    return R::fail("Unknown item in a queue type");
+            }
+        }
+        std::vector<QueueType>& list = emp().queueTypes;
+        list = c.queueTypes;
+        for (QueueType& t : list)
+            for (QueueItem& item : t.items) item.spent = {};
+        return {};
+    }
     R operator()(const cmd::SetEmpireOptions& c) {
         if (c.aiMinimalChanges) emp().aiMinimalChanges = *c.aiMinimalChanges;
         if (c.passwordHash) emp().passwordHash = *c.passwordHash;
@@ -1121,11 +1137,14 @@ struct Applier {
                 if (!allowed(ch)) return R::fail("Invalid minister style");
         }
         Empire& me = emp();
-        // Complete AI does all of the bulk buttons at once, then the single fields apply.
+        // Complete AI does all of the bulk buttons at once, then the single
+        // fields apply. It is no latch (spec 02 §10, confirmed: binary): a later
+        // Select None, a minister switched off or one flag cleared takes effect.
+        // Off also clears Empire::ministerAll, which older saves latched here.
         if (c.completeAi) {
             me.ministers = *c.completeAi ? kAllMinisters : 0;
             me.ministersForNewVehicles = *c.completeAi;
-            me.ministerAll = *c.completeAi;
+            if (!*c.completeAi) me.ministerAll = false;
             setIndividualMinisters(*c.completeAi);
         }
         if (c.areas) me.ministers = *c.areas;
@@ -1152,7 +1171,7 @@ struct Applier {
     R operator()(const cmd::SetInterfaceOptions& c) {
         const InterfaceOptions& o = c.options;
         if (o.logFilter > uint8_t(LogCategory::Misc) + 1) return R::fail("Unknown log filter");
-        if (o.planetsTab > 9 || o.queuesTab > 4 || o.queuesShown > 0x0f) return R::fail("Unknown window choice");
+        if (o.planetsTab > 9 || o.queuesTab > 4 || o.queuesShown > 0x0f || o.setQueueTab > 3 || o.coloniesTab > 8) return R::fail("Unknown window choice");
         if (o.facilityMarkers >= (1u << kFacilityMarkerGroups)) return R::fail("Unknown facility markers");
         if (o.logPosition < 0 || o.logScroll < 0) return R::fail("Invalid log position");
         emp().interfaceOptions = o;
@@ -1285,6 +1304,7 @@ OPENSE4_CMD_NAME(SetEmail)
 OPENSE4_CMD_NAME(OrderTagged)
 OPENSE4_CMD_NAME(SetFleetLeader)
 OPENSE4_CMD_NAME(ModCommand)
+OPENSE4_CMD_NAME(SetQueueTypes)
 #undef OPENSE4_CMD_NAME
 
 } // namespace
@@ -1344,6 +1364,12 @@ Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {
     return value;
 }
 
+int facilityScrapPercent(const Rules& r, const GameState& s, EmpireId empire, ObjectId planet, bool typeWide) {
+    const int pct = static_cast<int>(r.setting("Scrap Facility Percent Returned", 30));
+    if (typeWide) return pct;
+    return std::max(pct, reclamationPercentAt(r, s, empire, locationOf(s.galaxy, planet)));
+}
+
 Resources unmothballCharge(const Rules& r, const GameState& s, const Vehicle& v) {
     const Resources cost = computeDesignStats(r, nullptr, s.design(v.design)).cost;
     Resources out;
@@ -1360,63 +1386,65 @@ ConstructionQueue* findQueue(GameState& s, EmpireId empire, const cmd::QueueTarg
     return c ? &c->queue : nullptr;
 }
 
+// The queue takes an item unless the original's own refusals apply (spec 02
+// §6.5 "Acceptance", confirmed: binary): the colony's population, the ship
+// limit and a space yard for ships are not checked here. Ships and bases
+// meet the ship limit when built (§6.5), and a colony without a working yard
+// loses its ship items at the removal pass (§6.1). Beyond those refusals the
+// engine only rejects commands no window of the original can give: another
+// empire's queue, a ship queue that does not exist (no yard, or cloaked), an
+// unknown or unresearched upgrade target and an upgrade with nothing to
+// upgrade (OpenSE4's guards).
 std::string queueItemProblem(const Rules& r, const GameState& s, EmpireId empire, const cmd::QueueTarget& t, const QueueItem& item) {
     const Empire& emp = s.empire(empire);
     const Colony* col = nullptr;
-    const Vehicle* yardShip = nullptr;
     if (t.vehicle.valid()) {
-        yardShip = s.vehicle(t.vehicle);
+        const Vehicle* yardShip = s.vehicle(t.vehicle);
         if (!yardShip || yardShip->owner != empire) return "Not your vehicle";
         if (!vehicleHasSpaceYard(r, s, *yardShip)) return "This vehicle has no space yard";
         if (yardShip->status == VehicleStatus::Cloaked) return "A cloaked ship cannot build";
     } else {
         col = s.colony(t.planet);
         if (!col || col->owner != empire) return "Not your planet";
-        if (col->totalPopulation() == 0) return "A colony without population cannot build";
     }
     switch (item.kind) {
         case QueueItem::Kind::Vehicle: {
-            if (!item.design.valid() || item.design.index() >= s.designs.size() || s.design(item.design).owner != empire)
-                return "Not your design";
+            if (!item.design.valid() || item.design.index() >= s.designs.size()) return "There is no such vehicle design";
             const Design& d = s.design(item.design);
-            const DesignStats st = computeDesignStats(r, &emp, d);
-            if (!st.problems.empty()) return st.problems.front();
-            const bool unit = isUnitType(st.vehicleType);
-            if (!unit && col && !colonyHasSpaceYard(r, *col)) return "Building ships and bases needs a space yard";
-            // Ships and bases are capped when built; units only when launched,
-            // counting units in space (spec 03 §12, confirmed: binary).
-            if (!unit && shipCount(r, s, empire) >= s.options.maxShipsPerPlayer) return "Ship limit reached";
+            if (d.owner != empire) return std::format("We do not own the design of the {}", d.name);
+            if (!r.designTechnology(emp, d)) return std::format("The {} design is beyond our current technology to build", d.name);
             return {};
         }
         case QueueItem::Kind::Facility: {
+            if (item.facility >= r.data().facilities.size()) return "There is no such facility";
             if (!col) return "Only planets build facilities";
-            if (item.facility >= r.data().facilities.size()) return "Unknown facility";
-            if (!r.facilityAvailable(emp, item.facility)) return "Facility not yet researched";
-            const auto ab = r.facilityAbilities(item.facility);
-            if (hasAbility(ab, AbilityKind::SpaceYard)) {
-                if (colonyHasSpaceYard(r, *col)) return "A planet can have only one space yard";
-                for (const auto& q : col->queue.items)
-                    if (q.kind == QueueItem::Kind::Facility && hasAbility(r.facilityAbilities(q.facility), AbilityKind::SpaceYard))
-                        return "A space yard is already queued here";
-            }
+            // The facilities built and the whole count of every facility item queued.
             int queued = 0;
-            for (const auto& q : col->queue.items) queued += q.kind == QueueItem::Kind::Facility;
-            if (static_cast<int>(col->facilities.size()) + queued >= facilitySlots(r, s, *col)) return "No free facility slots";
-            if (!breathable(s, *col) && static_cast<int>(col->facilities.size()) + queued >= facilitySlots(r, s, *col))
-                return "Domed colony is full";
+            for (const auto& q : col->queue.items)
+                if (q.kind == QueueItem::Kind::Facility) queued += std::max(1, q.count);
+            const int slots = facilitySlots(r, s, *col);
+            if (static_cast<int>(col->facilities.size()) + queued >= slots)
+                return std::format("There is room for only {} facilit{} on this planet", slots, slots == 1 ? "y" : "ies");
+            if (hasAbility(r.facilityAbilities(item.facility), AbilityKind::SpaceYard)) {
+                bool yard = colonyHasSpaceYard(r, *col);
+                for (const auto& q : col->queue.items)
+                    yard = yard || (q.kind == QueueItem::Kind::Facility && q.facility < r.data().facilities.size() &&
+                                    hasAbility(r.facilityAbilities(q.facility), AbilityKind::SpaceYard));
+                if (yard) return "A planet can have only one space yard";
+            }
+            if (!r.facilityAvailable(emp, item.facility)) return std::format("The {} is beyond our current technology", r.facility(item.facility).name);
             return {};
         }
         case QueueItem::Kind::Upgrade: {
-            // `facility` is the target (spec 02 §6.6). The Upgrades tab offers only
-            // researched targets; we check that here too, since commands can come
-            // from anywhere (spec 02 §13 Q56).
+            // `facility` is the target (spec 02 §6.6). The original refuses only
+            // a second upgrade to the same target (confirmed: binary); the rest
+            // guards commands from elsewhere (spec 02 §13 Q56).
             if (!col) return "Only planets upgrade facilities";
-            if (item.facility >= r.data().facilities.size()) return "Unknown facility";
-            if (!r.facilityAvailable(emp, item.facility)) return "Facility not yet researched";
-            if (economy::upgradeCount(r, *col, item.facility) == 0) return "Nothing to upgrade here";
-            // A queue refuses a second upgrade to the same target (confirmed: binary).
+            if (item.facility >= r.data().facilities.size()) return "There is no such facility";
             for (const auto& q : col->queue.items)
-                if (q.kind == QueueItem::Kind::Upgrade && q.facility == item.facility) return "That upgrade is already queued here";
+                if (q.kind == QueueItem::Kind::Upgrade && q.facility == item.facility) return "That upgrade is already in the construction queue";
+            if (!r.facilityAvailable(emp, item.facility)) return std::format("The {} is beyond our current technology", r.facility(item.facility).name);
+            if (economy::upgradeCount(r, *col, item.facility) == 0) return "Nothing to upgrade here";
             return {};
         }
     }

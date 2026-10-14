@@ -238,6 +238,15 @@ struct Strategy {
     Strategy();   // neutral defaults for keys a record leaves out
 };
 Strategy parseStrategy(const ruleset::CombatStrategy& s);
+// The record the Strategies window's Add makes (spec 04 §16, confirmed:
+// binary): fighters launched in groups of 5, 3 drones per target, a ship
+// skipped once more than 80 % damaged and the other kinds at 100 %, "until
+// all weapons gone" off, and Break Formation on for carriers, colony ships,
+// fighters, satellites, planets and transports, off for bases, ships, mines,
+// both unarmed kinds and drones (the seekers' flags are fixed, §3.6.13 of
+// spec 08). Its movement, targeting and type priorities are Strategy()'s
+// (inferred: spec 04 §19 question 91).
+ruleset::CombatStrategy newStrategyRecord(std::string name);
 // An empire's strategy by index (its first one, or defaults, when out of range).
 Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index);
 

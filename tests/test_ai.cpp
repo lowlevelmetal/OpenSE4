@@ -3018,10 +3018,21 @@ TEST_CASE("ai: the minister settings belong to the empire and are set by cmd::Se
     CHECK(ai::ministerCommands(r, s, me).empty());
     REQUIRE(apply(r, s, me, cmd::SetMinisters{.completeAi = true}).ok);
     CHECK(s.empire(me).ministers == kAllMinisters);
-    CHECK(s.empire(me).ministerAll);
     CHECK(s.empire(me).ministersForNewVehicles);
     CHECK(homeworld(s, me).minister);
     CHECK_FALSE(homeworld(s, other).minister);
+    // It is no latch (spec 02 §10, confirmed: binary): Select None afterwards
+    // switches every area off, and one colony's flag cleared takes it back.
+    CHECK_FALSE(s.empire(me).ministerAll);
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.areas = 0u}).ok);
+    CHECK_FALSE(ai::ministerOn(s.empire(me), Minister::Research));
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.areas = kAllMinisters}).ok);
+    REQUIRE(apply(r, s, me, cmd::SetMinister{{}, homeworld(s, me).planet, false, false}).ok);
+    CHECK_FALSE(homeworld(s, me).minister);
+    // Off also clears the full control an older save may have latched.
+    s.empire(me).ministerAll = true;
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.completeAi = false}).ok);
+    CHECK_FALSE(s.empire(me).ministerAll);
 }
 
 TEST_CASE("ai: the minister style picks the AI files unless the race's style is used") {
@@ -5673,7 +5684,8 @@ TEST_CASE("ai: a Defense Base goes to the K-th queue of the empire's list, K the
 
     // A colony without a yard ahead of the homeworld in the list (a lower
     // system, or earlier in the home system): K is still 1, so the bases go
-    // there, and with no yard they are lost; nothing is queued anywhere.
+    // there. Its queue takes them (spec 02 §6.5), and with no yard the removal
+    // pass of the construction step drops them (spec 02 §6.1).
     std::optional<ObjectId> before;
     for (size_t i = 0; i <= homeAt.system.index() && !before; ++i)
         for (ObjectId o : s.galaxy.system(SystemId{i}).objects) {
@@ -5685,7 +5697,13 @@ TEST_CASE("ai: a Defense Base goes to the K-th queue of the empire's list, K the
         }
     REQUIRE(before);
     addColony(s, *before, me, {{me, 500}});
-    CHECK(queuedOf(plan(rules, s), me, base) == 0);
+    {
+        const GameState g = plan(rules, s);
+        CHECK(queuedOf(g, me, base) == 2);
+        REQUIRE(g.colony(*before)->queue.items.size() == 2);
+        CHECK(g.colony(homePlanet)->queue.items.empty());
+        for (const QueueItem& item : g.colony(*before)->queue.items) CHECK(economy::itemObsolete(rules, g, {*before, {}}, item));
+    }
 
     // That colony gets a yard: K is 2, and the second queue of the list (the
     // homeworld) takes the base, although the homeworld already has a base and
