@@ -1155,8 +1155,14 @@ tells the target's side that its ship was boarded and taken over; "Boarding Fail
 the ship failed to board the target, and "Self-Destruct" that the target blew itself up
 during the boarding and both ships are gone, to either side or both. The computer's phases
 use the same code, so a human defending tactically is told of a computer's boarding. With
-every side automatic (Strategic, Auto, Resolve Combat) there are no boxes. Our client opens
-them as its playback passes the boarding (spec 04 §19.6 Q95).
+every side automatic (Strategic, Auto, Resolve Combat) there are no boxes. "Ship Boarded"
+and "Boarding Failed" appear the moment the boarding is decided, before the ship changes
+owner, before the boarding's hits and before anything of it is drawn; the game waits until
+the box is closed, and the map is then updated. "Self-Destruct" comes after its two
+explosions (confirmed: binary; corrected 2026-10-14, complete listing, spec 04 §19.6 Q95).
+Since 2026-10-14 ours follows: the record's `Boarding` event comes before the capture and
+the hits, a self-destruct's after them, and the playback stops at it until the box is
+closed.
 
 #### 1.10.3 Combat Options and Combat Replay Options
 

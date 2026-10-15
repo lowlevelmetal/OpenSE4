@@ -3529,7 +3529,10 @@ void Battle::board(int i, int t) {
     pieces_[i].fired = true;
     event(Ev::Fire, i, t);
     // The outcome is recorded for the boarding message boxes, with the empire
-    // the boarded ship belonged to (spec 04 §12, spec 06 §1.10.2).
+    // the boarded ship belonged to (spec 04 §12, spec 06 §1.10.2): a capture or
+    // a failure the moment it is decided, before the ship changes owner and
+    // before the boarding's hits; a self-destruct after its two explosions
+    // (confirmed: binary; since 2026-10-14, complete listing).
     const uint32_t defender = b.owner.value;
     auto outcome = [&](int32_t what) { event(Ev::Boarding, i, t, what, defender); };
     if (offense > defense) {
@@ -3541,16 +3544,16 @@ void Battle::board(int i, int t) {
             outcome(CombatEvent::kBoardingSelfDestruct);
             return;
         }
+        outcome(CombatEvent::kBoardingTaken);
         capture(t, i, true);
         applyHit(-1, i, DamageType::OnlyBoardingParties, kBoardingSpend);   // the boarding parties are spent
         applyHit(-1, t, DamageType::OnlySecurityStations, kBoardingSpend);
-        outcome(CombatEvent::kBoardingTaken);
         return;
     }
+    outcome(CombatEvent::kBoardingFailed);
     note(std::format("{} repelled boarders from {}", label(t), label(i)));
     applyHit(-1, i, DamageType::OnlyBoardingParties, kBoardingSpend);
     applyHit(-1, t, DamageType::OnlySecurityStations, rng_.rangeInt(1, 5));
-    outcome(CombatEvent::kBoardingFailed);
 }
 
 void Battle::ram(int i, int t) {

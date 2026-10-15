@@ -1716,14 +1716,27 @@ TEST_CASE("capture: the record says how a boarding went, and whose ship it was")
         untilPlayer(b, k.ar.a);
         k.arrange({{i, 40, 40}, {t, 41, 40}});
         b.piece(t).sh.current = 0;
+        const size_t from = b.record().events.size();
         REQUIRE(b.submit(TacticalOrder{OK::Capture, k.ar.a, i, t}).empty());
-        const CombatEvent& last = b.record().events.back();
-        CHECK(last.kind == CombatEvent::Kind::Boarding);
-        CHECK(static_cast<int>(last.piece) == i);
-        CHECK(static_cast<int>(last.target) == t);
-        CHECK(last.amount == outcome);
-        CHECK(last.component == k.ar.b.value);   // whose ship it was, though it may have changed hands
+        size_t at = 0, boardings = 0, captured = 0, destroyed = 0;
+        for (size_t e = from; e < b.record().events.size(); ++e) {
+            const CombatEvent::Kind kind = b.record().events[e].kind;
+            if (kind == CombatEvent::Kind::Boarding) at = e, ++boardings;
+            if (kind == CombatEvent::Kind::Captured) captured = e;
+            if (kind == CombatEvent::Kind::Destroyed) destroyed = e;
+        }
+        REQUIRE(boardings == 1);
+        const CombatEvent& told = b.record().events[at];
+        CHECK(static_cast<int>(told.piece) == i);
+        CHECK(static_cast<int>(told.target) == t);
+        CHECK(told.amount == outcome);
+        CHECK(told.component == k.ar.b.value);   // whose ship it was, though it may have changed hands
         CHECK((b.pieces()[static_cast<size_t>(t)].owner == k.ar.a) == (outcome == CombatEvent::kBoardingTaken));
+        // A capture is told the moment it is decided, before the ship changes
+        // owner; a self-destruct after its explosions (spec 04 §19.6 Q95).
+        if (outcome == CombatEvent::kBoardingTaken) CHECK(at < captured);
+        if (outcome == CombatEvent::kBoardingFailed) CHECK(at == from + 1);   // right after the boarding's Fire
+        if (outcome == CombatEvent::kBoardingSelfDestruct) CHECK(at > destroyed);
     }
 }
 

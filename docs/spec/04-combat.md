@@ -2522,6 +2522,13 @@ traced and are OpenSE4's choices until a session with the executable settles the
 95. **When the boarding boxes open** (§12, spec 06 §1.10.2). Ours opens them when the
     window's playback passes the boarding, after its hits and the capture are drawn, and
     the playback waits until they are closed (inferred).
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): "Ship Boarded" or
+    "Boarding Failed" appears the moment the boarding is decided, before the ship changes
+    owner, before the boarding's hits and before anything of it is drawn; the game waits
+    until the box is closed, and the map is then updated. "Self-Destruct" comes after its
+    two explosions. Since 2026-10-14 ours follows: the record's `Boarding` event comes
+    before the capture and the hits (after them for a self-destruct), and the playback
+    stops there until the box is closed.
 96. **Firing refusals in boxes.** A click on a piece that is not hostile is refused in a
     "Cannot Fire Weapons" box (spec 06 §1.10.2). Ours writes every other reason a click
     does not fire (out of range, reloading, no supplies) on the map, as before (inferred).
