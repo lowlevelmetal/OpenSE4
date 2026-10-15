@@ -204,12 +204,14 @@ std::vector<DesignId> designsOfClass(const Rules& r, const GameState& s, EmpireI
     return out;
 }
 
-// Research - Steal works on an area where the target is ahead of the thief
-// and that is neither racial nor unique (spec 05 §2.3, confirmed: binary).
-bool stealable(const Rules& r, const GameState& s, EmpireId source, EmpireId target, ruleset::TechAreaId a) {
-    if (!validArea(r, a)) return false;
-    const ruleset::TechArea& t = r.tech(a);
-    return s.empire(target).techLevel(a) > s.empire(source).techLevel(a) && t.racialArea <= 0 && t.uniqueArea <= 0;
+// The system with the most of `count` (one per system), the first such in
+// system order; none when every count is 0.
+std::optional<SystemId> mostIn(const std::vector<int>& count) {
+    std::optional<size_t> best;
+    for (size_t i = 0; i < count.size(); ++i)
+        if (count[i] > 0 && (!best || count[i] > count[*best])) best = i;
+    if (!best) return std::nullopt;
+    return SystemId{*best};
 }
 
 std::vector<SystemId> unlinkedSystems(const GameState& s, SystemId from) {
@@ -502,7 +504,8 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
             if (request.tech.valid()) return validArea(r, request.tech) ? std::optional<Target>(t) : std::nullopt;
             // "Any" (confirmed: binary): the operatives keep only areas where
             // the thief is already ahead of the target, so the steal that
-            // follows always fails. Reproduced on purpose.
+            // follows always ends as a success without a level. Reproduced on
+            // purpose.
             std::vector<ruleset::TechAreaId> areas;
             for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) areas.push_back(ruleset::TechAreaId{i});
             const Empire& thief = s.empire(request.source);
@@ -821,24 +824,33 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             // Movement points of the current turn only, never below 0 (confirmed:
             // binary). They are refilled when movement starts, so after the
             // movement phases this changes nothing.
-            if (!v) return out;
-            out.actual = std::clamp<int64_t>(amount, 0, std::max(0, v->movement));
+            // A ship with no movement points left: the operation fails (confirmed: binary).
+            if (!v || v->movement <= 0) return out;
+            out.actual = std::clamp<int64_t>(amount, 0, v->movement);
             v->movement -= static_cast<int>(out.actual);
             break;
         case Effect::ShipLoseSupply:
             // Nothing happens to unlimited supply (spec 03 §19 Q57, confirmed: binary).
+            // It fails too when min(Amount, supply) is 0 or less: no supply
+            // left, or Amount <= 0 (confirmed: binary).
             if (!v || vehicleHasUnlimitedSupply(r, s, *v)) return out;
-            out.actual = std::clamp<int64_t>(amount, 0, std::max<int64_t>(0, v->supply));
+            out.actual = std::min<int64_t>(amount, v->supply);
+            if (out.actual <= 0) return out;
             v->supply -= out.actual;
             break;
         case Effect::ShipRebel:
-            if (!v || !living(s, t.source)) return out;
-            ctx.mood(v->owner, "Any Ship Lost");
+            // A mothballed ship stays with its owner: the operation fails. The
+            // change of owner raises no happiness event, and the ship is put
+            // under minister control when the source puts its new ships there
+            // (spec 05 §2.3, confirmed: binary).
+            if (!v || !living(s, t.source) || v->status == VehicleStatus::Mothballed) return out;
             diplomacy::transferVehicle(s, v->id, t.source);
+            v->minister = s.empire(t.source).ministersForNewVehicles;
             out.actual = 1;
             break;
         case Effect::ShipExperienceChange: {
-            if (!v) return out;
+            // A loss on a ship with no experience fails (confirmed: binary).
+            if (!v || (amount < 0 && v->experience <= 0)) return out;
             const int before = v->experience;
             v->experience = std::max(0, before + amount);
             out.actual = v->experience - before;
@@ -905,38 +917,41 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::ShipConcentrations: {
-            std::map<SystemId, int> count;
+            // One line for the source's message: the one system, among those
+            // the target has explored, where it has the most ships and bases
+            // (the first such in system order), with the count; it fails when
+            // there is none. Nothing becomes explored for the thief (spec 05
+            // §2.3, confirmed: binary).
+            if (!victim) return out;
+            std::vector<int> count(s.galaxy.systems.size(), 0);
             for (const Vehicle& x : s.vehicles)
-                if (x.owner == t.empire && isShip(r, s, x)) ++count[x.location.system];
-            std::vector<std::pair<SystemId, int>> rows(count.begin(), count.end());
-            std::stable_sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-            for (const auto& [sys, n] : rows) {
-                out.report.push_back(std::format("{}: {} ship{}", s.galaxy.system(sys).name, n, n == 1 ? "" : "s"));
-                explore(s, t.source, sys);
-            }
-            if (out.report.empty()) out.report.push_back("They have no ships.");
-            out.actual = static_cast<int64_t>(rows.size());
+                if (x.owner == t.empire && isShip(r, s, x) && validSystem(s, x.location.system) && victim->hasExplored(x.location.system))
+                    ++count[x.location.system.index()];
+            const std::optional<SystemId> most = mostIn(count);
+            if (!most) return out;
+            out.actual = count[most->index()];
+            out.report.push_back(std::format("The {} has the most ships and bases in the {} system: {}.", empireFullName(*victim),
+                                             s.galaxy.system(*most).name, out.actual));
             break;
         }
         case Effect::ShipConstructionInfo: {
-            std::vector<std::pair<ObjectId, int>> rows;
-            for (const auto& c : s.colonies) {
-                if (!c || c->owner != t.empire) continue;
-                int n = 0;
-                for (const QueueItem& q : c->queue.items)
-                    if (q.kind == QueueItem::Kind::Vehicle) n += q.count;
-                if (n > 0) rows.emplace_back(c->planet, n);
-            }
-            std::stable_sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-            for (const auto& [planet, n] : rows) {
-                std::string items;
-                for (const QueueItem& q : s.colony(planet)->queue.items)
-                    if (q.kind == QueueItem::Kind::Vehicle && q.design.index() < s.designs.size())
-                        items += std::format("{}{} x{}", items.empty() ? "" : ", ", s.design(q.design).name, q.count);
-                out.report.push_back(std::format("{}: {}", s.galaxy.object(planet).name, items));
-            }
-            if (out.report.empty()) out.report.push_back("No vehicles are under construction.");
-            out.actual = static_cast<int64_t>(rows.size());
+            // One line: the one system with the most of the target's
+            // ship-building construction queues, with the count; it fails when
+            // there is none (spec 05 §2.3, confirmed: binary). A ship-building
+            // queue is a colony's with a space yard, or a ship's or base's that
+            // carries one (inferred, open question 85).
+            if (!victim) return out;
+            std::vector<int> count(s.galaxy.systems.size(), 0);
+            for (const auto& c : s.colonies)
+                if (c && c->owner == t.empire && colonyHasSpaceYard(r, *c)) ++count[s.galaxy.object(c->planet).system.index()];
+            for (const Vehicle& x : s.vehicles)
+                if (x.owner == t.empire && x.count > 0 && validSystem(s, x.location.system) && vehicleHasSpaceYard(r, s, x))
+                    ++count[x.location.system.index()];
+            const std::optional<SystemId> most = mostIn(count);
+            if (!most) return out;
+            out.actual = count[most->index()];
+            out.report.push_back(std::format("The {} has the most ship-building construction queues in the {} system: {}.", empireFullName(*victim),
+                                             s.galaxy.system(*most).name, out.actual));
             break;
         }
         case Effect::ShipDesignsSteal:
@@ -1013,6 +1028,9 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             const SystemId sys = s.galaxy.object(t.object).system;
             const int64_t spread = (amount < 0 ? -int64_t{amount} : int64_t{amount}) / 5;
             const int64_t change = int64_t{amount} + (spread > 0 ? rng.range(-spread, spread) : 0);
+            // It fails when the change drawn is exactly 0, or for a loss on a
+            // colony with less than 1 million people (confirmed: binary).
+            if (change == 0 || (change < 0 && col->totalPopulation() < 1)) return out;
             if (change < 0) {
                 out.actual = killFromFirst(col->population, -change);
                 if (out.actual > 0) ctx.mood(col->owner, "1M Population Killed", sys, t.object, static_cast<int>(std::min<int64_t>(out.actual, INT32_MAX)));
@@ -1081,7 +1099,10 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             // first group on; when fewer are aboard all die, the damage they
             // absorbed is subtracted and the rest is a hull-damaging hit on
             // the units (spec 05 §2.3, spec 04 §9.4, confirmed: binary).
-            if (!col || amount <= 0 || col->cargo.empty()) return out;
+            // An empty cargo fails; Amount <= 0 on a cargo that holds something
+            // is a success that damages nothing (confirmed: binary).
+            if (!col || col->cargo.empty()) return out;
+            if (amount <= 0) break;
             const int64_t perMillion = std::max<int64_t>(1, r.setting("Damage Points To Kill One Population", 10));
             const int64_t aboard = col->cargo.totalPopulation();
             const int64_t kill = int64_t{amount} / perMillion;
@@ -1122,34 +1143,31 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::PlanetInfo: {
+            // One line: the planet's facilities and cargo. Nothing becomes
+            // explored for the thief (spec 05 §2.3, confirmed: binary).
             if (!col) return out;
-            const SpaceObject& obj = s.galaxy.object(t.object);
-            explore(s, t.source, obj.system);
-            out.report.push_back(std::format("{}: {} {}, atmosphere {}, conditions {}", obj.name, obj.size, obj.surface, obj.atmosphere,
-                                             economy::conditionsName(economy::conditionsBand(obj.conditions))));
-            out.report.push_back(std::format("Value: minerals {}, organics {}, radioactives {}", obj.value[0], obj.value[1], obj.value[2]));
-            for (const PopulationGroup& p : col->population)
-                out.report.push_back(std::format("Population: {}M {}", p.millions,
-                                                 validEmpire(s, p.race) ? s.empire(p.race).race.name : std::string("unknown")));
-            out.report.push_back(std::format("Mood: {}", economy::moodName(r, s, *col)));
             std::map<uint32_t, int> facilities;
             for (uint32_t f : col->facilities) ++facilities[f];
-            for (const auto& [f, n] : facilities) out.report.push_back(std::format("Facility: {} x{}", r.facility(f).name, n));
+            std::string built, held;
+            for (const auto& [f, n] : facilities) built += std::format("{}{}{}", built.empty() ? "" : ", ", r.facility(f).name, n > 1 ? std::format(" x{}", n) : "");
             for (const UnitStack& u : col->cargo.units)
-                if (u.design.index() < s.designs.size()) out.report.push_back(std::format("Cargo: {} x{}", s.design(u.design).name, u.count));
-            for (const PopulationGroup& p : col->cargo.population) out.report.push_back(std::format("Cargo: {}M population", p.millions));
+                if (u.design.index() < s.designs.size()) held += std::format("{}{} x{}", held.empty() ? "" : ", ", s.design(u.design).name, u.count);
+            if (const int64_t people = col->cargo.totalPopulation(); people > 0) held += std::format("{}{}M population", held.empty() ? "" : ", ", people);
+            out.report.push_back(std::format("{}: facilities: {}; cargo: {}.", s.galaxy.object(t.object).name, built.empty() ? "none" : built,
+                                             held.empty() ? "none" : held));
             out.actual = 1;
             break;
         }
         case Effect::PlanetLocations: {
-            for (const auto& c : s.colonies)
-                if (c && c->owner == t.empire) {
-                    const SpaceObject& obj = s.galaxy.object(c->planet);
-                    out.report.push_back(std::format("{} in the {} system", obj.name, s.galaxy.system(obj.system).name));
-                    explore(s, t.source, obj.system);
-                    ++out.actual;
-                }
-            if (out.report.empty()) out.report.push_back("They have no colonies.");
+            // One line, and no locations at all: how many systems the target
+            // spans, how many worlds it has colonized and its total population.
+            // Nothing becomes explored for the thief (spec 05 §2.3, confirmed:
+            // binary).
+            if (!victim) return out;
+            const TurnStats st = score::currentStats(r, s, t.empire);
+            out.report.push_back(std::format("The {} spans {} systems, with {} colonized worlds and a population of {}M.", empireFullName(*victim),
+                                             st.systems, st.planets, st.population));
+            out.actual = st.planets;
             break;
         }
         case Effect::PlanetPlague: {
@@ -1263,16 +1281,19 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
 
         case Effect::ResearchSteal: {
-            // The area must be one where the target is ahead of us and that is
-            // neither racial nor unique; we gain exactly one level (confirmed:
-            // binary).
+            // It fails only on a racial or unique area. Where the target is
+            // ahead of us we gain exactly one level; otherwise the operation
+            // still succeeds, without a level, and the source's message says
+            // the target knew nothing new (spec 05 §2.3, confirmed: binary).
             if (!victim || !living(s, t.source) || !validArea(r, t.tech)) return out;
             out.tokens.techName = r.tech(t.tech).name;
-            if (!stealable(r, s, t.source, t.empire, t.tech)) return out;
+            if (r.tech(t.tech).racialArea > 0 || r.tech(t.tech).uniqueArea > 0) return out;
             const int before = s.empire(t.source).techLevel(t.tech);
-            research::grantLevel(ctx, t.source, t.tech, before + 1, "espionage");
-            if (s.empire(t.source).techLevel(t.tech) == before) return out;
+            if (victim->techLevel(t.tech) > before) research::grantLevel(ctx, t.source, t.tech, before + 1, "espionage");
             out.actual = s.empire(t.source).techLevel(t.tech);
+            if (out.actual == before)
+                out.report.push_back(std::format("The {} knows nothing of {} that we do not know already.", empireFullName(s.empire(t.empire)),
+                                                 r.tech(t.tech).name));
             break;
         }
         case Effect::ResearchDeleteProject: {
@@ -1391,13 +1412,24 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::TechLevelInfo: {
+            // One line: up to five of the target's areas with a level, drawn at
+            // random, with their levels; it fails when the target holds no level
+            // anywhere (spec 05 §2.3, confirmed: binary; each area drawn once,
+            // inferred).
             if (!victim) return out;
-            for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
-                const int level = victim->techLevel(ruleset::TechAreaId{i});
-                if (level > 0) out.report.push_back(std::format("{}: level {}", r.data().techAreas[i].name, level));
+            std::vector<uint32_t> areas;
+            for (uint32_t i = 0; i < r.data().techAreas.size(); ++i)
+                if (victim->techLevel(ruleset::TechAreaId{i}) > 0) areas.push_back(i);
+            if (areas.empty()) return out;
+            std::string known;
+            for (int k = 0; k < 5 && !areas.empty(); ++k) {
+                const size_t pick = rng.index(areas.size());
+                const uint32_t i = areas[pick];
+                areas.erase(areas.begin() + static_cast<std::ptrdiff_t>(pick));
+                known += std::format("{}{} level {}", known.empty() ? "" : ", ", r.data().techAreas[i].name, victim->techLevel(ruleset::TechAreaId{i}));
+                ++out.actual;
             }
-            if (out.report.empty()) out.report.push_back("They know no technology.");
-            out.actual = research::totalLevels(r, *victim);
+            out.report.push_back(std::format("Among the technology of the {}: {}.", empireFullName(*victim), known));
             break;
         }
 

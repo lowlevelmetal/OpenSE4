@@ -755,7 +755,11 @@ TEST_CASE("events: planet effects") {
     // test settings), then a hull-damaging hit on the units.
     CHECK_FALSE(hit(s, Effect::PlanetCargoDamage, target(home), 100).applied);  // nothing aboard
     c.cargo.population = {{kA, 8}, {kB, 50}};
-    CHECK_FALSE(hit(s, Effect::PlanetCargoDamage, target(home), 0).applied);
+    // Amount 0 on a cargo that holds something: a success that damages nothing
+    // (spec 05 §2.3, confirmed: binary).
+    out = hit(s, Effect::PlanetCargoDamage, target(home), 0);
+    CHECK(out.applied);
+    CHECK(c.cargo.totalPopulation() == 58);
     out = hit(s, Effect::PlanetCargoDamage, target(home), 105);
     CHECK(out.actual == 10);
     CHECK(c.cargo.population == std::vector<PopulationGroup>{{kB, 48}});

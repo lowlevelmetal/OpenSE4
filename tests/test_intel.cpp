@@ -385,16 +385,26 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     CHECK(out.applied);
     CHECK(s.empire(kA).techLevel(beams) == 2);
     CHECK(out.tokens.techName == "Test Beams");
-    // An area where they do not lead: nothing.
+    // An area where they do not lead: a success without a level, and the
+    // source's message says so (spec 05 §2.3, confirmed: binary).
     request.tech = armor;
+    const int armorBefore = s.empire(kA).techLevel(armor);
     out = run(s, Effect::ResearchSteal, request);
-    CHECK_FALSE(out.applied);
+    CHECK(out.applied);
+    CHECK(s.empire(kA).techLevel(armor) == armorBefore);
+    REQUIRE(out.report.size() == 1);
+    CHECK(out.report[0].find("knows nothing of Test Armor") != std::string::npos);
+    // Only a racial or unique area fails.
+    request.tech = techArea(r, "Test Psionics");
+    CHECK_FALSE(run(s, Effect::ResearchSteal, request).applied);
+    request.tech = techArea(r, "Test Relics");
+    CHECK_FALSE(run(s, Effect::ResearchSteal, request).applied);
 
     // "Any": the operatives pick an area where we already lead, so the steal
-    // always fails (a quirk of the original, kept on purpose).
+    // ends as a success without a level (a quirk of the original, kept on purpose).
     s.empire(kA).techLevels[armor.index()] = 3;
     out = run(s, Effect::ResearchSteal, target(kB, kA));
-    CHECK_FALSE(out.applied);
+    CHECK(out.applied);
     CHECK(s.empire(kA).techLevel(armor) == 3);
     CHECK(s.empire(kA).techLevel(beams) == 2);
     s.empire(kA).techLevels = s.empire(kB).techLevels;
@@ -477,7 +487,22 @@ TEST_CASE("intel: ships defect to the source") {
     CHECK(std::find(s.fleets[0].members.begin(), s.fleets[0].members.end(), theirs[0]) == s.fleets[0].members.end());
     // A defection is not one of the ways a design is learned (spec 05 §8).
     CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, v->design));
-    CHECK(hasMood(ctx, kB, "Any Ship Lost"));
+    // No happiness event (spec 05 §2.3, confirmed: binary); the minister mark
+    // follows the source's setting for its new ships.
+    CHECK_FALSE(hasMood(ctx, kB, "Any Ship Lost"));
+    CHECK(v->minister == s.empire(kA).ministersForNewVehicles);
+    s.empire(kA).ministersForNewVehicles = true;
+    request.vehicle = theirs[1];
+    picked = effects::pickTarget(r, s, Effect::ShipRebel, request, rng);
+    REQUIRE(picked);
+    // A mothballed ship stays with its owner: the operation fails.
+    s.vehicle(theirs[1])->status = VehicleStatus::Mothballed;
+    CHECK_FALSE(effects::apply(ctx, Effect::ShipRebel, *picked, 1, rng).applied);
+    CHECK(s.vehicle(theirs[1])->owner == kB);
+    s.vehicle(theirs[1])->status = VehicleStatus::Normal;
+    CHECK(effects::apply(ctx, Effect::ShipRebel, *picked, 1, rng).applied);
+    CHECK(s.vehicle(theirs[1])->owner == kA);
+    CHECK(s.vehicle(theirs[1])->minister);
 }
 
 TEST_CASE("intel: a rebel planet breaks away 25 %, joins the source 18.75 %, stays 56.25 %") {
@@ -564,10 +589,19 @@ TEST_CASE("intel: ship sabotage takes supply and this turn's movement only") {
     CHECK(s.vehicle(id)->immobileUntil <= s.turn);
     out = run(s, Effect::ShipLoseMovement, request, 3);
     CHECK(s.vehicle(id)->movement == 0);  // never below 0
+    // With no movement left the operation fails (spec 05 §2.3, confirmed: binary).
+    CHECK_FALSE(run(s, Effect::ShipLoseMovement, request, 3).applied);
     out = run(s, Effect::ShipLoseSupply, request, 120);
     CHECK(s.vehicle(id)->supply == 180);
+    CHECK_FALSE(run(s, Effect::ShipLoseSupply, request, 0).applied);   // Amount 0: nothing to take
     out = run(s, Effect::ShipLoseSupply, request, 1000);
     CHECK(s.vehicle(id)->supply == 0);
+    CHECK_FALSE(run(s, Effect::ShipLoseSupply, request, 10).applied);  // no supply left
+    // A loss of experience fails on a ship that has none.
+    s.vehicle(id)->experience = 0;
+    CHECK_FALSE(run(s, Effect::ShipExperienceChange, request, -5).applied);
+    CHECK(run(s, Effect::ShipExperienceChange, request, 5).applied);
+    CHECK(s.vehicle(id)->experience == 5);
 
     // Orders Change: one move order to a random system; mothballed ships are immune.
     out = run(s, Effect::ShipOrdersChange, request);
@@ -665,15 +699,22 @@ TEST_CASE("intel: espionage reports") {
     const SystemId theirHome = s.galaxy.object(homeworld(s, kB).planet).system;
     REQUIRE_FALSE(s.empire(kA).hasExplored(theirHome));
 
+    // Planet - Locations: one line of counts, no locations, nothing explored
+    // (spec 05 §2.3, confirmed: binary).
     auto out = run(s, Effect::PlanetLocations, {});
     CHECK(out.actual == 1);
-    CHECK(s.empire(kA).hasExplored(theirHome));
+    REQUIRE(out.report.size() == 1);
+    CHECK(out.report[0].find("1 colonized worlds") != std::string::npos);
+    CHECK_FALSE(s.empire(kA).hasExplored(theirHome));
 
     effects::Target request = target(kB, kA);
     request.object = homeworld(s, kB).planet;
     out = run(s, Effect::PlanetInfo, request);
-    CHECK(out.report.size() >= 4);
+    REQUIRE(out.report.size() == 1);
+    CHECK(out.report[0].find("facilities: ") != std::string::npos);
+    CHECK(out.report[0].find("cargo: ") != std::string::npos);
     CHECK(out.tokens.planetName == s.galaxy.object(homeworld(s, kB).planet).name);
+    CHECK_FALSE(s.empire(kA).hasExplored(theirHome));
 
     // System - Info: the highest-numbered system they explored and we did not;
     // the system drawn for the order does not matter (spec 05 §2.3).
@@ -697,9 +738,55 @@ TEST_CASE("intel: espionage reports") {
         CHECK(out.applied);
         CHECK_FALSE(out.report.empty());
     }
+    // One line each: the system where they have the most ships and bases,
+    // among those they explored, with the count; nothing explored for us.
     out = run(s, Effect::ShipConcentrations, {});
-    CHECK(out.report[0].find("3 ships") != std::string::npos);  // two scouts and a colony ship at home
+    REQUIRE(out.report.size() == 1);
+    CHECK(out.report[0].ends_with(std::format("{} system: 3.", s.galaxy.system(theirHome).name)));  // two scouts and a colony ship at home
+    CHECK_FALSE(s.empire(kA).hasExplored(theirHome));
+    out = run(s, Effect::ShipConstructionInfo, {});
+    REQUIRE(out.report.size() == 1);
+    CHECK(out.report[0].ends_with(std::format("{} system: 1.", s.galaxy.system(theirHome).name)));  // the homeworld's yard
+    // Up to five areas with a level, drawn at random; none at all fails.
+    out = run(s, Effect::TechLevelInfo, {});
+    REQUIRE(out.report.size() == 1);
+    CHECK(out.actual == 5);
+    std::fill(s.empire(kB).techLevels.begin(), s.empire(kB).techLevels.end(), 0);
+    CHECK_FALSE(run(s, Effect::TechLevelInfo, {}).applied);
     (void)r;
+}
+
+TEST_CASE("intel: an espionage line goes into the source's message, not an entry of its own (spec 05 §2.3)") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    s.empire(kA).intel = {order(Effect::PlanetLocations, kB)};
+    step(s, kA, 1000);
+    const std::string name = politicsRules().data().intelProjects[projectFor(Effect::PlanetLocations)].name;
+    const LogEntry* src = findLog(s, kA, name);
+    REQUIRE(src);
+    CHECK(src->text.find("\nThe Realm 2 Union spans 1 systems, with 1 colonized worlds") != std::string::npos);
+    CHECK(findLog(s, kA, name + " Report") == nullptr);
+}
+
+TEST_CASE("intel: planet sabotage that changes nothing fails, and a cargo hit of 0 succeeds (spec 05 §2.3)") {
+    GameState s = newPoliticsGame();
+    effects::Target request = target(kB, kA);
+    request.object = homeworld(s, kB).planet;
+    // Amount 0 and no spread: the change drawn is 0, so it fails.
+    CHECK_FALSE(run(s, Effect::PlanetPopulationChange, request, 0).applied);
+    // A loss on a colony of less than 1 million people fails.
+    Colony& c = *s.colony(homeworld(s, kB).planet);
+    const std::vector<PopulationGroup> people = c.population;
+    c.population.clear();
+    CHECK_FALSE(run(s, Effect::PlanetPopulationChange, request, -3).applied);
+    c.population = people;
+    // Cargo Damage: an empty cargo fails; Amount 0 on a cargo that holds
+    // something succeeds and damages nothing.
+    c.cargo = Cargo{};
+    CHECK_FALSE(run(s, Effect::PlanetCargoDamage, request, 5).applied);
+    c.cargo.population.push_back(PopulationGroup{kB, 4});
+    CHECK(run(s, Effect::PlanetCargoDamage, request, 0).applied);
+    CHECK(s.colony(homeworld(s, kB).planet)->cargo.totalPopulation() == 4);
 }
 
 TEST_CASE("intel: effects that need a source achieve nothing without one") {

@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <format>
+#include <span>
 
 namespace opense4::game::intel {
 
@@ -49,12 +50,15 @@ LogGoto outcomeGoto(const std::optional<Location>& where) { return where ? LogGo
 // Logs a project's source message to `to` and its target message to
 // `victim`. `defended`: a defense project stopped the victim's operation, so
 // the defender's entry opens Intelligence and the defeated side's has no Goto.
+// `findings`: the lines an espionage effect adds to the source's message
+// (spec 05 §2.3, confirmed: binary).
 void projectMessages(TurnContext& ctx, const ruleset::IntelProject& p, EmpireId to, EmpireId victim, const effects::Tokens& tokens,
                      std::string_view fallbackSource, std::string_view fallbackTarget, std::string_view suspicion,
-                     std::optional<Location> where, Rng& rng, bool defended = false) {
+                     std::optional<Location> where, Rng& rng, bool defended = false, std::span<const std::string> findings = {}) {
     if (validEmpire(ctx.state, to)) {
         std::string text = p.sourceMessages.empty() ? std::string(fallbackSource)
                                                     : effects::substitute(p.sourceMessages[rng.index(p.sourceMessages.size())], tokens);
+        for (const std::string& line : findings) text += "\n" + line;
         // A counter-intelligence success shows IntelSabotageByUs (spec 06 §4.1).
         logGoto(ctx.log(to, LogCategory::Intelligence, p.name, withPrefix(text), where, defended ? std::string("IntelSabotageByUs") : p.sourcePicture),
                 defended ? LogGoto::Intelligence : outcomeGoto(where));
@@ -164,14 +168,11 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
     std::string suspicion;
     if (rng.range(1, kSuspectRoll) == 1) suspicion = suspectLine(full.sourceEmpireName);
     // Every successful effect sends the source and the victim their messages,
-    // Planet - Conditions Change included (spec 05 open question 39).
+    // Planet - Conditions Change included (spec 05 open question 39). What an
+    // espionage effect learned is a line added to the source's message, not
+    // an entry of its own (spec 05 §2.3, confirmed: binary).
     projectMessages(ctx, p, source, target, full, "The operation succeeded.", "A hostile intelligence operation struck us.",
-                    suspicion, where, rng);
-    if (!out.report.empty()) {
-        std::string text;
-        for (const auto& line : out.report) text += (text.empty() ? "" : "\n") + line;
-        logGoto(ctx.log(source, LogCategory::Intelligence, std::format("{} Report", p.name), text, where, p.sourcePicture), outcomeGoto(where));
-    }
+                    suspicion, where, rng, false, out.report);
 }
 
 } // namespace
