@@ -1128,8 +1128,10 @@ same (§10.6).
   or the target self-destructed) is told in message boxes to the sides played by hand at
   that moment (spec 06 §1.10.2), whoever's phase it is: a computer side's boarding of a
   ship of a human playing tactically is told to that human. In a battle every side fights
-  automatically (strategic combat, Auto, Resolve Combat) nobody is told. OpenSE4's record
-  keeps each boarding's outcome as a `Boarding` event (combat.hpp) after its hits, with the
+  automatically (strategic combat, Auto, Resolve Combat) nobody is told. A capture or a
+  failure is told the moment it is decided, before the ship changes owner and before the
+  boarding's hits; a self-destruct after its two explosions (§19.6 Q95). OpenSE4's record
+  keeps each boarding's outcome as a `Boarding` event (combat.hpp) at that point, with the
   empire the target belonged to; the window turns it into the boxes.
 
 ## 13. Ground combat (confirmed: binary unless marked)
@@ -2540,6 +2542,11 @@ traced and are OpenSE4's choices until a session with the executable settles the
     B = 500000. Ours gives the obstacle nothing, records no hit on it and credits no kill
     (inferred). Does the original draw a hit, or credit the second experience and tonnage
     of §10.3?
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): the obstacle gets the
+    ordinary hit with A ÷ 4, which has no effect on an obstacle: nothing is destroyed, no
+    kill, no experience, no tonnage. The rammer takes B = 500000. The ram's explosion is
+    drawn on whichever piece took the bigger blow, normally the rammer. Ours matches on
+    the rules.
 95. **When the boarding boxes open** (§12, spec 06 §1.10.2). Ours opens them when the
     window's playback passes the boarding, after its hits and the capture are drawn, and
     the playback waits until they are closed (inferred).

@@ -250,17 +250,20 @@ The REA parity audit of 2026-10-11 found these about cargo and units, implemente
   08 §3.6.7). OpenSE4's buttons Launch Remotely and Recover Remotely in the window and its
   list of orders given are gone with the orders; the I and O order buttons remain.
 - **Mines in a battle** (`Battle::launchOrder`, `minesLaid_`): laid with that window at
-  the layers' combat rate and within the sector's cap; they join the minefield when the
-  battle ends.
+  the layers' combat rate and within the sector's cap; each opening of the window that
+  lays mines makes a minefield of its own, never joining the one already there (spec 04
+  §10.6, since 2026-10-14). Ours makes them when the battle ends rather than at once, so
+  their place in the object order among the objects made in the battle may differ
+  (inferred).
 - **Transfer Cargo**: every holder's cargo lines shown, holders without cargo space left
   out, the plague refusal in a message box. **Jettison Cargo**: a right-click on a line
   opens the design's or the race's report. **Races On Planet**: from the Planet Report's
   population.
 
 What stays different, by choice (inferred where the audit was silent): the map's window
-keeps the carriers on the left (spec 06 §7 Q119); a recovery in a battle leaves the
-launches of the combat turn counted (spec 04 §19 Q97); Races On Planet opens from our
-page's Population line and only for own colonies.
+keeps the carriers on the left (spec 06 §7 Q119); Races On Planet opens from our page's
+Population line and only for own colonies. A recovery in a battle leaves the launches of
+the combat turn counted, as the original does (spec 04 §19.7 Q97, settled 2026-10-14).
 
 GitHub issue #13 (spec 03 §19 Q85, 2026-10-14): a ship that lost engines in a battle kept the
 movement it had, so its report read "4 / 3", and in a turn-based game a later move counted
@@ -366,15 +369,16 @@ The step toward a square (spec 04 §5, found 2026-10-02) was implemented the sam
 (`Battle::walkToward`): one step toward the destination on each axis, and when that square
 is taken up to four random tries of the two squares beside it, each drawing from the
 battle's own sequence; a strategy's move is recorded as a move toward its square, so the
-strategic, tactical and replayed battles stay identical. Which square each draw names is
-spec 04 question 90 (inferred). Over 120 games of the pace set-up the drawn battles of
-turns 51–100 fell from 44 to 37 % (spec 07 "Pace after the scrap, cap and fleet rules").
+strategic, tactical and replayed battles stay identical. Which square each draw names
+follows the original since 2026-10-14 (spec 04 question 90). Over 120 games of the pace
+set-up the drawn battles of turns 51–100 fell from 44 to 37 % (spec 07 "Pace after the
+scrap, cap and fleet rules").
 This row remains:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | Random numbers of a battle shown tactically (client drawing) | The display draws no random numbers | Spec 04 §19.1, spec 06 §7 Q77: a miss's direction and a planet's point are drawn from the battle's sequence, so a shown battle continues differently | M |
-| A click on an enemy that does not fire (out of range, reloading, no supplies) | The reason is written on the map (ours); only a click on a piece that is not hostile gets the "Cannot Fire Weapons" box | Spec 04 §19.6 Q96: which of these reasons the original puts in a box was not traced | L |
+| A click on an enemy that does not fire (out of range, reloading, no supplies, nothing ticked) | As the original by default: nothing is said. An OpenSE4 option, off by default (Options and Combat Options, under OpenSE4: "Say on the map why a click fired nothing"), writes the reason on the map | Spec 04 §19.6 Q96 (confirmed: binary): no message of any kind; only a click on a piece that is not hostile gets the "Cannot Fire Weapons" box | L (option) |
 
 The parity audit of 2026-10-11 (REA) brought the tactical window and the simulator in
 line on 2026-10-14 (spec 04 §5, §6, §10.3, §12, §17, spec 06 §1.10.1–§1.10.4, §3.3): the
@@ -390,6 +394,23 @@ Combat, and the simulator's Begin (one side, no sight test, a planet added again
 details it left open are spec 04 §19.6 Q91–Q96. Launching and recovering in battle (the
 Launch \ Recover Units window, mines laid) is in the units part of "Vehicles, movement and
 logistics" above, its open question spec 04 §19.7 Q97.
+
+The accuracy pass of 2026-10-14 (complete listing) settled §19.5 Q90, §19.6 Q91–Q96 and
+§19.7 Q97–Q98, and brought the engine and the tactical window in line: the computer's
+target candidates sorted by the original's unstable quicksort, the type ranks only with
+Use Type Priority First, and every targeting key measured as the original measures it
+(strength and the weapons flag set when a piece enters; aim distance; twice the full hit
+points; the damage pool counted; the movement allowance; the Damage Percent skip from the
+hit points at entry); a new strategy's values, and the same values for keys a strategy
+file leaves out; a seeker's impact with no attacker (no damage bonus, no experience, the
+tonnage only to a launcher still in the battle); the wholly cloaked group seen by any of
+its empire's objects; every damage pool cut to 50000; the side square each step try
+names; every ground unit rolling; the replays of four game turns kept in turn-based
+games; and in the window one weapon row per weapon of every unit, the boarding boxes
+before the boarding is drawn, the damage line counting the pool, the current piece
+following every move and shot, the planet pass of the next-piece search, clicks on
+seekers and obstacles, and the Strategies window's type order list. Left open: spec 04
+§19.8 Q99–Q100 and when the damage line goes away (Q92).
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 

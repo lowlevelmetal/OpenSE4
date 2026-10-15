@@ -26,6 +26,13 @@ wait 300
 assert-enabled item:Close in=strategic-combat
 click item:Close in=strategic-combat
 wait-closed strategic-combat
+# Other battles the turn stops at, if any: each fought strategically too.
+repeat 4
+  click item:Begin optional timeout=240
+  click item:Strategic in=strategic-combat optional timeout=30
+  wait 300
+  click item:Close in=strategic-combat optional timeout=30
+end
 wait-turn 41
 # The Log opens once the turn's moves have been shown.
 wait-window log

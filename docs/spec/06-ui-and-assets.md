@@ -6295,8 +6295,11 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      and the phases, `Battle::hasSurvivors` leaves them out of the verdict, and
      `Battle::dropSeekersAimedAt` takes the seekers aimed at a piece that leaves the battle;
      battles with seekers can now last longer than before. Our client draws the small maps as
-     §1.10.5 says (`CombatMapPainter::squares`). Open: what the original credits for the kill
-     of a seeker whose launcher has died (the engine credits the dead launcher, inferred).
+     §1.10.5 says (`CombatMapPainter::squares`). What the original credits for the kill of a
+     seeker whose launcher has died was settled on 2026-10-14 from the complete listing:
+     nothing. A seeker's impact has no attacking piece, so it gives no experience, and its
+     tonnage goes to the launcher only while that is still in the battle (spec 04 §10.1;
+     ours since then, `Battle::moveSeekers`).
 123. **The current sector during a move order** (to observe). Each run of an order that
      travels to a square (Move To, Move To Waypoint and the other orders that head for a target
      square: a patrol leg, a pursuit) first makes sector 0, the top-left square of the shown
