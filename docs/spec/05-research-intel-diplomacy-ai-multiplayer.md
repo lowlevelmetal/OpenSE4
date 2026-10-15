@@ -233,8 +233,9 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
   asks for the empire only. Cancel at either step adds nothing. The target picked, or "Any",
   stays with the queued project, and the operation strikes it when the project completes
   (below). Each queued project keeps its own progress: reordering the queue moves no points
-  between two copies of a project, and a project added again starts from nothing (inferred:
-  the saved game keeps the points of each entry, spec 08 §3.6.3).
+  between two copies of a project, and a project added again starts from nothing (confirmed:
+  binary, the 2026-10-14 accuracy pass: every queued project is its own record created with no
+  progress; the saved game keeps the points of each entry, spec 08 §3.6.3).
 - **A project's box** (confirmed: binary): as Research's (spec 06 §7 Q92), with the name
   word-wrapped at the top; for a project with a second list, the specific target picked, or
   "Any Ship" and the like, on a line at y 40; at y 54, centred on x 65, "Against " followed
