@@ -256,8 +256,9 @@ public:
     // A weapon's chance to hit the target now (100: always hits or no roll), and its damage at the current range.
     int hitChance(int piece, int weapon, int target) const;
     int damageAt(int piece, int weapon, int target) const;
-    // Why the weapon cannot fire at the target now (empty: it can).
-    std::string fireProblem(int piece, int weapon, int target) const;
+    // Why the weapon cannot fire at the target now (empty: it can); `instance`
+    // the unit or platform of a satellite or drone group or a planet (-1: any).
+    std::string fireProblem(int piece, int weapon, int target, int instance = -1) const;
 
     // ---- Orders --------------------------------------------------------------------------------
     // Why the order would be refused (empty: it would be accepted). An order

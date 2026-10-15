@@ -64,6 +64,11 @@ struct ClassicSettings {
     // summary at its end, in place of its empty weapon grid (Combat Replay
     // Options; the original has no such list, spec 06 §7 Q39). Off by default.
     bool replayEvents = false;
+    // The Tactical Combat window writes on the map why a click on an enemy
+    // fired nothing (out of range, reloading, no supplies, nothing ticked);
+    // the original says nothing then (spec 06 §1.9, §1.10.1). Options and
+    // Combat Options, under OpenSE4. Off by default.
+    bool tacticalShotNotes = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

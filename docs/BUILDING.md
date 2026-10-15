@@ -731,7 +731,7 @@ recorder is tested.
 | `learn-resume.script` | The intro's hint by Tutorial, the Learn window's count, Next and Done marks and the lesson it chooses, and resuming a tutorial left in a window and in the main window, on tutorials of our own in `tests/input/learn` |
 | `manual-front.script`, `manual-game.script` | The manual: contents tree, links to pages and sections, window and Help links, Back and Forward (buttons and Alt+arrows), search, Contents, Shift+F1 |
 | `list-windows.script` | Planets, Colonies, Ships and Construction Queues: sort headings, tabs and filters, the arrow column and the wheel; item and Design Report pop-ups from right-clicks |
-| `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options, the Orders menu and Resolve Combat |
+| `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options with OpenSE4's switch for a note on the map, the Orders menu, a click on an enemy out of reach that says nothing, and Resolve Combat |
 | `ground-combat.script` | Ground Combat on a sample strategic battle (`--open=ground-combat`): Begin, the rounds, Close, then the rest of the battle |
 | `log-details.script` | The Log's details pane on a scrapped ship's entry (a ship scrapped at the home yard; GitHub issue #9): no Dear ImGui error; `mod-orders.script` covers an entry without a body |
 | `combat-replay.script` | Combat Replay on a battle of the last turn: the overview, Combat Replay Options' check boxes, Next to the last combat turn, Stop Replay |

@@ -816,10 +816,10 @@ int TacticalBattle::damageAt(int piece, int weapon, int target) const {
     return weaponDamage(rules_, w.de, battle_->dist(piece, target)) * battle_->firedTogether(piece, w);
 }
 
-std::string TacticalBattle::fireProblem(int piece, int weapon, int target) const {
+std::string TacticalBattle::fireProblem(int piece, int weapon, int target, int instance) const {
     if (!started_ || applied_ || !validPiece(views_, piece) || weapon < 0) return "No such weapon.";
     if (!battle_->pieces()[static_cast<size_t>(piece)].alive) return "That piece is gone.";
-    return battle_->fireProblem(piece, static_cast<size_t>(weapon), -1, target);
+    return battle_->fireProblem(piece, static_cast<size_t>(weapon), instance, target);
 }
 
 std::string TacticalBattle::check(const TacticalOrder& o) const {

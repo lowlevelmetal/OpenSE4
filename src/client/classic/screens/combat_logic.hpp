@@ -125,21 +125,36 @@ bool tacticalCanFire(const game::combat::TacticalPiece& p, game::EmpireId side);
 // selectors; spec 06 §1.10.1, §3.3, confirmed: binary): up to three passes
 // around the side's pieces, each starting after `current` and ending on it:
 // first the group leaders that can move (or fire), then any piece that can,
-// and for the move kind only the side's first planet. "Next" walks the list
-// backwards, "previous" (`forward`) in piece order. At the start of a phase
-// played by hand the window makes the same search forward from before the
-// first piece. -1: none.
+// and for the move kind only the first planet of the side found the same
+// way. "Next" walks the list backwards, "previous" (`forward`) in piece
+// order. At the start of a phase played by hand the window makes the same
+// search forward from before the first piece. -1: none.
 enum class PieceSearch : uint8_t { Move, Fire };
 int nextTacticalPiece(const std::vector<game::combat::TacticalPiece>& pieces, game::EmpireId side, int current, PieceSearch kind, bool forward);
 
-// The weapons the grid ticks when a piece becomes selected, at the start of
-// each phase and after the piece moves, and what Shift+A ticks (spec 06
-// §1.10.1, confirmed: binary): every intact weapon that is not reloading
-// (one of its instances ready). The ticks are the window's, not the piece's.
+// One row of the weapon list (spec 06 §1.10.1, confirmed: binary): every
+// weapon entry of the piece, a unit group's for each of its units and a
+// planet's for each of its platforms, each row with its own tick, reload bars
+// and to-hit chance, and no count anywhere. `instance` is the unit or
+// platform (-1: a ship's weapon, or a fighter group's, whose identical
+// weapons fire as one shot, spec 04 §6, so its rows share that shot). A
+// weapon whose units are all dead keeps one row, shown destroyed (inferred).
+struct WeaponRow {
+    int weapon = 0;
+    int instance = -1;
+    bool operator==(const WeaponRow&) const = default;
+};
+std::vector<WeaponRow> weaponRows(const game::combat::TacticalPiece& p);
+bool rowIntact(const game::combat::TacticalPiece& p, const WeaponRow& row);
+int rowReload(const game::combat::TacticalPiece& p, const WeaponRow& row);   // turns left (0: ready)
+// The rows the grid ticks when a piece becomes selected, at the start of each
+// phase and after the piece moves, and what Shift+A ticks (spec 06 §1.10.1,
+// confirmed: binary): every intact weapon that is not reloading. The ticks
+// are the window's, not the piece's; one per row of weaponRows.
 std::vector<char> readyTicks(const game::combat::TacticalPiece& p);
-// The red bars a weapon's cell shows (spec 06 §1.10.1): one per combat turn
-// of reload left, at most 5; the first instance to be ready counts (inferred).
-int reloadBars(const game::combat::TacticalWeapon& w);
+// The red bars a row's cell shows (spec 06 §1.10.1, confirmed: binary): one
+// per combat turn of reload left, at most 5; none for a destroyed weapon.
+int reloadBars(const game::combat::TacticalPiece& p, const WeaponRow& row);
 
 // The piece the target panel shows once the pointer moved (spec 06 §1.10.1,
 // confirmed: binary): a piece of another empire (allies too) under the

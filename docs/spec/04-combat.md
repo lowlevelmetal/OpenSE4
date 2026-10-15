@@ -413,8 +413,11 @@ binary):
 4. The weapon's damage at the range distance is greater than 0 (§8).
 
 **Firing by hand** (confirmed: binary). In the tactical window a player fires the weapons
-ticked in the piece's weapon list by clicking an enemy. Firing at a non-hostile piece or a
-neutral obstacle is refused. Each ticked weapon takes the target within the target budget
+ticked in the piece's weapon list by clicking an enemy. Firing at a piece of an empire we
+are not hostile to (our own drone groups included) is refused in a message box; a click on
+a neutral obstacle does nothing, and a click on a seeker's square counts as a click on an
+empty square (a move), so a seeker is never fired at by hand (corrected 2026-10-14, complete
+listing; spec 06 §1.10.1). Each ticked weapon takes the target within the target budget
 (below); weapons that did not fire lose it again. The conditions above apply as for the
 computer, but the damage type is not checked (the computer never assigns a weapon whose
 type cannot affect the target, §16), and point-defense may be fired this way.
@@ -423,10 +426,12 @@ The ticks belong to the window, not to the piece (confirmed: binary; spec 06 §1
 every time a piece becomes selected (by a click, by the next and previous keys, at the start
 of each phase played by hand) and after every move of that piece, the ticks are reset to
 every intact weapon that is not reloading. A weapon that fires is unticked. Shift+A ticks
-the intact weapons that are ready, Shift+C unticks them all. OpenSE4's window fires one
-weapon at a time in design order, each as its own order (`TacticalOrder::Fire` with the
-weapon), and says why when none of them could fire. Whether a reloading weapon can be
-ticked by hand is question 91; OpenSE4's window allows it (inferred). The engine keeps
+the intact weapons that are ready, Shift+C unticks them all. A click on a cell toggles its
+tick with no test, so a reloading or destroyed weapon can be ticked too, and firing skips it
+(question 91). A click that fires nothing shows no message (question 96). OpenSE4's window
+fires one weapon row at a time in design order, each as its own order (`TacticalOrder::Fire`
+with the weapon and, for a unit group's or planet's row, its instance); with its OpenSE4
+option on it writes on the map why none of them could fire. The engine keeps
 its own per-weapon switch (`ToggleWeapon`, `TacticalWeapon::enabled`), which the order
 `Fire` with weapon -1 uses: that is for script and external players (docs/sdk), not the
 window.
@@ -2503,6 +2508,9 @@ traced and are OpenSE4's choices until a session with the executable settles the
     reloading when a piece is selected (§6). Can the player tick a reloading weapon by
     clicking its cell? Ours allows it (inferred); the tick then does nothing until the
     weapon is ready, and the Fire order refuses it quietly when others fire.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): a click on a weapon cell
+    toggles its tick with no test at all, so a reloading weapon can be ticked, and so can
+    a destroyed one; firing then simply skips them. Ours matches.
 92. **The target panel's damage line** (spec 06 §1.10.1). Ours writes it after every hit
     drawn while the panel shows a piece, whatever the hit's target, and clears it when the
     panel shows another piece or none. The structure part is what the target's hit points
@@ -2521,6 +2529,13 @@ traced and are OpenSE4's choices until a session with the executable settles the
 93. **Weapon cells** (spec 06 §1.10.1). Ours draws the reload bars from y 2 to 8 of the
     cell, counts the instance of a stack that will be ready first, and writes a unit
     group's count under the to-hit chance when both show at the top right (inferred).
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): the list has one row for
+    every weapon entry of the piece; for a unit group every weapon of every unit, each row
+    with its own tick, reload bars and to-hit chance, and no count anywhere. Reload bars:
+    red, one per combat turn of reload left (at most 5), 3 px wide, from y 2 to y 8 of the
+    cell, leftward from x 32, 4 px apart. The chance is right-aligned at the top right,
+    only while the weapon is intact and ready. A ticked cell is teal. Since 2026-10-14 ours
+    follows (spec 06 §1.10.1 "Weapon cells").
 94. **Ramming an obstacle.** A neutral obstacle can be rammed (§10.3) and the rammer takes
     B = 500000. Ours gives the obstacle nothing, records no hit on it and credits no kill
     (inferred). Does the original draw a hit, or credit the second experience and tonnage
@@ -2539,6 +2554,13 @@ traced and are OpenSE4's choices until a session with the executable settles the
     "Cannot Fire Weapons" box (spec 06 §1.10.2). Ours writes every other reason a click
     does not fire (out of range, reloading, no supplies) on the map, as before (inferred).
     Which of them does the original put in a box?
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): only the click on a piece
+    of an empire we are not hostile to, in the box. A click on a neutral obstacle does
+    nothing; out of range, reloading, no supplies and no ticked weapon fire nothing, with no
+    message of any kind, and the ticked weapons that did not fire lose their target. A
+    click on a seeker's square counts as a click on an empty square. Since 2026-10-14 ours
+    follows; writing the other reasons on the map is an OpenSE4 option, off by default
+    (spec 06 §1.9, §1.10.1).
 
 ### 19.7 Questions from the REA parity audit's other packages (2026-10-14)
 
