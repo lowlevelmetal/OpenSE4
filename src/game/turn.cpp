@@ -419,6 +419,11 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     s.combats.clear();  // from here on: this turn's battles
     movement::startTurn(ctx);
     movement::runMovementAndCombat(ctx);
+    // After the 30 days the movement routine refills every ship's and every
+    // fighter and drone group's movement to its maximum, as it did before
+    // day 1 (spec 03 §6.3, confirmed: binary): the end of the turn, the
+    // event step and the next turn's orders see full movement.
+    movement::startTurn(ctx);
     s.removeDeadVehicles();
     sight::updateKnowledge(r, s);
 

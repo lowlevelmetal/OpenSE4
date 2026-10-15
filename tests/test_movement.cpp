@@ -4861,3 +4861,29 @@ TEST_CASE("orders: deleting a waypoint clears every own queue's automatic Move T
     CHECK(w.s.colony(theirs)->queue.autoWaypoint == 9);   // another empire's queue
     CHECK_FALSE(w.s.empire(kA).waypoints[9].set);
 }
+
+TEST_CASE("movement: a simultaneous turn refills every vehicle's movement after the 30 days (spec 03 §6.3 step 9)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.object(a, ObjectKind::Star, {6, 6});
+    w.spawn(w.ship(kB, "Keeper", 1), at(a, 12, 12));
+    // Its supply runs out on the first step: its maximum falls to 1 during the
+    // action, which leaves it 0 for the rest of the movement phases.
+    const VehicleId ship = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 0));
+    w.v(ship).supply = movement::moveSupplyCost(r, w.s, w.v(ship));
+    w.order(ship, moveTo(a, 12, 0));
+    const GameState before = w.s;
+    w.move();   // the movement phases alone
+    REQUIRE(w.v(ship).supply == 0);
+    CHECK(w.v(ship).movement == 0);
+    w.s = before;
+    TurnOptions o;
+    o.aiForMissing = false;
+    processTurn(r, w.s, {}, o);
+    REQUIRE(w.s.vehicle(ship) != nullptr);
+    CHECK(w.v(ship).location.sector != Sector{0, 0});   // it moved
+    // After the 30 days: its maximum again, as the next orders see it.
+    CHECK(w.v(ship).movement == movement::detail::turnMovement(r, w.s, w.v(ship)));
+    CHECK(w.v(ship).movement == 1);
+}

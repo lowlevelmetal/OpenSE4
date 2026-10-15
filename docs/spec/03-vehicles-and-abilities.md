@@ -864,6 +864,12 @@ over a **30-day** month (confirmed: binary):
 7. Also after each day, pursuit orders (Attack, §8) whose target is gone are removed.
 8. Combat does **not** clear orders or stop movement. Its only effect on orders is that a Sentry
    order at the head of a participant's list is removed, even with Repeat on.
+9. After the 30th day, every vehicle's MP is reset to its maximum once more, fleet members as
+   in step 1, so the rest of the turn (the empires' end-of-turn steps, the event step) and the
+   orders of the next turn see full movement (confirmed: binary; corrected 2026-10-14,
+   complete listing: the routine's tail, past its first finally block, was missing from the old
+   export). Since 2026-10-14 ours follows (`turn.cpp`, `movement::startTurn` after
+   `runMovementAndCombat`).
 
 **The day counter's arithmetic.** The counter is a 64-bit floating-point number (a double). Each
 day the original divides speed by 30 and adds the stored counter in x87 extended precision, each
