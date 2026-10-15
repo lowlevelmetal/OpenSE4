@@ -423,7 +423,8 @@ private:
     // the game file between players and before processing: every colony is
     // recalculated (spec 01 §6.9, §14 Q44), and the happiness events waiting
     // for an empire's next update are gone, as no game file keeps them (spec
-    // 02 §4).
+    // 02 §4), and the fleets left without a member are disbanded, as a load
+    // disbands them (spec 03 §9).
     void reloadGame();
     // Network simultaneous games: the processed turn's battles of the player, when the Settings flag asks for them.
     void queueTurnBattles();

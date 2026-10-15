@@ -2799,7 +2799,8 @@ made with Create Fleet and left empty survives when Fleet Transfer is closed wit
 the original disbands memberless fleets when a game is loaded. Since 2026-10-15 ours follows for
 Fleet Transfer: its Close button deletes the player's fleets with no member, Esc and Enter keep
 them (`Dialog::closedByKey`, `screens/fleet_transfer.cpp`); our Cargo Transfer has no closing
-step. Our turn processing deletes an empty fleet still left (OpenSE4's own, spec 03 §9).
+step. Such a fleet lasts through turn processing until a saved game is loaded, as the
+original's does (spec 03 §9).
 
 Discrepancies: the Readme calls the Ctrl+P/O/I/U family "Phase Replay". Our client binds
 every key of §3.1 and §3.2, rebindable in Settings → Controls, and Help → Hotkeys lists

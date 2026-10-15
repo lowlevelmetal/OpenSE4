@@ -382,6 +382,10 @@ std::expected<std::pair<GameState, SaveInfo>, std::string> loadGame(const std::f
     if (!bytes) return std::unexpected(bytes.error());
     auto game = deserializeSave(*bytes);
     if (!game) return std::unexpected(std::format("{}: {}", file.string(), game.error()));
+    // The original disbands every fleet with no member at its place when a
+    // saved game is loaded: a fleet Fleet Transfer made and left empty goes
+    // then (spec 03 §9, spec 08 §3.6.12, confirmed: binary).
+    game->first.tidyFleets(false);
     return game;
 }
 

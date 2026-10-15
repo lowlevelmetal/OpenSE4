@@ -94,7 +94,8 @@ settings let bases join fleets) and the fleets whose place is this sector with t
 (**Fleets in sector**, the leader marked). `Create Fleet` asks for a name, offering Alpha Fleet,
 Beta Fleet and so on, and makes an empty fleet; then **click** ships to add them, and click
 members to take them out. `Close` deletes your fleets that are still empty; closed with `Esc` or
-`Enter`, the window keeps them. `Formation` and `Strategy` choose the fleet's
+`Enter`, the window keeps them until the game is next read from its file (loaded, or, in a
+simultaneous game on one computer, at the end of the turn). `Formation` and `Strategy` choose the fleet's
 combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do what they say, and
 `Existing Fleets` opens the Ships and Units window, with the tab and the Show switches you left it with, to look at your fleets; clicking a row there does nothing.
 

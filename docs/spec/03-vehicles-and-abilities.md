@@ -1441,12 +1441,17 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   when the empire's "new vehicles use ministers" option is on; the player then clicks vehicles
   into it. The window's Close button deletes the empire's fleets left without a member as it
   closes the window; Esc and Enter close it without that step, so an empty fleet can stay in the
-  empire's fleet list, and the original disbands memberless fleets when a game is loaded (spec 06
-  §3.4, confirmed: binary; corrected 2026-10-15, complete listing). Our engine follows this
-  since 2026-10-13 (`cmd::CreateFleet` with no members and a `location`, `defaultFleetName`),
-  and the window since 2026-10-15; an empty fleet survives the tidying that disbands a fleet
-  with no member at its location, and turn processing deletes any left (OpenSE4's own; whether
-  the original's turn processing keeps one until the next load is inferred).
+  empire's fleet list. The original keeps such a fleet through turn processing and disbands
+  every fleet with no member at its place only when a saved game is loaded (spec 08 §3.6.12;
+  spec 06 §3.4; confirmed: binary; corrected 2026-10-15, complete listing). In a simultaneous
+  game on one computer that includes the reading of the game file between hotseat players and
+  before the turn is processed (spec 01 §14 Q44). Our engine follows this since 2026-10-13
+  (`cmd::CreateFleet` with no members and a `location`, `defaultFleetName`), and the window and
+  the rest since 2026-10-15: an empty fleet survives the tidying that disbands a fleet with no
+  member at its location and turn processing, and `game::loadGame` and the client's stand-in
+  for the reading of the file (`ClassicSession::reloadGame`) disband it
+  (`GameState::tidyFleets(false)`); until then turn processing deleted it. A computer player's
+  Fleets minister disbands a fleet it controls that has no leader, an empty one included.
   `cmd::CreateFleet` with members, which the computer players and scripts use, is OpenSE4's;
   their fleets get the same default names.
 - **Leader:** the player-chosen leader when one is set, otherwise the first member in the sector's

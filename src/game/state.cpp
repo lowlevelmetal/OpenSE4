@@ -231,9 +231,9 @@ void GameState::removeDeadVehicles() {
 void GameState::tidyFleets(bool keepEmpty) {
     std::vector<FleetId> abandoned;
     for (Fleet& f : fleets) {
-        // A fleet with no members at all is one Fleet Transfer has just made
-        // and is filling (cmd::CreateFleet); the window deletes it when it is
-        // still empty as it closes, and turn processing drops any left.
+        // A fleet with no members at all is one Fleet Transfer made
+        // (cmd::CreateFleet): its Close button deletes it while it is empty,
+        // and loading a saved game drops any left (spec 03 §9).
         if (f.members.empty()) {
             if (!keepEmpty) abandoned.push_back(f.id);
             continue;

@@ -1012,6 +1012,8 @@ bool ClassicSession::replayLastTurn(const std::function<void(int day, const game
 void ClassicSession::reloadGame() {
     game::diplomacy::recalculateColonies(*rules_, state_);
     state_.pendingMood.clear();
+    // Loading disbands the fleets left without a member (spec 03 §9; game::loadGame).
+    state_.tidyFleets(false);
 }
 
 void ClassicSession::setPlayer(game::EmpireId e) {

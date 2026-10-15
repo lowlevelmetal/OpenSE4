@@ -606,7 +606,8 @@ keys the client ignored followed the specs:
   location is the sector; Systems To Avoid toggles the avoid mark on every tab. OpenSE4's own
   in these windows: the Scrap window's Facilities tab and status line, the reason a picker
   row gives when hovered, Fleet Transfer's Disband Fleet and Rename Fleet, Systems To Avoid's
-  Release All Claims, and turn processing deleting an empty fleet a lost window left.
+  Release All Claims. Since 2026-10-15 an empty fleet lasts through turn processing until a
+  saved game is loaded, as the original's does.
 - **Player Computer Control** (spec 06 §1.2.1, §7 Q84; `ai::setComputerControl`): the check
   list behind a master password, the mark with all ministers and flags; local and hotseat games
   end when no human is left. Since 2026-10-03 every empire can be switched, neutral ones too:
@@ -1009,7 +1010,7 @@ own stops; the fleet cycle goes by fleet number through the fleets that can stil
 selecting the first such member; the colony cycle goes by planet name, letter case counting,
 and selects the colony's sector as a click does; Drop Cargo asks the kind of cargo before the
 destination; Esc and Enter close a large window without its closing step, so Fleet Transfer
-then keeps an empty fleet; the sector's list writes "<design> Class" under the player's own
+then keeps an empty fleet, which lasts until a saved game is loaded; the sector's list writes "<design> Class" under the player's own
 ships and bases only, and sorts its stellar objects by owner, then name in capitals; the empire
 pickers list the empires by name; an enemy design's detail stops after its size; Select
 Directory opens a folder as soon as a mouse button is pressed on it; the main window counts one
@@ -1018,7 +1019,6 @@ off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Fleet Transfer's empty fleets (`screens/fleet_transfer.cpp`, `GameState::tidyFleets`) | The Close button deletes the player's fleets with no member, Esc and Enter keep them, as the original does; turn processing deletes any still left (OpenSE4's own) | Kept until the game is loaded again, when memberless fleets are disbanded (turn processing inferred) | L |
 | An enemy design's detail (`screens/designs.cpp`) | The picture, name, Size and components, as the original's; OpenSE4's option "Show enemy designs' details" (Options) adds the owner, date, costs and figures | Only the picture, name, Size and components | none (an option) |
 | Held keys (spec 06 §3, §7 Q117; `MainWindow::hotkeys`, `systemKeyRepeated`) | Every main-window key repeats while held, End Turn too, at the system's repeat rate, as the original; OpenSE4's option "Act once on held keys" (Options) repeats only the selection cycles and the movement log's single step | Every key repeats on the system's key-down messages | none (an option) |
 | Tags across selections (`MainWindow::selectVehicle`, `selectPlanet`, `taggedNote`) | The original's rule; a line over the report says the next order goes to the tagged group (ours, Q124). OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options) clears them when a ship or fleet button or a Goto selects an object in another sector | The ship and fleet buttons and the Gotos keep the tags; the next order goes to the tagged group | none (an option) |
