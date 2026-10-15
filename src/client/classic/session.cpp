@@ -1012,6 +1012,8 @@ bool ClassicSession::replayLastTurn(const std::function<void(int day, const game
 void ClassicSession::reloadGame() {
     game::diplomacy::recalculateColonies(*rules_, state_);
     state_.pendingMood.clear();
+    // Nor are the computer players' demand lists in the game file (spec 05 §7.4, question 83).
+    game::ai::forgetUnsavedLists(state_);
 }
 
 void ClassicSession::setPlayer(game::EmpireId e) {

@@ -1333,7 +1333,7 @@ memory between turns and have no source are a loss on import (§7.6).
 | `economy` | Derive at the next turn processing | — |
 | `techLevels`, `research`, `researchEvenly`, `repeatResearch`, `uniqueAreasUnlocked` | §3.6.2 | §3.6.2 |
 | `intel`, `intelEvenly`, `repeatIntel` | §3.6.3 | §3.6.3 |
-| `relations` | §3.6.4 and the ministers block (anger, turns since war); the rest default | Same |
+| `relations` | §3.6.4 and the ministers block (anger, turns since war); the rest default (the demand lists and promises are in no saved game of the original, and every load empties them, spec 05 Q83) | Same |
 | `knowledge.explored`, `notes` | System records | System records |
 | `knowledge.present`, `visibleVehicles` | Recompute | — |
 | `knowledge.knownWarpLink` | Not stored: derive (known when the empire has explored the warp point's system, inferred) | — |

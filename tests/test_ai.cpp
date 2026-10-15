@@ -7174,3 +7174,37 @@ TEST_CASE("ai: with a plague, a ship with a Medical Bay leaves its fleet for the
     if (*last == home) CHECK(p.st.vehicle(ship)->orders.empty());
     else CHECK(p.st.vehicle(ship)->orders == std::vector<Order>{ai::detail::moveOrder(*last)});
 }
+
+TEST_CASE("ai: loading a game empties the demand lists, promises and the systems to avoid or attack; the network's copies keep them") {
+    // Spec 05 §7.4 "Demand lists", question 83 (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 3, 0, 10);
+    const EmpireId cpu{0u}, other{1u};
+    Relation& rel = s.empire(cpu).relation(other);
+    rel.queuedWar = rel.queuedBreak = rel.queuedPeace = rel.promises = 2;
+    s.empire(cpu).aiMemory.avoid = {SystemId{1u}};
+    s.empire(cpu).aiMemory.attackSystems = {SystemId{2u}};
+    s.empire(cpu).aiMemory.staging = SystemId{3u};   // the rest of the memory stays
+    // A state sent over the network (and every checksum) keeps them.
+    auto sent = deserializeState(serializeState(s));
+    REQUIRE(sent);
+    CHECK(sent->empire(cpu).relation(other).queuedWar == 2);
+    CHECK(sent->empire(cpu).aiMemory.avoid.size() == 1);
+    // A game read from its file starts with them empty.
+    TempTree t("demandload");
+    const std::filesystem::path file = t.root / "game.sav";
+    SaveInfo info;
+    info.gameName = "Demands";
+    REQUIRE(saveGame(file, s, info));
+    auto loaded = loadGame(file);
+    REQUIRE(loaded);
+    const Empire& e = loaded->first.empire(cpu);
+    CHECK(e.relation(other).queuedWar == 0);
+    CHECK(e.relation(other).queuedBreak == 0);
+    CHECK(e.relation(other).queuedPeace == 0);
+    CHECK(e.relation(other).promises == 0);
+    CHECK(e.aiMemory.avoid.empty());
+    CHECK(e.aiMemory.attackSystems.empty());
+    CHECK(e.aiMemory.staging == SystemId{3u});
+    (void)r;
+}

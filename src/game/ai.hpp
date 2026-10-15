@@ -242,6 +242,18 @@ void claimTerritory(TurnContext& ctx, EmpireId e);
 // (combat counts, traced spies, mine fields met).
 void rememberAiEvents(TurnContext& ctx);
 
+// What the original writes to no saved game (spec 05 §7.4 "Demand lists",
+// question 83, confirmed: binary): every empire's war, break and peace lists
+// and its promises (Relation::queuedWar, queuedBreak, queuedPeace, promises),
+// and the systems it agreed to avoid or was asked to attack
+// (AiMemory::avoid, attackSystems). Loading a game builds new empires whose
+// lists start empty, so every reading of a game file empties them: game::
+// loadGame calls this, and so does the client where it stands for the
+// original's reading of the game file before a local or hotseat simultaneous
+// turn (ClassicSession::reloadGame). OpenSE4 keeps the fields in its saves;
+// the network's state transfers, resyncs and checksums leave them as they are.
+void forgetUnsavedLists(GameState& s);
+
 // ---- Helpers shared with the UI and other modules ---------------------------------------
 
 // The state the empire's computer player moves to from its current state

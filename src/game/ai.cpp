@@ -1287,6 +1287,14 @@ std::vector<Command> ministerCommands(const Rules& r, const GameState& s, Empire
     return p.report().commands;
 }
 
+void forgetUnsavedLists(GameState& s) {
+    for (Empire& e : s.empires) {
+        for (Relation& rel : e.relations) rel.promises = rel.queuedWar = rel.queuedBreak = rel.queuedPeace = 0;
+        e.aiMemory.avoid.clear();
+        e.aiMemory.attackSystems.clear();
+    }
+}
+
 uint32_t aiDate(const GameState& s) { return s.options.simultaneous ? s.turn + 1 : s.turn; }
 
 bool ministerOn(const Empire& e, Minister m) {

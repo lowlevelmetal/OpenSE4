@@ -1724,8 +1724,11 @@ Team mates are always accepted, and team enemies always refused.
   start-of-turn step of every turn whose date (the one the ministers see, §7.5 "The
   date") is a multiple of 10, before the Politics minister acts. An entry therefore lasts
   until the next such date: from 1 turn (added on a date ending in 9) to 10 turns (added
-  on a date that is a multiple of 10) (confirmed: binary). Whether a save and load empties
-  them earlier is question 83.
+  on a date that is a multiple of 10) (confirmed: binary). None of the saving routines
+  writes them, and loading a game builds new empires whose lists start empty, so every
+  load empties them as well: a game hosted by loading its file each turn never keeps an
+  accepted demand past the load (confirmed: binary, question 83; added 2026-10-14, complete
+  listing). The rebel copy (§2.3) does not copy them either.
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
   newest political message from X in its answer window (above):
   - a treaty proposal or counter-proposal: Accept, Counter or Refuse Treaty; a trade:
@@ -5056,6 +5059,29 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     (`Relation::queuedWar`, `queuedBreak`, `queuedPeace`, `promises`, `AiMemory::avoid`,
     `attackSystems`), so a loaded game keeps them to the 10-turn clear; a game imported from
     the original's save starts with them empty (spec 08 §7.6).
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): the war, break and peace
+    lists, the promises and the systems to avoid and to attack are written by none of the
+    saving routines (ministers, politics, empire). Loading a game discards the empires and
+    builds new ones whose lists start empty, so every load empties them, and a game hosted
+    by loading its file each turn never keeps an accepted demand past the load. The rebel
+    copy (question 82) does not copy them either. Since 2026-10-14 ours follows
+    (`ai::forgetUnsavedLists`, `ai.cpp`). Its saves still hold the fields (no format
+    change); every reading of a game file empties them:
+    - `game::loadGame` (`serialize.cpp`), which serves Load Game in the client (and the
+      command line's game file), a network host started from a saved game (the client's
+      or `opense4-server --load`), the play-by-e-mail host's reading of the game to process
+      each turn (`net/pbem.cpp`), `opense4-server`'s other game-file commands and
+      `opense4-convert`'s OpenSE4 games;
+    - the client's stand-in for the original's reading of the game file before a local or
+      hotseat simultaneous turn and between hotseat players (`ClassicSession::reloadGame`,
+      as for the waiting happiness events, spec 02 §4);
+    - an imported saved game of the original starts with them empty, the original's file
+      having no place for them.
+
+    Not emptied: a turn-based game on one machine, which stays in memory; the network host,
+    which keeps its game in memory from turn to turn as the original's TCP/IP host does,
+    and the state it sends its clients, resyncs and checksums; and a play-by-e-mail
+    player's view of a turn file, which plays no turn and must match the host's checksum.
 84. **The command line's details** (§9.2 "The command line", raised 2026-10-14 when the
     complete listing showed that the original reads its first three arguments). Settled
     (confirmed: binary): the arguments, hosting with the host password, signing in as
