@@ -1691,12 +1691,21 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     resets what an empire file brought (the minister switches, the Empire Options, anger
     and turns since war) was not traced. 45 of the 163 files examined have all 25 minister
     switches on; the 20 stock files have all 25 off (observed). OpenSE4 keeps them
-    (inferred).
+    (inferred). **Answer** (confirmed: binary, 2026-10-14, complete listing): a
+    computer-controlled empire has its strategies replaced by its race's computer-player
+    strategies file and all 25 minister switches set; an empire left with no strategies gets
+    the default strategies file. Nothing resets a human's minister switches, Empire Options,
+    anger (50) or turns since war (999) (confirmed for the creation routines read, inferred
+    for the rest of the path). Since 2026-10-14 ours follows (`setup.cpp` `createGame`).
 25. **Empire files with empty lists (§13).** Files saved from Game Setup's Players page
     have no strategies and no design-type or colony-type list (observed). Whether the game
     gives such an empire the defaults at creation, and whether an empire saved during a game
     then gets them a second time, is not known. OpenSE4 gives an empty list the data set's
-    (inferred).
+    (inferred). **Answer** (confirmed: binary, 2026-10-14, complete listing): at game creation
+    every empire's design-type and colony-type lists get each name of the default files that
+    they lack, appended (design types up to 250), so an empty list becomes the defaults and a
+    list that has them gets none twice. Since 2026-10-14 ours follows (`setup.cpp`
+    `withDefaultNames`; names compared ignoring letter case, inferred).
 26. **Save To File and the designs it picks (§13.5).** The Players page's Save To File
     selects the designs by the empire's present place in the list, while designs that Add
     Existing brought keep the key they were added with; after a Remove the two can differ,
@@ -2023,9 +2032,10 @@ the lobby; a failure shows "Empire Load Error".
   (an empty list stands for the data set's in OpenSE4). What has no counterpart is left out
   and noted: the queue templates (OpenSE4 keeps its own per computer), the computer
   players' memory and difficulty, the source game's player number and home. A
-  computer-controlled empire in the file comes in computer-controlled, with the data set's
-  strategies (inferred for OpenSE4's computer players, which do not read the race's
-  strategy file).
+  computer-controlled empire in the file comes in computer-controlled. At game creation
+  (`createGame`) every empire's design-type and colony-type lists get the data set's names
+  they lack, and a computer-controlled empire gets its AI strategies table's strategies and
+  all 25 minister switches, whatever its file brought (§11.1 Q24, Q25).
 - **Export** writes "1.95", the reset values of §13.2, one flag per racial trait of the data
   set and one tech level per tech area (all 0), and for what OpenSE4 does not hold the
   values a new empire record has: computer state 1, staging, secured and incursion systems
