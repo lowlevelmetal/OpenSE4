@@ -524,6 +524,9 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
     // Point's destination is picked on the Galaxy Map afterwards.
     game::Order o = stellarOrder(v, a, {});
     if (a == StellarAction::OpenWarpPoint) o.location = {};
+    // Construct: the first size the window offers (the order names one).
+    if (a == StellarAction::CreateConstructedPlanet)
+        if (const std::vector<ConstructSize> sizes = constructSizes(r, s, v); !sizes.empty()) o.planetSize = static_cast<uint8_t>(sizes.front().id);
     if (std::string why = game::movement::stellarProblem(r, s, v.id, o, &c.target); !why.empty()) {
         c.reason = why + ".";
         return c;
@@ -550,7 +553,7 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
         case StellarAction::DestroyNebulae: c.reason = "The nebula is cleared from the system."; break;
         case StellarAction::CreateBlackHole:
             c.destroysSystem = true;
-            c.reason = "The star collapses; everything in the system is destroyed, this ship included.";
+            c.reason = "The star collapses: every planet and asteroid field is lost, and everything else in the system but warp points is destroyed, this ship included.";
             break;
         case StellarAction::DestroyBlackHole: c.reason = "The black hole is removed from the system."; break;
         case StellarAction::CreateConstructedPlanet: c.reason = "A world is built around the star."; break;

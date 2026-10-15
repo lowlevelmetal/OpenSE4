@@ -677,5 +677,11 @@ TEST_CASE("classic files: the installed empire files import and round-trip (opt-
     auto game = createGame(*r, g);
     REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
     CHECK(validateState(*game, r).empty());
-    CHECK(game->empires[0].designTypes == imported[0].designTypes);
+    // The file's design types first, then each name of the data set's it lacks
+    // (spec 08 §11.1 Q25, confirmed: binary).
+    const auto& types = game->empires[0].designTypes;
+    REQUIRE(types.size() >= imported[0].designTypes.size());
+    CHECK(std::equal(imported[0].designTypes.begin(), imported[0].designTypes.end(), types.begin()));
+    for (const std::string& name : r->data().names.designTypes)
+        CHECK_MESSAGE(std::any_of(types.begin(), types.end(), [&](const std::string& t) { return datafile::keysEqual(t, name); }), name);
 }
