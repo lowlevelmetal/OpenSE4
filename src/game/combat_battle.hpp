@@ -543,8 +543,17 @@ private:
     int impactCredit_ = -1;
     // Launch Units window sessions: (piece, session, launch kind) -> the group made (spec 04 §10.4).
     std::map<std::tuple<int, int, int>, int> launchGroups_;
-    // Mines laid in the battle, by owner: they join the sector's minefield when it ends (spec 04 §10.6).
-    std::map<uint32_t, std::vector<UnitStack>> minesLaid_;
+    // Mines laid in the battle (spec 04 §10.6, confirmed: binary): each opening
+    // of the Launch Units window that lays mines from a piece makes a minefield
+    // of its own, which the later mines of that opening join, whatever their
+    // design; never the minefield already there. In the order first laid.
+    struct MinesLaid {
+        EmpireId owner;
+        int piece = -1;
+        int window = 0;                  // the window's session (TacticalOrder::group)
+        std::vector<UnitStack> stacks;
+    };
+    std::vector<MinesLaid> minesLaid_;
     int round_ = 1;
     int satelliteCap_ = 100;
     int64_t mineCap_ = 100;

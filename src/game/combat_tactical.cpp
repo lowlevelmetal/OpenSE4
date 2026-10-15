@@ -427,8 +427,8 @@ void Battle::execute(const TacticalOrder& o) {
 // in single-design groups of the chosen size. Every launch stays within the
 // per-turn rate (and the satellite and mine caps). Drones a player launches
 // first act at the side's next phase. Mines are no pieces: they leave the
-// cargo for the sector's minefield, which they join when the battle ends
-// (spec 04 §10.6).
+// cargo at once, and the first mines one opening of the window lays make a
+// minefield of their own, which its later mines join (spec 04 §10.6).
 void Battle::launchOrder(const TacticalOrder& o) {
     const int i = o.piece;
     const int kind = launchKindOf(o.design);
@@ -452,9 +452,11 @@ void Battle::launchOrder(const TacticalOrder& o) {
         return true;
     };
     if (kind == kLaunchMines) {
-        std::vector<UnitStack>& laid = minesLaid_[owner.value];
-        auto st = std::find_if(laid.begin(), laid.end(), [&](const UnitStack& x) { return x.design == o.design; });
-        if (st == laid.end()) laid.push_back({o.design, left});
+        auto field = std::find_if(minesLaid_.begin(), minesLaid_.end(),
+                                  [&](const MinesLaid& m) { return m.owner == owner && m.piece == i && m.window == o.group; });
+        if (field == minesLaid_.end()) field = minesLaid_.insert(minesLaid_.end(), MinesLaid{owner, i, o.group, {}});
+        auto st = std::find_if(field->stacks.begin(), field->stacks.end(), [&](const UnitStack& x) { return x.design == o.design; });
+        if (st == field->stacks.end()) field->stacks.push_back({o.design, left});
         else st->count += left;
         launched = left;
     } else if (kind == kLaunchDrones) {
@@ -483,7 +485,8 @@ void Battle::launchOrder(const TacticalOrder& o) {
 
 // The group comes back aboard, design by design, as far as room allows; with
 // nothing left it leaves the map, which is no loss. What the carrier launched
-// this combat turn stays counted (inferred, spec 04 §19 Q97).
+// this combat turn stays counted: a recovery never gives back launch capacity
+// (spec 04 §19.7 Q97, confirmed: binary).
 void Battle::recoverOrder(const TacticalOrder& o) {
     const int i = o.piece, t = o.target;
     Piece& g = pieces_[static_cast<size_t>(t)];

@@ -1160,8 +1160,9 @@ int64_t Battle::minesPresent(EmpireId e) const {
     int64_t present = 0;
     for (const Vehicle& v : s_.vehicles)
         if (v.count > 0 && v.owner == e && v.location == where_ && vehicleType(r_, s_, v) == VehicleType::Mine) present += v.count;
-    if (const auto it = minesLaid_.find(e.value); it != minesLaid_.end())
-        for (const UnitStack& st : it->second) present += st.count;
+    for (const MinesLaid& m : minesLaid_)
+        if (m.owner == e)
+            for (const UnitStack& st : m.stacks) present += st.count;
     return present;
 }
 
@@ -4187,34 +4188,28 @@ void Battle::finish() {
         s_.addVehicle(std::move(v));
     }
 
-    // Mines laid in the battle join their owner's minefield in the sector
-    // (spec 04 §10.6, confirmed: binary): the owner's last mine group there in
-    // object order, whatever its designs, as a launch outside combat joins
-    // one (spec 03 §12), else a new group (inferred).
-    for (const auto& [owner, laid] : minesLaid_)
-        for (const UnitStack& st : laid) {
-            if (st.count <= 0) continue;
-            Vehicle* last = nullptr;
-            for (VehicleId id : vehiclesInObjectOrder(s_))
-                if (Vehicle* g = s_.vehicle(id); g && g->count > 0 && g->owner == EmpireId{owner} && g->location == where_ &&
-                                                 vehicleType(r_, s_, *g) == VehicleType::Mine)
-                    last = g;
-            if (last) {
-                addGroupUnits(s_, *last, st.design, st.count);
-                continue;
-            }
-            const Design& d = s_.design(st.design);
-            Vehicle v;
-            v.owner = EmpireId{owner};
-            v.design = st.design;
-            v.name = d.name;
-            v.location = where_;
-            v.count = st.count;
-            v.damage.assign(d.entries.size(), 0);
-            v.builtTurn = s_.turn;
-            Vehicle& added = s_.addVehicle(std::move(v));
-            added.supply = initialSupply(r_, s_, added);
-        }
+    // Mines laid in the battle (spec 04 §10.6, confirmed: binary; corrected
+    // 2026-10-14, complete listing): each opening of the Launch Units window
+    // that laid mines made a minefield of its own, whatever minefield the owner
+    // already has there. The original makes it at once; ours when the battle
+    // ends, in the order the openings first laid them, after the launched
+    // groups left in space (inferred: their place in the object order).
+    for (const MinesLaid& m : minesLaid_) {
+        std::vector<UnitStack> stacks;
+        for (const UnitStack& st : m.stacks)
+            if (st.count > 0) stacks.push_back(st);
+        if (stacks.empty()) continue;
+        const Design& d = s_.design(stacks.front().design);
+        Vehicle v;
+        v.owner = m.owner;
+        v.design = stacks.front().design;
+        v.name = d.name;
+        v.location = where_;
+        setGroupStacks(s_, v, stacks);
+        v.builtTurn = s_.turn;
+        Vehicle& added = s_.addVehicle(std::move(v));
+        added.supply = initialSupply(r_, s_, added);
+    }
 }
 
 } // namespace detail

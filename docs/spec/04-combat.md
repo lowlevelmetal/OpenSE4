@@ -875,11 +875,10 @@ same (§10.6).
   aboard the piece, design by design as far as its cargo has room (only fighters and
   satellites; a ship needs its bay of the kind; the full-movement test of a turn-based
   game is skipped in a battle), which undoes a launch before the window closes. A
-  recovered group leaves the map and is no loss. Whether a recovery gives back launch
-  capacity is not known: the engine leaves what was launched this combat turn counted
-  (inferred, §19 Q97). A refused launch or recovery shows in a message box titled
-  "Launch Warning" or "Recover Warning" (confirmed: binary, except the box in a battle,
-  inferred). The Settings
+  recovered group leaves the map and is no loss. A recovery never gives back launch
+  capacity: what was launched this combat turn stays counted (confirmed: binary; §19.7
+  Q97). A refused launch or recovery shows in a message box titled "Launch Warning" or
+  "Recover Warning", in a battle too (confirmed: binary). The Settings
   `Combat Fighter Group Amount`, `Combat Mine Group Amount` and `Combat Satellite Group
   Amount` are loaded but never used.
 - A fighter group has a target budget of 1 and fires its identical weapons as one
@@ -941,11 +940,21 @@ same (§10.6).
   layers per combat turn, a planet that holds mines up to 100 per combat turn. The
   per-sector cap holds: the player's mines in the sector, the minefield there and those
   laid in this battle, may not pass it; at the cap the launch is refused, below it cut to
-  the room left. Laid mines never become pieces: they leave the carrier's cargo and join
-  the owner's minefield in the sector. Since 2026-10-14 the engine follows; it adds them
-  when the battle ends to the owner's last mine group in the sector in object order, as
-  a launch outside combat does (spec 03 §12), or to a new group (inferred), and they
-  strike only groups that enter later.
+  the room left. Laid mines never become pieces: they leave the carrier's cargo at once.
+  **Which minefield they make** (confirmed: binary; corrected 2026-10-14, complete
+  listing; §19.7 Q97): the window lays them through the same launch routine as the map,
+  at once, but in battle mode the group units join is looked for only among the groups
+  launched while that window has been open. So the first mines laid in an opening of the
+  window make a new minefield right away, even when the owner already has a minefield in
+  the sector; later mines of the same opening join it, whatever their design, and opening
+  the window again starts another. They are never merged into the minefield that was
+  there. Whether separate minefields in one sector are merged later, outside combat, was
+  not checked. They strike only groups that enter later. Since 2026-10-14 ours follows
+  (`Battle::launchOrder`, `Battle::finish`): it makes one new minefield for each opening
+  that laid mines, in the order they were first laid, when the battle ends, after the
+  launched groups left in space (inferred: the original makes them at once, so their
+  place in the object order among other objects made during the battle may differ). It
+  used to add them to the owner's last minefield in the sector.
 
 ### 10.7 Drones
 
@@ -2498,6 +2507,13 @@ traced and are OpenSE4's choices until a session with the executable settles the
     in a battle join when the owner has several there (the engine: the last in object
     order, as outside combat), and whether the window shows its refusals in a battle in
     the same message boxes as on the map.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing). Recovery never gives back
+    launch capacity: the window passes its launch counters to launches only, and writes
+    the remaining counts back to the carrier when it closes; ours matches. Mines laid in
+    a battle make a minefield of their own for each opening of the window that lays them,
+    never joining the one already there (§10.6); since 2026-10-14 ours follows. In a
+    battle the window shows its refusals in message boxes titled "Launch Warning" and
+    "Recover Warning", as the spec had inferred; ours matches.
 98. **A new strategy's other values.** The Strategies window's Add (§16) makes a strategy
     whose launch group (5), drones per target (3), damage percentages (80 per ship, 100
     for the rest), "until all weapons gone" (off) and Break Formation flags are known
