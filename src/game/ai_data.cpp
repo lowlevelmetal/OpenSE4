@@ -68,7 +68,8 @@ void noteRead(const datafile::Field* f) {
 
 class Fields {
 public:
-    explicit Fields(const datafile::Record* r) : r_(r) {}
+    // `bad`, when given, is set when a number field holds no whole number.
+    explicit Fields(const datafile::Record* r, bool* bad = nullptr) : r_(r), bad_(bad) {}
     bool has(std::string_view key) const { return get(key) != nullptr; }
     std::string text(std::string_view key, std::string fallback = {}) const {
         const datafile::Field* f = get(key);
@@ -78,12 +79,18 @@ public:
         const datafile::Field* f = get(key);
         if (!f) return fallback;
         const auto v = datafile::parseInteger(f->value);
-        if (!v) return fallback;
+        if (!v) {
+            if (bad_) *bad_ = true;
+            return fallback;
+        }
         return static_cast<int>(std::clamp<int64_t>(*v, INT32_MIN, INT32_MAX));
     }
     int64_t num64(std::string_view key, int64_t fallback) const {
         const datafile::Field* f = get(key);
-        return f ? datafile::parseInteger(f->value).value_or(fallback) : fallback;
+        if (!f) return fallback;
+        const auto v = datafile::parseInteger(f->value);
+        if (!v && bad_) *bad_ = true;
+        return v.value_or(fallback);
     }
     bool flag(std::string_view key, bool fallback) const {
         const datafile::Field* f = get(key);
@@ -97,6 +104,7 @@ private:
         return f;
     }
     const datafile::Record* r_;
+    bool* bad_ = nullptr;
 };
 
 // ---- File lookup (names differ in case between installs) --------------------------------------
@@ -596,10 +604,10 @@ void parseGeneral(const datafile::Record& rec, GeneralInfo& g) {
     g.culture = f.text("Culture", g.culture);
 }
 
-std::vector<ResearchRow> parseResearch(const datafile::DataFile& file) {
+std::vector<ResearchRow> parseResearch(const datafile::DataFile& file, bool* bad = nullptr) {
     std::vector<ResearchRow> out;
     for (const auto& rec : file.records) {
-        const Fields f(&rec);
+        const Fields f(&rec, bad);
         ResearchRow row;
         row.states = parseStateList(f.text("AI State"));
         row.area = f.text("Tech Area Name");
@@ -665,7 +673,7 @@ std::vector<VehicleQueue> parseVehicles(const datafile::DataFile& file) {
     return out;
 }
 
-std::vector<UnitQueue> parseUnits(const datafile::DataFile& file) {
+std::vector<UnitQueue> parseUnits(const datafile::DataFile& file, bool* bad = nullptr) {
     // A leading reserve key can make the whole file one record, so records
     // are split where `Colony Type` repeats.
     std::vector<datafile::Record> rows(1);
@@ -677,7 +685,7 @@ std::vector<UnitQueue> parseUnits(const datafile::DataFile& file) {
         }
     std::vector<UnitQueue> out;
     for (const auto& rec : rows) {
-        const Fields f(&rec);
+        const Fields f(&rec, bad);
         UnitQueue q;
         q.colonyType = f.text("Colony Type");
         const int n = f.num("Num Queue Entries", 0);
@@ -968,7 +976,7 @@ AiProfile loadProfile(const ruleset::GameFiles& files, std::string_view raceStyl
     if (auto f = read("Settings", p)) parseSettings(f->records.front(), p.settings);
     if (auto f = read("General", p)) parseGeneral(f->records.front(), p.general);
     if (auto f = read("Fleets", p)) parseFleets(f->records.front(), p.fleets);
-    if (auto f = read("Research", p)) p.research = parseResearch(*f);
+    if (auto f = read("Research", p)) p.research = parseResearch(*f, &p.researchErrors);
     if (auto f = read("DesignCreation", p)) p.designs = parseDesigns(*f);
     if (auto f = read("Construction_Facilities", p)) p.facilities = parseFacilities(*f);
     if (auto f = read("Construction_Vehicles", p)) p.vehicles = parseVehicles(*f);
@@ -982,8 +990,8 @@ AiProfile loadProfile(const ruleset::GameFiles& files, std::string_view raceStyl
     // reserve for units in the first record, then the rows.
     if (auto f = read("Construction_Units", p)) {
         p.unitsFile = true;
-        p.unitReservePercent = Fields(&f->records.front()).num("Percentage of Resources To Reserve For Unit Construction", 0);
-        p.units = parseUnits(*f);
+        p.unitReservePercent = Fields(&f->records.front(), &p.unitsErrors).num("Percentage of Resources To Reserve For Unit Construction", 0);
+        p.units = parseUnits(*f, &p.unitsErrors);
     }
     if (p.sources.empty()) p.sources.push_back("built-in");
     return p;

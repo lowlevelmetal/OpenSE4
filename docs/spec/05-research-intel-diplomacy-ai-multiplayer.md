@@ -1240,10 +1240,10 @@ of player 5 on every turn, and players 2–5 built their own. OpenSE4 follows th
 2026-10-02 (`TurnContext::aiColonyTargets`): the colonization targets of the lists built by
 an empire's start-of-turn ministers stay in place, and the next economy step whose ministers
 run plans with them and removes them. Whether the reading empire can settle each target is
-its own test, and the neutral empire's colony-ship test, which no rule of this spec
-describes, is not modelled (question 64). The set lives within one processing of the turn:
-a human's turn-based ministers, whose start and end of turn can come in different calls,
-build their own at the end.
+its own test (confirmed: binary, question 64), and the neutral empire's colony-ship test is
+the vehicle list's (§7.5 `AI_Construction_Vehicles` step 1), modelled since 2026-10-14. The
+set lives within one processing of the turn: a human's turn-based ministers, whose start
+and end of turn can come in different calls, build their own at the end.
 
 **Tests used by the transitions**
 
@@ -1784,6 +1784,13 @@ binary).
   - *When*: new projects are chosen only if a research event (new level, new area, all
     projects done) was logged last turn, or fewer than 4 projects are queued. Never when
     the research pool (the points waiting to be spent) is 0, or with a full queue (12).
+  - *Loading errors* (confirmed: binary; added 2026-10-14, complete listing): the rows are
+    used only when the research file loaded without errors (the error box shows);
+    otherwise the minister goes straight to the random area of an empty queue below. The
+    other tables' errors are reported but do not stop their ministers, except the units
+    file's (*Units file* below). OpenSE4 follows this since 2026-10-14 (`planResearch`,
+    `AiProfile::researchErrors`; a loading error is a number field whose value is not a
+    whole number, inferred, question 85); it used to use whatever rows it could read.
   - *Mine sweeping*: every fifth turn, if the empire has ever run into a mine field and
     its research file has rows, it queues the area of the **first** tech requirement of
     the first component in the list with Mine Sweeping. This happens only if that area can
@@ -1932,7 +1939,21 @@ binary).
        - Under-supplied: count < `Must Have At Least`, or `Planet Per Item` > 0 and count
          < colonies × 10 / `Planet Per Item`, compared exactly (not rounded).
        - Over the hard cap, only "Open Warp Point" designs qualify. Over the soft cap, only
-         colony ships and "Open Warp Point" designs qualify.
+         colony ships and "Open Warp Point" designs qualify. In the same gate, a neutral
+         empire's colony-ship rows (the three colony types) qualify only while the
+         colonization-target list the economy step reads (§7.2) holds at least one entry,
+         settleable or not (confirmed: binary; added 2026-10-14, question 64).
+       - A row whose design is a unit (fighter, satellite, mine, troop, drone, weapon
+         platform) is under-supplied only if some queue owner of the empire has a working
+         space yard (an uncloaked colony with a Space Yard, or a yard ship) with free cargo
+         space of at least the design's tonnage; for satellites, troops, drones and weapon
+         platforms that owner must be a colony. Otherwise the row is passed over like one
+         that is not under-supplied. Placement then follows step 5, on any colony's queue
+         (confirmed: binary; added 2026-10-14, complete listing).
+       - OpenSE4 follows both since 2026-10-14 (`ShipBuilder::vehicles`, `yardRoomFor`,
+         `ai_economy.cpp`); it used to have neither test, so its computers kept ordering units
+         once their yard colonies' holds were full, and its neutral empires colony ships with
+         no target.
     2. **The design** (confirmed: binary): the AI first looks, for every entry, among its
        own designs that it can build for one made from the `AI_DesignCreation` template
        whose `Name` equals the entry's `Type` text, ignoring case. The newest by creation
@@ -2002,9 +2023,11 @@ binary).
          vehicle type.
        - Any other item goes to the queue with the smallest backlog in turns, then the
          highest rate. Ships need a space yard; the other units can use any colony's
-         queue. No ship or base is placed while the empire is at its ship limit (inferred,
-         question 81): the queues take such items (spec 02 §6.5), so the builder checks the
-         limit itself, as the engine's queues did before 2026-10-13.
+         queue. Neither the row choice nor the queue choice nor the queue's add looks at the
+         ship limit (confirmed: binary, question 81): at the limit the computer player keeps
+         queueing ships and bases, which then wait in the queues (spec 02 §6.5). OpenSE4
+         follows this since 2026-10-14 (`ShipBuilder::queueable`); it used to place none at
+         the limit.
        - A queue's **backlog** is the sum, over its items, of each item's turns: the
          largest, over the resources the queue has a positive rate for, of (what the item
          still costs ÷ that rate) rounded up. The first item counts only what is still
@@ -2017,7 +2040,16 @@ binary).
        capped at the queue's rate.
     7. After a placement the scan restarts from the top. After a failure (no queue under
        5 turns) it continues below that entry. It stops at the end of the list; there is
-       no wrap-around.
+       no wrap-around. The loop remembers the first row of the turn that failed and never
+       forgets it: when that same row fails again (after a placement has restarted the
+       scan), the whole list stops for the turn, so once a high row is blocked by a busy
+       queue at most one more item is placed after each pass down the list reaches it
+       (confirmed: binary; added 2026-10-14, complete listing). A placement adds its batch
+       to the count of its type and one to the queued colony ships the Colonizer rows of
+       step 4 count, which are taken with the other counts, before the clean-up. OpenSE4
+       follows this since 2026-10-14 (`ShipBuilder::vehicles`, `queuedColonyShips_`); it
+       used to skip a blocked row and keep scanning, and to count the queued colony ships
+       live, each item as many as it builds.
   - Difficulty does not affect construction. Nothing outside the table is ever built, so
     there are no extra scouts.
 - **Units file** (confirmed: binary): the game also looks for an `_AI_Construction_Units`
@@ -2028,9 +2060,15 @@ binary).
     65,000). There is no `AI State` key: the rows apply in every state.
   - *When*: after the vehicle list, every turn, the Ship Construction minister takes a
     fresh budget: a full turn of net income, with no reserve taken off and nothing of what
-    the vehicle list used. It goes through the empire's queues in order. A colony qualifies
-    when its queue is empty, it has no free facility slot, and all three resources of the
-    budget are above 0.
+    the vehicle list used. It goes through the empire's queues in the queue-list order
+    (system by system, then the system's object order, *Placement* above). A colony
+    qualifies when its queue is empty, it has no free facility slot, and all three
+    resources of the budget are above 0. A units file that reports any loading error is
+    not used for this step (the error box shows), although the reserve it set is kept
+    (confirmed: binary; added 2026-10-14, complete listing). OpenSE4 follows this since
+    2026-10-14 (`ShipBuilder::units`, `AiProfile::unitsErrors`; a loading error is a number
+    field whose value is not a whole number, inferred, question 85); it used to visit the
+    colonies in its own colony order and to use a faulty file's rows.
   - *Row*: the last record whose `Colony Type` text contains the colony's type name,
     ignoring case. A colony without a type gets nothing.
   - *What is built*: the first entry that names an AI design type exactly, whose units in
@@ -4953,6 +4991,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     enforce for them. To verify in the executable: does the computer player's vehicle list
     look at the ship limit before it places an item, and if not, does it fill its queues
     with ships that wait there?
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): neither the row choice
+    nor the queue choice nor the queue's add looks at the ship limit; at the limit the
+    computer player keeps queueing ships and bases, which wait in the queues as spec 02
+    §6.5 describes. Since 2026-10-14 ours follows (`ShipBuilder::queueable`,
+    `ai_economy.cpp`).
 82. **A rebel's waiting happiness events** (raised 2026-10-14 by the recheck of the negative
     claims on the complete listing, seen in passing and not checked; §2.3 "The new empire").
     A rebel empire starts as a copy of its former owner, and that copy seems to take the

@@ -268,6 +268,12 @@ struct AiProfile {
     std::vector<DesignTemplate> designs;
     Speech speech;
     std::vector<ruleset::CombatStrategy> strategies;
+    // A loading error in the research or the units file (spec 05 §7.5,
+    // confirmed: binary): the Research minister then uses no rows, and the
+    // units step is not taken. OpenSE4 counts as one a number field whose
+    // value is not a whole number (inferred, question 85).
+    bool researchErrors = false;
+    bool unitsErrors = false;
     bool unitsFile = false;               // an `_AI_Construction_Units` file was found
     int unitReservePercent = 0;           // its `Percentage of Resources To Reserve For Unit Construction`
     std::vector<UnitQueue> units;         // its rows

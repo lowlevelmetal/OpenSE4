@@ -23,6 +23,11 @@ bool researchEventLastTurn(const Empire& e, uint32_t turn) {
 
 void planResearch(Planner& p) {
     const Empire& e = p.emp();
+    // The rows count only when the research file loaded without errors
+    // (confirmed: binary); otherwise the minister goes straight to the random
+    // area of an empty queue.
+    static const std::vector<ResearchRow> kNoRows;
+    const std::vector<ResearchRow>& rows = p.prof.researchErrors ? kNoRows : p.prof.research;
     const auto& areas = p.r.data().techAreas;
     auto researchable = [&](TechAreaId a) {
         return a.valid() && a.index() < areas.size() && p.r.techVisible(p.st, e, a) && e.techLevel(a) < p.r.tech(a).maxLevel;
@@ -40,10 +45,10 @@ void planResearch(Planner& p) {
     const bool choose = (researchEventLastTurn(e, p.st.turn) || queue.size() < 4) && e.researchPool > 0 && queue.size() < 12;
     if (choose) {
         // Mine sweeping: every fifth turn, once our ships have met a mine
-        // field and when the research file has rows, the area of the first
+        // field and when the research file has rows (used), the area of the first
         // tech requirement of the first component with Mine Sweeping, if it
         // can be researched now and is below the required level.
-        if (p.date % 5 == 0 && e.aiMemory.metMinefield && !p.prof.research.empty()) {
+        if (p.date % 5 == 0 && e.aiMemory.metMinefield && !rows.empty()) {
             for (uint32_t c = 0; c < p.r.data().components.size(); ++c) {
                 if (!hasAbility(p.r.componentAbilities(c), AbilityKind::MineSweeping)) continue;
                 const auto& reqs = p.r.component(c).requirements;
@@ -59,7 +64,7 @@ void planResearch(Planner& p) {
         auto share = [&]() {
             int total = 0;
             for (const ResearchProject& q : queue)
-                for (const ResearchRow& row : p.prof.research) {
+                for (const ResearchRow& row : rows) {
                     if (!(row.states & maskOf(p.state)) || !keysEqual(row.area, p.r.tech(q.area).name)) continue;
                     const int level = row.level >= 9999 ? p.r.tech(q.area).maxLevel : row.level;
                     if (level > e.techLevel(q.area)) {
@@ -71,7 +76,7 @@ void planResearch(Planner& p) {
         };
         while (queue.size() < 12 && share() < 100) {
             std::optional<TechAreaId> pick;
-            for (const ResearchRow& row : p.prof.research) {
+            for (const ResearchRow& row : rows) {
                 if (!(row.states & maskOf(p.state))) continue;
                 const auto area = p.r.data().findTechArea(row.area);
                 if (!area || !researchable(*area) || queued(queue, *area)) continue;

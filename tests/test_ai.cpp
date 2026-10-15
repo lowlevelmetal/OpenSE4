@@ -6918,3 +6918,155 @@ TEST_CASE("ai: a leftover defence fleet goes through the defence routine and add
     REQUIRE(leader);
     CHECK(p.defendAssigned[0] == ai::detail::vehicleRating(r, p.st, *leader));
 }
+
+// ---- The vehicle list and the tables of 2026-10-14 (spec 05 §7.5, confirmed: binary) ------------------
+
+namespace {
+
+// A second colony of the empire in its home system, with a large hold.
+ObjectId roomyColony(GameState& s, EmpireId me, int64_t hold = 100'000) {
+    const auto second = freePlanetIn(s, s.galaxy.object(homeworld(s, me).planet).system);
+    REQUIRE(second);
+    addColony(s, *second, me, {{me, 500}});
+    ruleset::Ability a;
+    a.type = std::string(identifier(AbilityKind::CargoStorage));
+    a.value1 = std::to_string(hold);
+    s.galaxy.object(*second).abilities.push_back(a);
+    return *second;
+}
+
+int itemsOf(const GameState& s, ObjectId planet, DesignId design) {
+    int n = 0;
+    for (const QueueItem& q : s.colony(planet)->queue.items) n += q.kind == QueueItem::Kind::Vehicle && q.design == design;
+    return n;
+}
+
+} // namespace
+
+TEST_CASE("ai: the vehicle list stops when its first blocked row is blocked again") {
+    TempTree t("firstblocked");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 2\nEntry 1 Type := Attack Ship\nEntry 1 Must Have At Least := 100000\n"
+            "Entry 2 Type := Satellite\nEntry 2 Must Have At Least := 100000\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId warship = addWarship(s, rules, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const DesignId sat = addTestDesign(s, rules, me, "Sentinel", "Test Satellite Hull", {"Test Satellite Gun"});
+    s.design(sat).designType = "Satellite";
+    s.empire(me).designs.push_back(sat);
+    const ObjectId second = roomyColony(s, me);
+    // The homeworld, the only yard, is busy for many turns: the attack ship
+    // row finds no queue under 5 turns.
+    QueueItem busy;
+    busy.kind = QueueItem::Kind::Vehicle;
+    busy.design = warship;
+    busy.count = 100;
+    Colony& home = homeworld(s, me);
+    home.queue.items = {busy};
+    ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+    REQUIRE(p.state == ai::AiState::Exploration);
+    ai::detail::planShips(p);
+    // Row 1 fails and is remembered; row 2 places one batch of satellites on
+    // the roomy colony and restarts the scan; row 1 fails again and the list
+    // stops, though the satellites' queue could take more.
+    CHECK(itemsOf(p.st, home.planet, warship) == 1);
+    CHECK(itemsOf(p.st, second, sat) == 1);
+}
+
+TEST_CASE("ai: a unit row qualifies only while a yard has cargo room; the ship limit stops nothing") {
+    TempTree t("unitroom");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 2\nEntry 1 Type := Satellite\nEntry 1 Must Have At Least := 1\n"
+            "Entry 2 Type := Attack Ship\nEntry 2 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId warship = addWarship(s, rules, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const DesignId sat = addTestDesign(s, rules, me, "Sentinel", "Test Satellite Hull", {"Test Satellite Gun"});
+    s.design(sat).designType = "Satellite";
+    s.empire(me).designs.push_back(sat);
+    const ObjectId second = roomyColony(s, me);   // room, but no yard
+    Colony& home = homeworld(s, me);
+    home.queue.items.clear();
+    const DesignId mine = addTestDesign(s, rules, me, "Spike", "Test Mine Hull", {"Test Warhead"});
+    home.cargo.units = {{mine, static_cast<int>(colonyCargoCapacity(rules, s, home) / designTonnage(rules, s.design(mine)))}};
+    REQUIRE(colonyCargoCapacity(rules, s, home) - cargoSpaceUsed(rules, s, home.cargo) < designTonnage(rules, s.design(sat)));
+    // At the ship limit: the computer player queues ships all the same (question 81).
+    s.options.maxShipsPerPlayer = shipCount(rules, s, me);
+    {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        ai::detail::planShips(p);
+        // The only yard's hold is full: the satellite row is passed over, as
+        // one that is not under-supplied, and the next row is tried.
+        CHECK(itemsOf(p.st, second, sat) == 0);
+        CHECK(itemsOf(p.st, home.planet, sat) == 0);
+        CHECK(itemsOf(p.st, home.planet, warship) == 1);
+    }
+    // A yard with room anywhere lets the row qualify; placement then picks any colony's queue.
+    s.colony(second)->facilities.push_back(facilityIndex(rules, "Test Space Yard"));
+    ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+    ai::detail::planShips(p);
+    CHECK(itemsOf(p.st, second, sat) == 1);
+}
+
+TEST_CASE("ai: a neutral empire's colony-ship rows need a colonization target in the lists") {
+    TempTree t("neutralcolony");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Colony (Rock)\nEntry 1 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 1, 1, 10, rules);
+    const EmpireId me{1u};
+    REQUIRE(isNeutral(s.empire(me)));
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId settler = addTestDesign(s, rules, me, "Settler", "Test Frigate",
+                                           {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Rock Pod"});
+    s.design(settler).designType = "Colony (Rock)";
+    s.empire(me).designs.push_back(settler);
+    homeworld(s, me).queue.items.clear();
+    auto queued = [&](bool target) {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        p.state = ai::AiState::Exploration;
+        p.sit.colonyTargets.clear();
+        if (target) p.sit.colonyTargets.push_back(ai::detail::ColonyTarget{});   // settleable or not
+        ai::detail::planShips(p);
+        return itemsOf(p.st, homeworld(p.st, me).planet, settler);
+    };
+    CHECK(queued(false) == 0);
+    CHECK(queued(true) == 1);
+}
+
+TEST_CASE("ai: a research or units file with a loading error is not used") {
+    TempTree t("tableerrors");
+    t.write("Ai/Default_AI_Research.txt", "AI State := Exploration\nTech Area Name := Test Armor\nTech Area Level := high\nTech Area Min Percent := 100\n");
+    t.write("Ai/Default_AI_Construction_Units.txt",
+            "Percentage of Resources To Reserve For Unit Construction := 25\nColony Type := Homeworld\nNum Queue Entries := 1\n"
+            "Entry 1 Type := Satellite\nEntry 1 Maximum in kT := lots\n");
+    const ai::AiProfile bad = ai::loadProfile(t.root, "Nobody");
+    CHECK(bad.researchErrors);
+    CHECK(bad.unitsErrors);
+    CHECK(bad.unitReservePercent == 25);   // the reserve it set still holds
+    TempTree good("tablesgood");
+    good.write("Ai/Default_AI_Research.txt", "AI State := Exploration\nTech Area Name := Test Armor\nTech Area Level := 1\nTech Area Min Percent := 100\n");
+    CHECK_FALSE(ai::loadProfile(good.root, "Nobody").researchErrors);
+    // The Research minister without rows: the random area of an empty queue.
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(3, 2, 0, 8, rules);
+    const EmpireId cpu{1u};
+    s.empire(cpu).research.clear();
+    REQUIRE(s.empire(cpu).researchPool > 0);
+    ai::detail::Planner p(rules, s, cpu, ai::detail::Mode::Computer, 4);
+    REQUIRE(p.prof.researchErrors);
+    ai::detail::planResearch(p);
+    REQUIRE(p.st.empire(cpu).research.size() == 1);
+}
