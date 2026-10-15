@@ -1534,7 +1534,9 @@ TEST_CASE("combat: bombardment can wipe out a colony; the planet stays on the ma
     CHECK(s.colony(planet) == nullptr);
     // The population died out (spec 02 §2): each value drops by `Planet Value Percent Loss After Owner Death`.
     for (size_t k = 0; k < 3; ++k) CHECK(s.galaxy.object(planet).value[k] == std::max(0, values[k] - 10));
-    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 1);
+    // A starting planet's colony type is "Homeworld" (spec 02 §2).
+    CHECK(moodCount(ctx, ar.b, "Homeworld Lost") == 1);
+    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 0);
     CHECK(moodCount(ctx, ar.b, "1M Population Killed") == 1);
     CHECK(moodCount(ctx, ar.a, "Battle in System - Win") == 1);
     REQUIRE(s.combats.size() == 1);
