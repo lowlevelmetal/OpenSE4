@@ -118,11 +118,16 @@ private:
     // every redraw; the selection itself stays as clicked (spec 06 §2.4, §7 Q64).
     bool selectedSectorMarked(const UiContext& ui) const;
     std::vector<const game::Vehicle*> vehiclesAt(const UiContext& ui, game::Location where) const;
-    // The ship cycle of Space, Ctrl+N, Ctrl+B and the top selector (cycleShip, spec 06 §2.3).
+    // The ship cycle of Space, Ctrl+N, Ctrl+B and the top selector, the fleet
+    // cycle of Ctrl+F, Ctrl+D and the middle one, the colony cycle of Ctrl+C,
+    // Ctrl+X and the bottom one (cycleShip, cycleFleet, cycleColony, spec 06
+    // §2.3): each goes on from what it chose last.
     void cycleVehicle(UiContext& ui, int dir);
     ShipCycleMemory shipCycle_;
     void cycleFleet(UiContext& ui, int dir);
+    FleetCycleMemory fleetCycle_;
     void cycleColony(UiContext& ui, int dir);
+    ColonyCycleMemory colonyCycle_;
     // Tagging (Shift+click, Shift+A, Shift+C; §2.5): a vehicle in a fleet tags the fleet.
     void toggleTag(UiContext& ui, game::VehicleId v);
     void tagAll(UiContext& ui);

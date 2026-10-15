@@ -1003,8 +1003,11 @@ What remains different:
 
 The accuracy pass of 2026-10-15 on the interface (spec 06 §1.1, §1.3, §1.9, §2.3, §2.5, §2.9, §3,
 §3.4, §7 Q93, Q113, Q115, Q124) brought the main window and a few windows in line with the
-complete listing: the tags last until Shift+C or a sector's selection. OpenSE4's additions
-there became options, off by default:
+complete listing: the tags last until Shift+C or a sector's selection; the ship cycle goes on
+from the last ship it selected itself, its "Stop once per location" table holding only its own
+stops; the fleet cycle goes by fleet number through the fleets that can still move, selecting
+the first such member; the colony cycle goes by planet name, letter case counting, and selects
+the colony's sector as a click does. OpenSE4's additions there became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|

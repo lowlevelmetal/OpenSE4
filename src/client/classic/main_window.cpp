@@ -407,35 +407,34 @@ const game::Colony* MainWindow::selectedColony(const UiContext& ui) const {
 
 void MainWindow::cycleVehicle(UiContext& ui, int dir) {
     // One cycle for Space, Ctrl+N, Ctrl+B and the selector's arrows, with the
-    // Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3).
+    // Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3). It
+    // goes on from the last ship it selected itself, whatever was selected
+    // since (cycleShip).
     const game::InterfaceOptions& prefs = ui.options();
     ShipCycleOptions options;
     options.turnBased = ui.session.turnBased();
     options.skipDamaged = prefs.skipDamaged;
     options.skipInFleets = prefs.skipInFleets;
     options.stopOncePerLocation = prefs.stopOncePerLocation;
-    if (const auto next = cycleShip(ui.rules(), ui.state(), ui.session.player(), vehicle_, dir, options, shipCycle_)) selectVehicle(ui, *next);
+    if (const auto next = cycleShip(ui.rules(), ui.state(), ui.session.player(), dir, options, shipCycle_)) selectVehicle(ui, *next);
 }
 
 void MainWindow::cycleFleet(UiContext& ui, int dir) {
-    std::vector<game::FleetId> list;
-    for (const game::Fleet& f : ui.state().fleets)
-        if (f.owner == ui.session.player()) list.push_back(f.id);
-    if (list.empty()) return;
-    auto it = fleet_ ? std::find(list.begin(), list.end(), *fleet_) : list.end();
-    size_t i = it == list.end() ? 0 : (size_t(it - list.begin()) + list.size() + size_t(dir + int(list.size()))) % list.size();
-    const game::Fleet* f = ui.state().fleet(list[i]);
-    if (const game::Vehicle* leader = f ? game::fleetLeader(ui.state(), *f) : nullptr) selectVehicle(ui, leader->id);
+    // By fleet number from the fleet it chose last, only fleets with a member
+    // that can still move this turn; that member is selected, which shows the
+    // Fleet Report (spec 06 §2.3, confirmed: binary).
+    if (const auto member = classic::cycleFleet(ui.state(), ui.session.player(), dir, fleetCycle_)) selectVehicle(ui, *member);
 }
 
 void MainWindow::cycleColony(UiContext& ui, int dir) {
-    std::vector<game::ObjectId> list;
-    for (const auto& c : ui.state().colonies)
-        if (c && c->owner == ui.session.player()) list.push_back(c->planet);
-    if (list.empty()) return;
-    auto it = object_ ? std::find(list.begin(), list.end(), *object_) : list.end();
-    size_t i = it == list.end() ? 0 : (size_t(it - list.begin()) + list.size() + size_t(dir + int(list.size()))) % list.size();
-    selectPlanet(ui, list[i]);
+    // By planet name from the colony it chose last; its sector is selected as
+    // a click selects it: one visible object opens its report, several give
+    // the list, and the tags are cleared (spec 06 §2.3, §2.5, confirmed: binary).
+    const auto planet = classic::cycleColony(ui.state(), ui.session.player(), dir, colonyCycle_);
+    if (!planet) return;
+    const game::Location at = game::locationOf(ui.state().galaxy, *planet);
+    shown_ = at.system;
+    selectSector(ui, at.sector, true);
 }
 
 bool MainWindow::tagged(game::VehicleId v) const { return std::find(tagged_.begin(), tagged_.end(), v) != tagged_.end(); }

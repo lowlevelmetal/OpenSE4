@@ -90,11 +90,12 @@ key Alt+1
 wait-until { picking = "location" }
 click sector:warp-point
 wait-step 12
-# 12 Your fleet again: the fleet arrows (the ship arrows pass the fleet by: it has used its
-# movement). Ctrl+1 is the next step's.
+# 12 Your fleet again: a click on its sector (the ship and fleet arrows pass the fleet by: it has
+# used its movement). Ctrl+1 is the next step's.
 key Ctrl+1 refused
 click item:next in=tag:cycle:ship refused
-click item:next in=tag:cycle:fleet
+click item:next in=tag:cycle:fleet refused
+click sector:ship+!home
 wait-step 13
 # 13 Go to the waypoint: Ctrl+1. The fleet arrows are refused: the order goes to the fleet.
 click item:next in=tag:cycle:fleet refused

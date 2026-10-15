@@ -122,7 +122,10 @@ unexplored system shows only a star field and the word *Unexplored*.
 The **selection buttons** at the top right of the command panel step through your ships, fleets
 and colonies: the left arrow goes back, the right arrow goes forward. The keyboard does the same
 (see [Hotkeys](hotkeys#selecting)). `Space` jumps to the next ship without orders; in a
-turn-based game, to the next ship with movement left.
+turn-based game, to the next ship with movement left. Each button goes on from what it chose
+last, whatever you selected since. The fleet buttons offer only fleets that can still move this
+turn, and the colony buttons go by the planets' names and select the colony's sector as a click
+does.
 
 ## The report panel
 

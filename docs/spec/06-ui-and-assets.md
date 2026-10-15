@@ -1730,13 +1730,41 @@ Three groups, left to right [T][S]:
    whatever the turn style (so a sentried ship with movement left is passed by in a
    turn-based game). The Empire Options' four Next/Previous switches then filter [T][S]:
    skip ships under construction, skip damaged ships, skip ships in fleets, and stop once
-   per location. "Stop once per location" keeps a table of the places the cycle has
-   stopped at and passes by a candidate whose place is in it; the table is emptied when
-   the cycle wraps round the list's end, and when the player or the direction changes.
-   Our client follows this since 2026-10-14 (`cycleShip`, `order_rules.hpp`). Its
-   choices (inferred, §7 Q115): the place of the ship the cycle leaves counts as visited,
-   so a press from a ship selected by a click goes to another place; "skip ships under
-   construction" has nothing to skip, as our ships appear finished.
+   per location. The cycle remembers the place in the game's object list of the last ship
+   it selected itself, not of a ship selected by a click or any other way, and a press goes
+   on from there; the memory is kept from turn to turn and reset only when the main window
+   is set up and when another player's turn begins on this computer. With nothing
+   remembered a press forward starts at the list's start, and a press backward one before
+   the list's end, so the last object is looked at last. "Stop once per location" keeps a
+   table of the places the cycle has stopped at (up to 100; beyond that no place is added)
+   and passes by a candidate whose place is in it; the place of a ship selected any other
+   way is not in it. The table is emptied when the walk passes either end of the list, and
+   when the player or the direction changes (corrected 2026-10-15, complete listing; §7
+   Q115). "Skip ships under construction" skips nothing in a normal game (§7 Q48). Our
+   client follows this since 2026-10-14, and since 2026-10-15 the place it goes on from
+   and the table's places (`cycleShip`, `ShipCycleMemory`, `order_rules.hpp`; before, a
+   press went on from the ship selected, whose place counted as visited).
+   **The fleet cycle** (confirmed: binary). The middle selector's arrows, Ctrl+F (next)
+   and Ctrl+D (previous) take the player's fleets by fleet number, 1 to 100, round the
+   end. A fleet counts only when one of the player's own objects in it still has movement
+   points left this turn, and the object selected is the first such member in the game's
+   object order, so the panel shows the Fleet Report (§2.5). The cycle remembers the last
+   fleet number it chose, reset only when another player's turn begins, and goes on from
+   it, not from the fleet selected. Our client follows since 2026-10-15 (`cycleFleet`,
+   `order_rules.hpp`), its fleet numbers the order the fleets were made in; before, it took
+   every fleet of the player in the game's fleet order from the fleet selected, and
+   selected the leader whether or not anything could move.
+   **The colony cycle** (confirmed: binary). The bottom selector's arrows, Ctrl+C (next)
+   and Ctrl+X (previous) take the player's colonies sorted by planet name, by character
+   code (letter case counts, so capitals come before small letters), A to Z, round the
+   end. The cycle remembers the colony it chose last by its system and sector, reset only
+   when another player's turn begins, and goes on from it, not from the selection. The
+   chosen colony's sector is then selected exactly as a click on it: one visible object
+   opens its report, several give the sector's list, and the tags are cleared. Our client
+   follows since 2026-10-15 (`cycleColony`, `order_rules.hpp`; before, it took the game's
+   colony order from the planet selected and opened the planet's report directly). With
+   two colonies in the remembered sector ours goes on past all of them, so the sector is
+   one stop (inferred, §7 Q125).
 
 **Hover hint** (confirmed: binary). Hovering a command or order button writes two
 centred lines of white text, with no box or border, straight over the system picture in
@@ -2232,11 +2260,12 @@ report is shown in the panel, and the lit orders are the fleet's (§2.8). In the
 a left-click makes that member the fleet's leader (spec 03 §9) and redraws the list; a
 right-click opens the member's Ship Report as a popup window, on Detail like every report
 popup. Neither changes the panel, the order buttons or the selection. The up-arrow returns
-to the sector's list. Since 2026-10-05 our client follows (§7 Q110), with these choices of
-its own: the stellar objects are sorted among themselves by name (inferred); a fleet member
-selected any other way (the ship arrows, a Goto) shows the Fleet Report alone too
-(inferred, §7 Q111); and the Fleet Report ends with the fleet's order list, as our Ship
-Report does (an OpenSE4 addition).
+to the sector's list. Any selection of a member of one of the player's own fleets (the ship
+and fleet arrows, the Gotos, a sector holding that one object) shows the Fleet Report alone
+too (confirmed: binary, §7 Q111). Since 2026-10-05 our client follows (§7 Q110), with these
+choices of its own: the stellar objects are sorted among themselves by name (inferred); and
+the Fleet Report ends with the fleet's order list, as our Ship Report does (an OpenSE4
+addition).
 
 **What replaces the report** (confirmed: binary; observed, spec 07 session 6). The panel
 changes only when the player selects something:
@@ -2672,8 +2701,8 @@ sector to the tagged minefields when it is not one; Ctrl+R removes it when it is
 | F11 | Empire Status |
 | F12 | End Turn |
 | Space or Ctrl+N / Ctrl+B | Next / previous ship: one cycle, the top selector's (§2.3) |
-| Ctrl+F / Ctrl+D | Next / previous fleet |
-| Ctrl+C / Ctrl+X | Next / previous colony |
+| Ctrl+F / Ctrl+D | Next / previous fleet with a member that can still move (§2.3) |
+| Ctrl+C / Ctrl+X | Next / previous colony by name, its sector selected as a click selects it (§2.3) |
 | Ctrl+P | Movement log replay, full |
 | Ctrl+O | Movement log replay, reload (rewind) |
 | Ctrl+I | Movement log replay, single step (one day) |
@@ -6062,7 +6091,10 @@ ships attacking together are spec 03 §19 Q81 and Q82; the fleet in the sector l
      vehicle, which can be a member of one of the player's fleets. Does the original's panel
      then show the Fleet Report, as for the fleet's row of the list, or the member's own Ship
      Report? OpenSE4 shows the Fleet Report alone, whatever selected the member, so the
-     panel never shows a member's own report (inferred, §2.5).
+     panel never shows a member's own report (inferred, §2.5). **Answer** (confirmed: binary;
+     2026-10-15, complete listing): any selection of a member of one of the player's own
+     fleets (the ship arrows, the fleet arrows, the Gotos, a sector holding that one object)
+     shows the Fleet Report. Ours already does.
 
 **A player's report on v0.11.0 (2026-10-06).** Three points about ship movement at End Turn, in
 an imported turn-based game of the original.
@@ -6169,7 +6201,13 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      visited by "Stop once per location", so that a press from a ship the player selected
      with a click goes to another place. Does the original's table hold only the places the
      cycle itself stopped at? And does a press start from the selected ship, or from the last
-     ship the cycle selected?
+     ship the cycle selected? **Answer** (confirmed: binary; 2026-10-15, complete listing):
+     the table holds only the places the cycle stopped at, up to 100, and a press goes on
+     from the place in the object list of the last ship the cycle selected, kept from turn to
+     turn and reset when the main window is set up and when another player's turn begins; a
+     first press backward starts one before the list's end (§2.3). The fleet cycle and the
+     colony cycle likewise go on from what they chose last. Since 2026-10-15 ours follows
+     (`cycleShip`, `cycleFleet`, `cycleColony`, `order_rules.hpp`).
 116. **Set Patrol in a turn-based game.** Each point clicked adds its Move To at once. In a
      turn-based game every order given runs at once, so in ours the ship sets out for the
      first point as soon as it is clicked, and a point it reaches leaves the list before the
@@ -6286,3 +6324,9 @@ these open:
      (§2.5 "What clears the tags", confirmed: binary). Does the panel mark the tags then (the
      tagged count, the group, nothing)? Ours writes a line of its own over the report's foot,
      "N tagged: the next order goes to them. Shift+C clears the tags." (inferred).
+125. **Two colonies in one sector and the colony cycle.** The colony cycle remembers the
+     colony it chose last by its system and sector (§2.3, confirmed: binary). Where two of the
+     player's colonies share a sector, which one does the next press go on from: the first of
+     them in the sorted list (so the cycle could stop at the other one again and again), or
+     the last? Ours goes on past every colony of that sector, forward from the last of them
+     and back from the first, so the sector, whose list shows both, is one stop (inferred).
