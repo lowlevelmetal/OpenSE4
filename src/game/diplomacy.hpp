@@ -83,9 +83,22 @@ void treatyStep(TurnContext& ctx, EmpireId e);
 enum class TreatyEntry : uint8_t { NewTreaty, None, Enacted };
 // Sets a treaty on both sides: dominance for Subjugation/Protectorate
 // (`aDominant`: a is the master), treaty turn, last war turn, trade reset
-// below trade level, "New Treaty ..." mood events and the log entries
-// `entry` names. A subject's other treaties are broken.
-void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// below trade level, the log entries `entry` names and the history lines.
+// No happiness event: Break Treaty, Declare War, the treaties a new subject
+// drops and every other direct change raise none (spec 05 §3.2, confirmed:
+// binary). False when nothing changed.
+bool setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// The original's routine that enacts an accepted treaty (spec 05 §3.2,
+// confirmed: binary): setTreaty, then the "New Treaty ..." happiness event
+// for each side that changed. Used by a package's Treaty item and by
+// signTreaty.
+void enactTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// An Accept Treaty message (spec 05 §3.2, §3.4, confirmed: binary):
+// enactTreaty (the message gives TreatyEntry::None: its own entry is all),
+// and for a Subjugation the subject's treaties better than None with third
+// empires fall to None, both sides told. A package's Subjugation drops
+// nothing.
+void signTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
 // The text of a "Treaty Enacted" entry about `other` (the history file finds
 // the empire by it: the entry also writes a contact line, spec 05 §3.4).
 std::string treatyEnactedText(const GameState& s, EmpireId other, Treaty t, std::string_view role = {});

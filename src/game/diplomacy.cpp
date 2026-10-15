@@ -136,7 +136,7 @@ void acceptTreaty(TurnContext& ctx, const DiplomaticMessage& proposal) {
     if (proposal.thirdEmpire == proposal.from || proposal.thirdEmpire == proposal.to) master = proposal.thirdEmpire;
     // An accepted proposal makes no treaty entry: its "Message" entry is all
     // (spec 06 §7 Q70, confirmed: binary).
-    setTreaty(ctx, proposal.from, proposal.to, proposal.treaty, master == proposal.from, TreatyEntry::None);
+    signTreaty(ctx, proposal.from, proposal.to, proposal.treaty, master == proposal.from, TreatyEntry::None);
 }
 
 // Carries out an accepted trade, gift or tribute (spec 06 §7 Q70, spec 05
@@ -292,9 +292,9 @@ bool treatyEnactedWith(const GameState& s, const LogEntry& l, EmpireId other) {
     return l.title == "Treaty Enacted" && l.text.starts_with(std::format("Our treaty with the {} is now ", nameOf(s, other)));
 }
 
-void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
+bool setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
     GameState& s = ctx.state;
-    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || t >= Treaty::Count) return;
+    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || t >= Treaty::Count) return false;
     const bool dominance = t == Treaty::Subjugation || t == Treaty::Protectorate;
     const bool aDom = dominance && aDominant;
     const bool bDom = dominance && !aDominant;
@@ -304,7 +304,7 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     // confirmed: binary).
     Relation& ra = s.empire(a).relation(b);
     Relation& rb = s.empire(b).relation(a);
-    if (ra.treaty == t && ra.dominant == aDom && rb.dominant == bDom) return;
+    if (ra.treaty == t && ra.dominant == aDom && rb.dominant == bDom) return false;
     const Treaty old = ra.treaty;
     ra.treaty = rb.treaty = t;
     ra.dominant = aDom;
@@ -324,8 +324,6 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     // trade (spec 05 §3.3, confirmed: binary).
     if (!(treatyTradesResources(old) && treatyTradesResources(t))) ra.tradeTurns = rb.tradeTurns = 0;
 
-    ctx.mood(a, std::string(treatyTrigger(t, aDom)));
-    ctx.mood(b, std::string(treatyTrigger(t, bDom)));
     auto role = [&](bool dom) { return !dominance ? std::string{} : dom ? std::string(" We are the dominant partner.") : std::string(" We are the subordinate partner."); };
     // Treaties enacted, lost or subjugations: Goto opens Empires (spec 06 §7 Q41).
     // A package's treaty is "Treaty Enacted" (spec 06 §7 Q70); an accepted
@@ -344,21 +342,38 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     };
     addHistory(s, a, b, history(b, aDom));
     addHistory(s, b, a, history(a, bDom));
+    return true;
+}
 
-    // A subject may hold no other treaty (spec 05 §3.2).
-    if (t == Treaty::Subjugation) {
-        const EmpireId subject = aDom ? b : a;
-        const EmpireId master = aDom ? a : b;
-        for (size_t i = 0; i < s.empires.size(); ++i) {
-            const EmpireId x{i};
-            if (x == subject || x == master) continue;
-            if (s.empire(subject).relation(x).treaty <= Treaty::None) continue;
-            setTreaty(ctx, subject, x, Treaty::None);
-            logGoto(ctx.log(x, LogCategory::Politics, "Treaty Broken",
-                            std::format("The {} ended its treaty with us on becoming a subject of the {}.", nameOf(s, subject), nameOf(s, master)),
-                            std::nullopt, logpicture::race(subject)),
-                    LogGoto::Empires);
-        }
+void enactTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
+    if (!setTreaty(ctx, a, b, t, aDominant, entry)) return;
+    // Only an accepted treaty raises the "New Treaty ..." happiness events,
+    // for both sides (spec 05 §3.2, spec 02 §4, confirmed: binary).
+    const bool dominance = t == Treaty::Subjugation || t == Treaty::Protectorate;
+    ctx.mood(a, std::string(treatyTrigger(t, dominance && aDominant)));
+    ctx.mood(b, std::string(treatyTrigger(t, dominance && !aDominant)));
+}
+
+void signTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
+    GameState& s = ctx.state;
+    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || t >= Treaty::Count) return;
+    enactTreaty(ctx, a, b, t, aDominant, entry);
+    // Accepting a Subjugation: the subject may hold no other treaty. Every
+    // treaty better than None between it and a third empire goes to None,
+    // both sides told; War and Non-Intercourse stay (spec 05 §3.2, confirmed:
+    // binary). Only the Accept Treaty message does this, never a package.
+    if (t != Treaty::Subjugation) return;
+    const EmpireId subject = aDominant ? b : a;
+    const EmpireId master = aDominant ? a : b;
+    for (size_t i = 0; i < s.empires.size(); ++i) {
+        const EmpireId x{i};
+        if (x == subject || x == master) continue;
+        if (s.empire(subject).relation(x).treaty <= Treaty::None) continue;
+        setTreaty(ctx, subject, x, Treaty::None);
+        logGoto(ctx.log(x, LogCategory::Politics, "Treaty Broken",
+                        std::format("The {} ended its treaty with us on becoming a subject of the {}.", nameOf(s, subject), nameOf(s, master)),
+                        std::nullopt, logpicture::race(subject)),
+                LogGoto::Empires);
     }
 }
 
@@ -663,8 +678,11 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
                 // The package names the dominant side of a Subjugation or
                 // Protectorate in `empire`; by default the receiver (inferred).
                 // Both parties log "Treaty Enacted" (spec 06 §7 Q70).
+                // It is enacted as an accepted treaty (happiness events for
+                // both) but a Subjugation drops none of the subject's other
+                // treaties (spec 05 §3.2, confirmed: binary).
                 const EmpireId master = item.empire == giver ? giver : receiver;
-                setTreaty(ctx, receiver, giver, item.treaty, master == receiver, TreatyEntry::Enacted);
+                enactTreaty(ctx, receiver, giver, item.treaty, master == receiver, TreatyEntry::Enacted);
                 break;
             }
             case PackageItem::Kind::CommChannel: {

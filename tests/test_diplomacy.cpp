@@ -294,14 +294,17 @@ TEST_CASE("diplomacy: break treaty and declare war are immediate") {
     send(s, kA, kB, MessageType::BreakTreaty);
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kB).relation(kA).treaty == Treaty::None);
-    CHECK(hasMood(ctx, kB, "New Treaty None"));
+    // Only an accepted treaty raises a happiness event (spec 05 §3.2, confirmed: binary).
+    CHECK_FALSE(hasMood(ctx, kA, "New Treaty None"));
+    CHECK_FALSE(hasMood(ctx, kB, "New Treaty None"));
 
     nextTurn(s);
     send(s, kB, kA, MessageType::DeclareWar);
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::War);
     CHECK(s.empire(kA).relation(kB).lastWarTurn == static_cast<int32_t>(s.turn));
-    CHECK(hasMood(ctx, kA, "New Treaty War"));
+    CHECK_FALSE(hasMood(ctx, kA, "New Treaty War"));
+    CHECK_FALSE(hasMood(ctx, kB, "New Treaty War"));
     CHECK(hasLog(s, kA, "War Declared"));
 
     // Breaking a war is not a way to make peace. The player's window offers
@@ -337,6 +340,8 @@ TEST_CASE("diplomacy: subjugation breaks the subject's other treaties") {
     CHECK(hasLog(s, kC, "Treaty Broken"));
     CHECK(hasMood(ctx, kA, "New Treaty Subjugated (Dom)"));
     CHECK(hasMood(ctx, kB, "New Treaty Subjugated (Sub)"));
+    // The dropped treaty raises no happiness event (spec 05 §3.2, confirmed: binary).
+    CHECK_FALSE(hasMood(ctx, kC, "New Treaty None"));
 
     // A proposal may name the dominant side.
     nextTurn(s);
@@ -398,6 +403,29 @@ TEST_CASE("diplomacy: subjugation breaks the subject's other treaties") {
     CHECK(diplomacy::treatyTrigger(Treaty::Protectorate, false) == "New Treaty Protectorate (Sub)");
     CHECK(diplomacy::treatyTrigger(Treaty::NonIntercourse, false) == "New Treaty Non Intercourse");
     CHECK(diplomacy::treatyTrigger(Treaty::TradeResearchAlliance, false) == "New Treaty Trade and Research");
+}
+
+TEST_CASE("diplomacy: a package's Subjugation keeps the subject's other treaties and raises the treaty events (spec 05 §3.2)") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    setContact(s, kB, kC);
+    setContact(s, kA, kC);
+    agree(s, kB, kC, Treaty::TradeAlliance);
+    TurnContext ctx = context(s);
+    // B gives A a Subjugation: A, the receiver, is the master; B keeps its
+    // Trade Alliance with C.
+    diplomacy::executePackage(ctx, kB, kA, std::vector<PackageItem>{treatyItem(Treaty::Subjugation)});
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::Subjugation);
+    CHECK(diplomacy::masterOf(s, kB) == kA);
+    CHECK(s.empire(kB).relation(kC).treaty == Treaty::TradeAlliance);
+    CHECK_FALSE(hasLog(s, kC, "Treaty Broken"));
+    CHECK(hasMood(ctx, kA, "New Treaty Subjugated (Dom)"));
+    CHECK(hasMood(ctx, kB, "New Treaty Subjugated (Sub)"));
+    // War through a package's Treaty tab is the one way to "New Treaty War".
+    diplomacy::executePackage(ctx, kC, kA, std::vector<PackageItem>{treatyItem(Treaty::War)});
+    CHECK(s.empire(kA).relation(kC).treaty == Treaty::War);
+    CHECK(hasMood(ctx, kA, "New Treaty War"));
+    CHECK(hasMood(ctx, kC, "New Treaty War"));
 }
 
 TEST_CASE("diplomacy: trade percentage across treaty changes") {

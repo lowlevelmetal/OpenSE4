@@ -485,7 +485,12 @@ up the trade chain [M].
 - **Accepting Subjugation** (confirmed: binary) drops every treaty better than None between
   the new subject and the third empires it is in contact with to None; both sides of each
   lost treaty are told. War and Non-Intercourse stay. Accepting a Protectorate breaks
-  nothing.
+  nothing. The drop belongs to the processing of the Accept Treaty message only (corrected
+  2026-10-14, complete listing): a Subjugation enacted by a Treaty item of a trade, gift or
+  tribute makes the package's receiver the master and the giver the subject, and the subject
+  keeps its other treaties. Since 2026-10-14 ours follows (`diplomacy::signTreaty` for the
+  message, `enactTreaty` for the package); until then a package's Subjugation dropped them
+  too.
 - **Consistency check** (confirmed: binary): at each empire's treaty step (§8), if the two
   sides of a pair record different treaties, both are reset to None.
 - **Break Treaty** sets both sides to None; **Declare War** sets both to War, whatever the
@@ -496,7 +501,15 @@ up the trade chain [M].
   not even when two of our allies fight. Both allies defend a shared location [M].
 - **Happiness**: Trade and better are "good" treaties that please the empire. War,
   Non-Intercourse, Subjugation and Protectorate displease it [M]. Accepting a treaty raises
-  a happiness event for both sides (confirmed: binary).
+  a happiness event for both sides (confirmed: binary). Only that raises one (corrected
+  2026-10-14, complete listing): the "New Treaty ..." events come from the one routine that
+  enacts an accepted treaty, reached from an Accept Treaty message and from a Treaty item of
+  a package that is carried out. Declare War, Break Treaty, the treaties a new subject drops,
+  the per-turn consistency reset, the war of `Politics - Fake Messages`, contact loss and
+  destruction set treaties directly and raise none. So "New Treaty War" counts only when War
+  comes through a package's Treaty tab, and "New Treaty None" never comes from a Break
+  Treaty. Since 2026-10-14 ours follows (`diplomacy::enactTreaty`; `setTreaty` raises
+  none); until then every treaty change raised the event for both sides.
 - **Treaty grid** (confirmed: binary; the manual's "allied" was wrong): we see our own
   treaties, and the treaty between two other empires when we hold Non-Aggression or better
   with either of them (`Politics - Treaty Info` aside). The grid's cell layout is spec 06
