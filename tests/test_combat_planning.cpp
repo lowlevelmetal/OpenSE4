@@ -375,6 +375,46 @@ TEST_CASE("planning: the targeting keys measure aim distance, full hit points, t
     }
 }
 
+// ---- A seeker's impact (spec 04 §10.1, corrected 2026-10-14) ---------------------------------------------
+
+TEST_CASE("combat: a seeker's impact has no attacker: no damage bonus, no experience, tonnage only to a launcher still there") {
+    ruleset::Ruleset rs = buildCombatRuleset();
+    part(rs, "CT Damage Booster", 10, {ab(AbilityKind::DamageModifierSystem, 50)});
+    rs.reindex();
+    const Rules rules{std::move(rs)};
+    for (const bool launcherGone : {false, true}) {
+        CAPTURE(launcherGone);
+        Bench k(rules, makeArena(rules));
+        GameState& s = k.ar.s;
+        const DesignId tube = frigate(s, k.ar.a, "Tube", 1, {"CT Torpedo", "CT Damage Booster"}, rules);
+        const VehicleId launcher = spawnOn(rules, s, tube, k.ar.loc);
+        const VehicleId dinghy = addTestVehicle(s, rules, addTestDesign(s, rules, k.ar.b, "Dinghy", "Test Frigate", {"Test Bridge"}), k.ar.loc).id;
+        const int64_t empireExperience = s.empire(k.ar.a).experience;
+        Battle& b = k.start({k.ar.b});   // B plays by hand: A's strategies fire, B only ends its phases
+        const int l = k.at(launcher), t = k.at(dinghy);
+        k.arrange({{l, 20, 20}, {t, 24, 20}});
+        b.advance();
+        for (int guard = 0; guard < 200 && b.stage() != Battle::Stage::Finished; ++guard) {
+            const bool flying = std::any_of(b.pieces().begin(), b.pieces().end(),
+                                            [](const combat::detail::Piece& p) { return p.alive && p.kind == CombatPiece::Kind::Seeker; });
+            if (launcherGone && flying) b.piece(l).alive = false;   // the launcher has left the battle
+            REQUIRE(b.submit(TacticalOrder{OK::EndPhase, k.ar.b}).empty());
+        }
+        REQUIRE_FALSE(b.pieces()[static_cast<size_t>(t)].alive);
+        // The impact's damage is the table entry with no Damage Modifier - System (37, not 56).
+        int64_t impact = -1;
+        for (const CombatEvent& e : b.record().events)
+            if (e.kind == CombatEvent::Kind::Hit && e.target == static_cast<uint32_t>(t) && b.record().pieces[e.piece].kind == CombatPiece::Kind::Seeker)
+                impact = e.amount;
+        CHECK(impact == 37);
+        // Nobody gains experience; the launcher's design gets the tonnage only while it is there.
+        CHECK(b.pieces()[static_cast<size_t>(l)].unit.experience == 0);
+        CHECK(b.pieces()[static_cast<size_t>(l)].unit.experienceTenths == 0);
+        CHECK(s.empire(k.ar.a).experience == empireExperience);
+        CHECK((s.design(tube).enemyTonnageDestroyed > 0) == !launcherGone);
+    }
+}
+
 TEST_CASE("planning: the attack map - point-defense only when nothing else adds, the border over-count, the weighted emissive cut") {
     ruleset::Ruleset rs = buildCombatRuleset();
     gun(rs, "CT Engine Cutter", WeaponKind::DirectFire, {100, 100, 100}, "Only Engines");
@@ -1644,7 +1684,10 @@ TEST_CASE("capture: the record says how a boarding went, and whose ship it was")
     }
 }
 
-TEST_CASE("hits: the record splits each hit between the shields and the structure; a destroying hit counts all that was left") {
+TEST_CASE("hits: the record splits each hit between the shields and the current hit points; a destroying hit counts all that was left") {
+    // Spec 06 §1.10.1 (confirmed: binary; corrected 2026-10-14): a ship's
+    // current hit points are its intact structure less its damage pool, so a
+    // hit that only went into the pool counts as structure damage.
     Arena ar = makeArena(5);
     GameState& s = ar.s;
     const VehicleId gunner = spawn(s, frigate(s, ar.a, "Gunner", 2, {"Test Laser", "Test Laser", "Test Laser", "Test Laser"}), ar.loc);
@@ -1653,7 +1696,7 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
     Bench k(std::move(ar));
     Battle& b = k.start({k.ar.a});
     const int g = k.at(gunner), t = k.at(target);
-    int hits = 0;
+    int hits = 0, pooled = 0;
     bool destroyed = false;
     for (int round = 0; round < 25 && !destroyed && b.stage() != Battle::Stage::Finished; ++round) {
         b.advance();
@@ -1663,6 +1706,7 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
             b.piece(g).alwaysHit = true;
             const int shields = b.pieces()[static_cast<size_t>(t)].sh.current;
             const int64_t hp = b.hitPoints(t);
+            const int64_t current = b.currentHitPoints(t);
             TacticalOrder fire{OK::Fire, k.ar.a, g, t};
             fire.weapon = static_cast<int>(w);
             if (!b.check(fire).empty()) continue;
@@ -1675,11 +1719,12 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
                 destroyed = (e.flags & CombatEvent::kDestroyed) != 0;
                 if (destroyed) {
                     CHECK(e.shieldDamage == shields);
-                    CHECK(e.structureDamage == hp);
+                    CHECK(e.structureDamage == current);
                 } else {
                     CHECK(e.shieldDamage == shields - b.pieces()[static_cast<size_t>(t)].sh.current);
-                    CHECK(e.structureDamage == hp - b.hitPoints(t));
-                    CHECK(((e.flags & CombatEvent::kStructure) != 0) == (e.structureDamage > 0));
+                    CHECK(e.structureDamage == current - b.currentHitPoints(t));
+                    CHECK(((e.flags & CombatEvent::kStructure) != 0) == (hp > b.hitPoints(t)));
+                    pooled += b.pieces()[static_cast<size_t>(t)].pool > 0 && e.structureDamage > 0 && hp == b.hitPoints(t) ? 1 : 0;
                 }
             }
         }
@@ -1688,4 +1733,5 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
     }
     CHECK(hits >= 2);
     CHECK(destroyed);
+    (void)pooled;   // a hit that only filled the pool, when the dice give one
 }

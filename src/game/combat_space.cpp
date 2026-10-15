@@ -2030,12 +2030,13 @@ void Battle::recordHit(int att, int t, DamageType type, int64_t damage, uint32_t
     event(Ev::Hit, att, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), component);
     const size_t at = rec_.events.size() - 1;
     const int64_t before = hitPoints(t);
+    const int64_t current = currentHitPoints(t);
     const int shieldsBefore = pieces_[static_cast<size_t>(t)].sh.current;
     applyHit(att, t, type, damage);
-    markHit(at, t, before, shieldsBefore);
+    markHit(at, t, before, current, shieldsBefore);
 }
 
-void Battle::markHit(size_t at, int t, int64_t before, int shieldsBefore) {
+void Battle::markHit(size_t at, int t, int64_t before, int64_t current, int shieldsBefore) {
     if (at >= rec_.events.size()) return;
     const Piece& p = pieces_[static_cast<size_t>(t)];
     const bool gone = !p.alive;
@@ -2045,11 +2046,14 @@ void Battle::markHit(size_t at, int t, int64_t before, int shieldsBefore) {
     if (gone) flags |= CombatEvent::kDestroyed;
     CombatEvent& e = rec_.events[at];
     e.flags = flags;
-    // The target panel's damage line (spec 06 §1.10.1): what the shields and the
-    // structure lost; a destroying hit counts everything the target had left.
+    // The target panel's damage line (spec 06 §1.10.1, confirmed: binary;
+    // corrected 2026-10-14, complete listing): what the shields and the current
+    // hit points lost, a ship's current hit points being its intact structure
+    // less its damage pool, so damage that only went into the pool counts as
+    // structure damage; a destroying hit counts everything the target had left.
     auto clamp32 = [](int64_t v) { return static_cast<int32_t>(std::clamp<int64_t>(v, 0, INT32_MAX)); };
     e.shieldDamage = clamp32(gone ? shieldsBefore : shieldsBefore - p.sh.current);
-    e.structureDamage = clamp32(gone ? before : before - after);
+    e.structureDamage = clamp32(gone ? current : current - currentHitPoints(t));
 }
 
 void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
@@ -2087,6 +2091,7 @@ void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
     sk.y = y;
     sk.seekTarget = t;
     sk.launcher = i;
+    sk.launcherNumber = pieces_[i].number;
     sk.speed = std::max(0, w.comp->weapon.seekerSpeed);
     sk.allowance = sk.speed;   // (inferred) Fastest and Slowest see a seeker's speed
     sk.hp = std::max(1, w.comp->weapon.seekerDamageResistance);
@@ -2459,11 +2464,10 @@ void Battle::randomMove(int t) {
 }
 
 // Experience only for kills (spec 04 §15, confirmed: binary): +1.0 for a ship,
-// base or planet, +0.1 for a whole unit group or a seeker; seekers credit their
-// launcher (history 1.87). Unit groups and planets gain none.
+// base or planet, +0.1 for a whole unit group or a seeker. A seeker's impact
+// has no attacking piece and gives nobody experience (spec 04 §10.1; corrected
+// 2026-10-14, complete listing). Unit groups and planets gain none.
 void Battle::gainExperience(int k, int tenths) {
-    if (k < 0) return;
-    if (pieces_[k].kind == Kind::Seeker) k = pieces_[k].launcher;
     if (k < 0) return;
     Piece& killer = pieces_[k];
     if (killer.kind != Kind::Vehicle || !killer.alive) return;
@@ -2478,15 +2482,14 @@ void Battle::gainExperience(int k, int tenths) {
 
 // Enemy tonnage destroyed (spec 04 §15, confirmed: binary): the value goes in
 // full to every design of the killing object: a ship's design, each design of
-// a unit group, the launcher's design(s) for a seeker; a planet credits nobody.
+// a unit group; for a seeker's impact, the launcher's while it is still in the
+// battle (impactCredit_); a planet credits nobody. A seeker that took a dead
+// launcher's number credits the design that fired it (inferred).
 void Battle::creditTonnage(int att, int64_t tonnage) {
     if (att < 0 || tonnage <= 0) return;
-    int k = att;
-    if (pieces_[k].kind == Kind::Seeker) k = pieces_[k].launcher;
-    if (k < 0) return;
-    const Piece& a = pieces_[k];
+    const Piece& a = pieces_[att];
     std::set<uint32_t> designs;
-    if (a.kind == Kind::Vehicle && a.unit.design.valid()) designs.insert(a.unit.design.value);
+    if ((a.kind == Kind::Vehicle || a.kind == Kind::Seeker) && a.unit.design.valid()) designs.insert(a.unit.design.value);
     else if (a.kind == Kind::UnitGroup)
         for (const UnitStack& st : a.stacks) designs.insert(st.design.value);
     for (uint32_t d : designs) s_.design(DesignId{d}).enemyTonnageDestroyed += tonnage;
@@ -2505,13 +2508,15 @@ void Battle::kill(int t, int att) {
     int64_t value = 0;
     if (b.kind == Kind::Vehicle && b.unit.design.valid()) value = designTonnage(r_, s_.design(b.unit.design));
     else if (b.kind == Kind::UnitGroup) value = b.tonnageHad;
-    creditTonnage(att, value);
+    // A seeker's impact has no attacking piece: only the tonnage, to its
+    // launcher while that is in the battle (spec 04 §10.1, confirmed: binary).
+    creditTonnage(att >= 0 ? att : impactCredit_, value);
     // Empire experience (spec 02 §9, confirmed: binary): the destroyer's empire
     // gains the value div 10, a unit group's every unit it held, the battle's
-    // earlier dead included (spec 02 §13 Q55, confirmed: binary); seekers
-    // credit their launcher's.
-    if (const int k = att >= 0 && pieces_[att].kind == Kind::Seeker ? pieces_[att].launcher : att; k >= 0 && value > 0)
-        if (const EmpireId gainer = pieces_[k].owner; gainer.valid() && gainer.index() < s_.empires.size())
+    // earlier dead included (spec 02 §13 Q55, confirmed: binary); nobody for a
+    // seeker's impact.
+    if (att >= 0 && value > 0)
+        if (const EmpireId gainer = pieces_[att].owner; gainer.valid() && gainer.index() < s_.empires.size())
             economy::gainExperience(s_.empire(gainer), value / 10);
     gainExperience(att, b.kind == Kind::Vehicle ? kShipKillTenths : kUnitKillTenths);
     if (b.isLeader) dissolve(t);
@@ -2680,18 +2685,32 @@ void Battle::moveSeekers(EmpireId e) {
             pdReact(i);
             if (!pieces_[k].alive) break;
             if (pieces_[k].x == tx && pieces_[k].y == ty) {
-                // Impact: the table value times the members, one hit, no roll (confirmed: binary).
+                // Impact (spec 04 §10.1, confirmed: binary; corrected 2026-10-14,
+                // complete listing): the seeker leaves the battle first, then the
+                // hit is dealt with no attacking piece: the table entry at the
+                // travelled count (at most 20), read without the mount, times the
+                // members, one hit, no roll, no Damage Modifier - System and no
+                // experience. A kill credits its tonnage only to the launcher,
+                // looked up again by its number, while it is still in the battle.
                 const Weapon w = pieces_[k].seekWeapon;
-                const int64_t damage = xmath::pctRound(int64_t{table} * pieces_[k].members, 100 + damageBonus(e));
+                const std::vector<int>& entries = w.comp->weapon.damageAtRange;
+                const size_t at = static_cast<size_t>(std::min(pieces_[k].travelled, 20));
+                const int64_t entry = at >= 1 && at <= entries.size() ? std::max(0, entries[at - 1]) : 0;
+                const int64_t damage = entry * pieces_[k].members;
                 event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), w.de.component);
                 const size_t hitAt = rec_.events.size() - 1;
                 const int64_t before = hitPoints(t);
+                const int64_t current = currentHitPoints(t);
                 const int shieldsBefore = pieces_[static_cast<size_t>(t)].sh.current;
                 pieces_[k].alive = false;
                 event(Ev::Destroyed, i, i);
                 dropSeekersAimedAt(i);
-                applyHit(i, t, w.type, damage);
-                markHit(hitAt, t, before, shieldsBefore);
+                impactCredit_ = -1;
+                for (size_t l = 0; l < pieces_.size(); ++l)
+                    if (pieces_[l].alive && pieces_[l].number == pieces_[k].launcherNumber) impactCredit_ = static_cast<int>(l);
+                applyHit(-1, t, w.type, damage);
+                impactCredit_ = -1;
+                markHit(hitAt, t, before, current, shieldsBefore);
                 break;
             }
         }

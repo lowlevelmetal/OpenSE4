@@ -117,6 +117,7 @@ struct Piece {
     std::array<int, kLaunchKinds> launchedNow{};   // units launched this combat turn, by LaunchKind
     // Seekers.
     int seekTarget = -1, launcher = -1, travelled = 0, speed = 0, members = 1, launchRound = 0;
+    int launcherNumber = -1;          // the launcher's piece number: its impact credits whoever holds it then (spec 04 §10.1)
     int64_t hp = 0;
     Weapon seekWeapon;
     // Launched units and drones.
@@ -404,7 +405,8 @@ private:
     void recordHit(int att, int t, DamageType type, int64_t damage, uint32_t component = 0);
     // Marks the Hit event `at` with what applying it did to `t`, whose hit
     // points were `before` and shields `shieldsBefore`.
-    void markHit(size_t at, int t, int64_t before, int shieldsBefore);
+    // `current` its current hit points as the damage line counts them (currentHitPoints).
+    void markHit(size_t at, int t, int64_t before, int64_t current, int shieldsBefore);
     void shipHit(int att, int t, DamageType type, int64_t damage);
     void groupHit(int att, int t, DamageType type, int64_t damage);
     void seekerHit(int att, int t, DamageType type, int64_t damage);
@@ -535,6 +537,10 @@ private:
     std::vector<int64_t> danger_;                                     // the moving side's danger map (spec 04 §16.1)
     EmpireId dangerFor_;
     std::vector<OverkillTotal> overkill_;                             // per piece, kept between choices (spec 04 §16)
+    // A seeker's impact has no attacking piece; a ship or unit group it
+    // destroys credits its tonnage to this piece only (the launcher found by
+    // number, -1: nobody), never experience (spec 04 §10.1, confirmed: binary).
+    int impactCredit_ = -1;
     // Launch Units window sessions: (piece, session, launch kind) -> the group made (spec 04 §10.4).
     std::map<std::tuple<int, int, int>, int> launchGroups_;
     // Mines laid in the battle, by owner: they join the sector's minefield when it ends (spec 04 §10.6).

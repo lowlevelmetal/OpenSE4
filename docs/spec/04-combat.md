@@ -544,7 +544,8 @@ Worked example: a destroyer (hull +20 defense) with ECM I (+20) whose top-left s
 - **Damage Modifier - System** (confirmed: binary): when a hit lands, its damage is
   multiplied by (100 + the attacker empire's `Damage Modifier - System` total) / 100 and
   Rounded. This happens before shields, and also changes the value that special types
-  use (reload turns, conversion chance, push distance).
+  use (reload turns, conversion chance, push distance). A hit with no attacking piece
+  gets none: a seeker's impact (§10.1) and a ram's recoil (§10.3).
 
 ## 9. Damage application
 
@@ -755,14 +756,27 @@ same (§10.6).
   aimed at it goes with it at that moment, not at its next step. A planet whose colony
   dies stays as an obstacle, so seekers aimed at it expire at their next step, as for a
   target captured or converted (§12). A seeker whose launcher is destroyed keeps flying
-  and strikes or expires as usual; only the kill credit has no piece left to go to.
-  Since 2026-10-14 the engine follows (`Battle::dropSeekersAimedAt`). What the original
-  credits for such a seeker's kill is not settled; the engine credits the dead launcher
-  as before (inferred; spec 06 §7 Q122).
-- **Impact.** When the seeker reaches the target's centre square, it deals
-  table[travelled] × (members in the group) as one hit of the weapon's damage type, with
-  the launching empire's damage modifier. No roll. The launcher gets the kill credit
-  (history 1.87).
+  and strikes or expires as usual. Since 2026-10-14 the engine follows
+  (`Battle::dropSeekersAimedAt`; spec 06 §7 Q122). When it strikes, nobody is credited
+  (Impact, below; confirmed: binary; settled 2026-10-14, complete listing).
+- **Impact** (confirmed: binary; corrected 2026-10-14, complete listing). When the seeker
+  reaches the target's centre square, it is first removed from the battle (seekers aimed
+  at it go with it), and only then is the hit dealt: table[travelled] (the travelled
+  count capped at 20, the entry read without the mount; no stock mount applies to
+  seekers) × (members in the group), as one hit of the weapon's damage type. No roll.
+  The hit has **no attacking piece**: no `Damage Modifier - System` applies to it, and a
+  kill by impact gives no crew experience and no empire experience (§15, spec 02 §9). A
+  seeker of a push, pull or Crew Conversion type then moves or converts nothing
+  (inferred; no stock seeker has such a type). Its only credit is the
+  enemy tonnage of a destroyed ship, base or unit group (§15), which goes to the
+  design(s) of the launcher, looked up again by its piece number (§10.7 "A reused piece
+  number"), and only while a piece with that number is in the battle: if the launcher
+  has been destroyed, nobody is credited. The spec said earlier (confirmed: binary) that
+  the impact had the launching empire's damage modifier and that the launcher got the
+  kill credit with its experience (history 1.87); that was read as if the seeker itself
+  were the attacker. Since 2026-10-14 ours follows (`Battle::moveSeekers`,
+  `Battle::kill`); it used to give the impact the launching empire's bonus, the launcher
+  crew and empire experience, and a dead launcher's design the tonnage.
 - **Durability.** A seeker has `Weapon Seeker Dmg Res` hit points R (the mount does
   not change it) and defense +40 (§7). Its remaining hit points are R minus its pool P, for one member
   whatever the group's size. A hull-damaging hit already carries P (§9.1 step 2), so it
@@ -1193,8 +1207,10 @@ command exists). The only ways to disengage are:
 - **Experience** (confirmed: binary). Experience is earned only for kills, during the
   battle:
   - Destroying a ship, base or planet gives the killer's crew +1.0; destroying a whole
-    unit group or a seeker gives +0.1. Seeker kills credit the launcher (history 1.87).
-    Firing alone gives nothing.
+    unit group or a seeker gives +0.1. A seeker's impact has no attacking piece, so a
+    kill by impact gives nobody experience (§10.1; confirmed: binary; corrected
+    2026-10-14, complete listing; history 1.87 says seeker kills credit the launcher, but
+    the original credits only the tonnage). Firing alone gives nothing.
   - Each time a ship in a fleet gains crew experience this way, the fleet has a 1-in-4
     chance to gain +0.1 fleet experience.
   - Crew and fleet experience are capped at 50. Their truncated values are to-hit points
@@ -1219,7 +1235,8 @@ command exists). The only ways to disengage are:
     the whole group dies (units killed from a group that survives credit nothing); 0 for a
     planet or a seeker;
   - it goes, in full, to every design in the killing object: a ship's design, each design
-    in a unit group, the launcher's design(s) for a seeker; a planet credits nobody;
+    in a unit group, the launcher's design(s) for a seeker's impact, only while the
+    launcher is still in the battle (§10.1); a planet credits nobody;
   - a mine credits its own design with the victim's value; for a unit group, hull
     `Tonnage` × the units it had when that mine picked it (units killed by earlier mines
     of the strike do not count, those killed by this mine's earlier warheads do);
@@ -2440,6 +2457,16 @@ traced and are OpenSE4's choices until a session with the executable settles the
     panel shows another piece or none. The structure part is what the target's hit points
     lost, so damage held in a pool (§9.1) counts 0 (inferred). Which hits write it in the
     original, what it counts as structure damage, and when it goes away?
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): the line is written anew
+    each time the window draws a hit, on any piece, whenever the panel shows a piece. The
+    first number is the struck piece's shields before the hit less after; the second its
+    current hit points before less after, a ship's current hit points being its structure
+    less its pool, so damage that only went into the pool counts as structure damage. A
+    destroying shot counts all the shields and hit points it had left. Which hits write it
+    matched; since 2026-10-14 ours counts the pool (`Battle::markHit`). Still open: when the
+    line goes away. It seems to stay until the next drawn hit writes it again (blank if
+    the panel is then empty); since 2026-10-14 ours does that (inferred), where it used to
+    clear the line whenever the panel showed another piece or none.
 93. **Weapon cells** (spec 06 §1.10.1). Ours draws the reload bars from y 2 to 8 of the
     cell, counts the instance of a stack that will be ready first, and writes a unit
     group's count under the to-hit chance when both show at the top right (inferred).
