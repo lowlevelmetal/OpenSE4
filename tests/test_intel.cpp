@@ -731,6 +731,9 @@ TEST_CASE("intel: a faked declaration of war is an ordinary political message fr
         CHECK(fake->dated == today);
         CHECK(fake->tone == 2);
         CHECK_FALSE(fake->text.empty());
+        // The faked sender is told nothing; the third empire is.
+        CHECK_FALSE(hasLog(s, kB, "War Declared"));
+        CHECK(hasLog(s, kC, "War Declared"));
         bool logged = false;
         for (const LogEntry& l : s.empire(kC).log) logged = logged || (l.title == "Message" && l.message == fake->id);
         CHECK(logged);

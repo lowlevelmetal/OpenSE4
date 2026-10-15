@@ -198,7 +198,9 @@ std::optional<DiplomaticMessage> offerAccepted(const GameState& s, const Diploma
     return *o;
 }
 
-void receive(TurnContext& ctx, DiplomaticMessage& stored, uint32_t date, MessageLookup lookup) {
+// `faked`: a declaration `Politics - Fake Messages` sent in the sender's name,
+// whose sender is told nothing (spec 05 §2.3, confirmed: binary).
+void receive(TurnContext& ctx, DiplomaticMessage& stored, uint32_t date, MessageLookup lookup, bool faked = false) {
     GameState& s = ctx.state;
     const DiplomaticMessage m = stored;
     const std::string sender = nameOf(s, m.from);
@@ -259,7 +261,7 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored, uint32_t date, Message
             // (spec 05 §3.2, confirmed: binary).
             setTreaty(ctx, m.from, m.to, Treaty::None);
             break;
-        case MessageType::DeclareWar: declareWar(ctx, m.from, m.to); break;
+        case MessageType::DeclareWar: declareWar(ctx, m.from, m.to, !faked); break;
         case MessageType::Surrender:
             // With Allow Surrender off a Surrender message does nothing at all (spec 05 §7.4, confirmed: binary).
             if (s.options.allowSurrender) surrender(ctx, m.from, m.to);
@@ -457,14 +459,15 @@ bool warpLinked(const GameState& s, EmpireId from, EmpireId to) {
     return colonyIn(s, warpReach(s, from), to);
 }
 
-void declareWar(TurnContext& ctx, EmpireId from, EmpireId to) {
+void declareWar(TurnContext& ctx, EmpireId from, EmpireId to, bool tellSender) {
     GameState& s = ctx.state;
     if (!living(s, from) || !living(s, to) || from == to || s.empire(from).relation(to).treaty == Treaty::War) return;
     setTreaty(ctx, from, to, Treaty::War);
     // A treaty lost: Goto opens Empires (spec 06 §7 Q41).
-    logGoto(ctx.log(from, LogCategory::Politics, "War Declared", std::format("We are now at war with the {}.", nameOf(s, to)), std::nullopt,
-                    logpicture::race(to)),
-            LogGoto::Empires);
+    if (tellSender)
+        logGoto(ctx.log(from, LogCategory::Politics, "War Declared", std::format("We are now at war with the {}.", nameOf(s, to)), std::nullopt,
+                        logpicture::race(to)),
+                LogGoto::Empires);
     logGoto(ctx.log(to, LogCategory::Politics, "War Declared", std::format("The {} has declared war on us.", nameOf(s, from)), std::nullopt,
                     logpicture::race(from)),
             LogGoto::Empires);
@@ -846,14 +849,14 @@ namespace {
 
 // Delivers message `i`, dated `today`; false when its sender or recipient is
 // gone (the caller drops it).
-bool deliverAt(TurnContext& ctx, size_t i, uint32_t today, MessageLookup lookup) {
+bool deliverAt(TurnContext& ctx, size_t i, uint32_t today, MessageLookup lookup, bool faked = false) {
     GameState& s = ctx.state;
     s.messages[i].delivered = true;
     s.messages[i].dated = today;
     const DiplomaticMessage& m = s.messages[i];
     if (!living(s, m.from) || !living(s, m.to) || m.from == m.to) return false;
     if (!answerable(m.type)) s.messages[i].answered = true;
-    receive(ctx, s.messages[i], today, lookup);
+    receive(ctx, s.messages[i], today, lookup, faked);
     if (ctx.hooks) {
         // A mod's event (hooks.hpp): the message reached its empire.
         HookArgs a;
@@ -867,11 +870,11 @@ bool deliverAt(TurnContext& ctx, size_t i, uint32_t today, MessageLookup lookup)
 
 } // namespace
 
-void deliverMessage(TurnContext& ctx, MessageId id, uint32_t date, MessageLookup lookup) {
+void deliverMessage(TurnContext& ctx, MessageId id, uint32_t date, MessageLookup lookup, bool faked) {
     GameState& s = ctx.state;
     for (size_t i = 0; i < s.messages.size(); ++i) {
         if (s.messages[i].id != id || s.messages[i].delivered) continue;
-        if (!deliverAt(ctx, i, date, lookup)) std::erase_if(s.messages, [&](const DiplomaticMessage& m) { return m.id == id; });
+        if (!deliverAt(ctx, i, date, lookup, faked)) std::erase_if(s.messages, [&](const DiplomaticMessage& m) { return m.id == id; });
         return;
     }
 }
