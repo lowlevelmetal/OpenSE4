@@ -801,6 +801,7 @@ TEST_CASE("main window: the session hands on each call's steps in order, with wh
     Location at = home;
     for (size_t i = 1; i < moves.size(); ++i) {
         REQUIRE(moves[i].step);
+        CHECK(moves[i].original);   // the player's own, in its turn: the original animates it
         const MovementStep& st = *moves[i].step;
         CHECK(st.members == std::vector<VehicleId>{ship});
         CHECK(st.lead == ship);
@@ -823,8 +824,11 @@ TEST_CASE("main window: the session hands on each call's steps in order, with wh
     REQUIRE((run + 1)->step);
     CHECK((run + 1)->step->members.front() == ship);
     CHECK((run + 1)->step->from == at);
-    for (const ClassicSession::ShownMove& m : next)
+    for (const ClassicSession::ShownMove& m : next) {
         if (m.follow) CHECK(m.follow->empire == kMe);
+        // Only our own steps are the original's to animate; the computer players' are not.
+        if (m.step) CHECK(m.original == (m.step->owner == kMe));
+    }
 }
 
 TEST_CASE("main window: the movement log replay's keys") {
@@ -897,6 +901,9 @@ TEST_CASE("main window: the movement log replay's keys") {
 }
 
 TEST_CASE("main window: the replay animates each entry on its own, frame by frame, from the turn's headings (spec 06 §7 Q62)") {
+    // Nothing of a turn is drawn: the vehicle stays on its square at its old
+    // heading for the turn's frames, and slides at its new heading (§2.4,
+    // confirmed: binary; observed).
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
@@ -929,15 +936,20 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     replay.play();
     CHECK(replay.heading(ship) == 2);   // Day 0: the heading kept by the engine, not up
     f.now = 10.0;
-    replay.update(f);   // day 1 applied; its entries wait for their animations
-    REQUIRE(replay.motion(ship));
-    REQUIRE(replay.motion(mate));
+    replay.update(f);   // day 1 applied; its entries wait for their animations, on their square
+    CHECK_FALSE(replay.motion(ship));
+    REQUIRE(replay.held(ship));
+    CHECK(replay.held(ship)->at == where);
+    CHECK(replay.held(ship)->heading == 2);
+    REQUIRE(replay.held(mate));
     CHECK(replay.animating());
     // Already facing east: no turn frames, 50 slide frames, by the time
     // elapsed at the original's waits (1 ms a frame, spec 06 §7 Q62).
     replay.update(f);   // the first entry's first frame
     CHECK(replay.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
-    CHECK(replay.motion(mate)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));   // waits its turn
+    CHECK_FALSE(replay.held(ship));
+    CHECK_FALSE(replay.motion(mate));   // waits its turn, on its square
+    CHECK(replay.held(mate)->at == where);
     // A step key during the day's animations is ignored.
     replay.step();
     f.now = 10.0205;
@@ -998,16 +1010,21 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     g.now = 20.0;
     turning.update(g);
     turning.update(g);
-    CHECK(turning.motion(ship)->angle == doctest::Approx(5.0));
-    g.now = 20.0805;   // 10 ms after each 5° frame: the ninth, 45°
+    // The turn's 18 frames of 10 ms: nothing drawn, the ship on its square facing up.
+    for (const double t : {20.0, 20.0805, 20.1795}) {
+        CAPTURE(t);
+        g.now = t;
+        turning.update(g);
+        CHECK_FALSE(turning.motion(ship));
+        REQUIRE(turning.held(ship));
+        CHECK(turning.held(ship)->at == where);
+        CHECK(turning.held(ship)->heading == 0);
+    }
+    g.now = 20.1805;   // the turn over, the slide's first frame, already facing east
     turning.update(g);
-    CHECK(turning.motion(ship)->angle == doctest::Approx(45.0));
-    g.now = 20.1795;
-    turning.update(g);
+    CHECK_FALSE(turning.held(ship));
+    REQUIRE(turning.motion(ship));
     CHECK(turning.motion(ship)->angle == doctest::Approx(90.0));
-    CHECK(turning.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));
-    g.now = 20.1805;   // the turn over, the slide's first frame
-    turning.update(g);
     CHECK(turning.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
     CHECK(turning.heading(ship) == 2);
 }

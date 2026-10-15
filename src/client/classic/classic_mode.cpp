@@ -1046,6 +1046,10 @@ void ClassicMode::endTurn() {
     // (every window and question is modal), and the battle's window must not
     // be closed under it.
     if (!session_ || session_->waitingForOthers() || session_->tactical() || session_->battleQuestion()) return;
+    // Ended in the middle of an order's moves (an order button's, spec 06
+    // §2.4 "Input"): they are shown at once first. The original ends the
+    // turn inside them and then fails (observed); ours does not.
+    main_.showMovesAtOnce();
     audio().play("endturn");
     screens_.clear();
     parentOf_.clear();
@@ -1331,6 +1335,15 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
                           ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool modalOpen = !screens_.empty() || prompted || session_->tactical() != nullptr;
     modalOpen_ = modalOpen;
+    // A window or question opened over the main window while an order's
+    // moves are shown holds them where they are until it closes (spec 06
+    // §2.4 "Input", observed); one already open when they began (the window
+    // that gave the order) does not.
+    const size_t over = screens_.size() + (confirmEndTurn_ ? 1 : 0) + (quitAsked_ ? 1 : 0);
+    if (!main_.movesShowing(ui) || !movesWereShowing_) windowsUnderMoves_ = over;
+    windowsUnderMoves_ = std::min(windowsUnderMoves_, over);
+    movesWereShowing_ = main_.movesShowing(ui);
+    main_.holdMoves(movesWereShowing_ && over > windowsUnderMoves_);
     main_.update(ui, modalOpen);
     drawNetwork(ui);
     drawPbem(ui);

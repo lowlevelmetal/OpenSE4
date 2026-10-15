@@ -154,13 +154,14 @@ struct MovementStep {
     // order they were made.
     size_t liveSteps = 0;
     // A move, or mines striking the group where it stands (`from` and `to`
-    // both that sector, `members` the group as the mines found it): right
-    // after the step into the sector, before any battle there, and for a
-    // Sweep Mines order where the group sweeps (spec 04 §10.6). The client
-    // shows a small explosion over the square for the human's own moves
-    // (spec 06 §2.4, confirmed: binary).
+    // both that sector, `members` the group as the mines found it): once
+    // every minefield there has acted, right after the step into the sector
+    // and before any battle there, and for a Sweep Mines order where the
+    // group sweeps (spec 04 §10.6). The client shows a small explosion over
+    // the square for the human's own moves (spec 06 §2.4, confirmed: binary).
     enum class Kind : uint8_t { Move, MinesStruck };
     Kind kind = Kind::Move;
+    int destroyed = 0;   // MinesStruck: how many of the members the mines destroyed
 };
 using MovementObserver = std::function<void(const MovementStep&)>;
 

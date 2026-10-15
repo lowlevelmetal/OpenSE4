@@ -270,6 +270,7 @@ void MainWindow::reset(UiContext& ui) {
 }
 
 void MainWindow::clearSelection() {
+    ++selectionEpoch_;   // the marks go with the next selection (marksAt)
     sector_.reset();
     object_.reset();
     vehicle_.reset();
@@ -290,15 +291,28 @@ std::vector<game::ObjectId> MainWindow::objectsAt(const UiContext& ui, game::Sec
     return shownStellarObjects(ui.rules(), ui.state(), ui.session.player(), shown_, sec);
 }
 
-bool MainWindow::selectedSectorMarked(const UiContext& ui) const {
-    if (!sector_ || !shown_.valid()) return false;
-    if (!objectsAt(ui, *sector_).empty()) return true;
+bool MainWindow::selectedSectorMarked(const UiContext& ui) const { return sector_ && sectorMarked(ui, *sector_); }
+
+bool MainWindow::sectorMarked(const UiContext& ui, game::Sector sec) const {
+    if (!shown_.valid()) return false;
+    if (!objectsAt(ui, sec).empty()) return true;
     if (replay_.active()) {
         for (const game::Vehicle& v : replay_.vehicles())
-            if (v.location == game::Location{shown_, *sector_} && replaySeen_.contains(v.id)) return true;
+            if (v.location == game::Location{shown_, sec} && replaySeen_.contains(v.id)) return true;
         return false;
     }
-    return !vehiclesAt(ui, {shown_, *sector_}).empty();
+    return !vehiclesAt(ui, {shown_, sec}).empty();
+}
+
+std::optional<game::Sector> MainWindow::marksAt() const {
+    if (marksApart_ && marksApart_->epoch == selectionEpoch_) return marksApart_->at;
+    return sector_;
+}
+
+const game::Vehicle* MainWindow::shownVehicle(const UiContext& ui, game::VehicleId id) const {
+    if (const game::Vehicle* v = ui.state().vehicle(id)) return v;
+    const auto it = gone_.find(id);
+    return it != gone_.end() ? &it->second : nullptr;
 }
 
 std::vector<const game::Vehicle*> MainWindow::vehiclesAt(const UiContext& ui, game::Location where) const {
@@ -597,7 +611,12 @@ void MainWindow::giveTagged(UiContext& ui, std::vector<game::Order> orders, bool
     orderDone();
 }
 
-void MainWindow::orderDone() { tagged_.clear(); }
+void MainWindow::orderDone() {
+    // A tagged group's order: the tags clear, and the current square is
+    // selected again once its moves are shown (spec 06 §7 Q52, Q123, observed).
+    if (!tagged_.empty()) reselectAfterMoves_ = true;
+    tagged_.clear();
+}
 
 std::string_view MainWindow::pickingId() const {
     switch (pick_) {
@@ -1278,6 +1297,10 @@ void MainWindow::runOrderNow(UiContext& ui, OrderId id) {
 void MainWindow::update(UiContext& ui, bool blocked) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
+    // The moves of the order given are over (or none came): the main window
+    // takes every input again (spec 06 §2.4 "Input"). A picker the click
+    // opened gives the order later, under the same rule.
+    if (orderGiven_ != OrderGiven::None && !glides_.active() && !chooser_ && !pickObject_ && !modPrompt_) orderGiven_ = OrderGiven::None;
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
     prepareSectors(ui);
     // Selections can vanish when a turn is processed.
@@ -1294,7 +1317,11 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     // or the main window's own picker, the command buttons, order strip,
     // selectors and report panel take no input (no click, no hover hint), and
     // neither do the map panels and the keys (below).
+    // After an order given by a click on the map, until its moves are over,
+    // nothing takes input either, but the buttons still show their hover
+    // hints (spec 06 §2.4 "Input", observed).
     inputBlocked_ = blocked || chooser_.has_value() || pickObject_.has_value() || modPrompt_.has_value();
+    panelsBlocked_ = inputBlocked_ || !takes(MainWindowInput::MapClick);
     // The mods' keys (docs/sdk/interface.md "Key bindings"), when the data set has any.
     useModActions(ui.rules());
     // The AI notes view, in the whole game this computer holds (the players run here).
@@ -1329,8 +1356,8 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     else if (pickObject_) drawPickObject(ui);
     else if (modPrompt_) drawModPrompt(ui);
     if (!blocked && !choosing) {
-        mouse(ui);
-        hotkeys(ui);
+        if (takes(MainWindowInput::MapClick)) mouse(ui);
+        if (takes(MainWindowInput::Key)) hotkeys(ui);
     } else {
         galaxyHover_.reset();
     }
@@ -1486,12 +1513,16 @@ void MainWindow::commandPanel(UiContext& ui) {
     const float x0 = geo.left;
     // While the movement log plays the command buttons and selectors are disabled (§7 Q51).
     const bool replaying = replay_.active();
+    // After an order given by a click on the map no button acts until its
+    // moves are over; after an order button's, no second order button
+    // (spec 06 §2.4 "Input"). Their hover hints still show.
+    const bool buttons = takes(MainWindowInput::Button);
     auto hit = [&](const char* id, Vec2 min, Vec2 size, bool enabled = true) {
         ImGui::SetCursorScreenPos(ui.at(min));
         ImGui::BeginDisabled(!enabled);
         const bool clicked = ImGui::InvisibleButton(id, ui.size(size));
         ImGui::EndDisabled();
-        return std::pair{clicked && enabled, enabled && ImGui::IsItemHovered()};
+        return std::pair{clicked && enabled && buttons, enabled && ImGui::IsItemHovered()};
     };
 
     // Command buttons: 34-px cells from (13, 36).
@@ -1512,7 +1543,7 @@ void MainWindow::commandPanel(UiContext& ui) {
             // A left click on any command button plays cmdbtn; End Turn adds endturn when the turn ends (§5.5).
             audio().play("cmdbtn");
             if (b.screen) ui.open(*b.screen);
-            else ui.requests.endTurn = true;
+            else if (takes(MainWindowInput::EndTurn)) ui.requests.endTurn = true;
         }
     }
 
@@ -1565,10 +1596,14 @@ void MainWindow::commandPanel(UiContext& ui) {
                 if (const auto a = orderAction(*slot.order)) hintKey_ = hintKey(*a);
             }
             if (hovered && modSlot && modOrdersLit) hintName_ = "Mod Orders";
-            if (clicked && enabled) {
+            if (clicked && enabled && takes(MainWindowInput::OrderButton)) {
                 audio().play("ordbtn");
-                if (modSlot) openModOrders(ui);
-                else runOrder(ui, *slot.order);
+                if (modSlot) {
+                    openModOrders(ui);
+                } else {
+                    runOrder(ui, *slot.order);
+                    orderGiven_ = OrderGiven::ByOrderButton;
+                }
             }
         }
     ui.tagFrame("panel:commands", Rect{{x0 + 13, 36}, {x0 + 13 + 6 * 34, 36 + 2 * 34}});
@@ -1647,7 +1682,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##report", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | blockedFlags());
+                                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | panelFlags());
     const float tabsY = geo.reportPanel.size().y - 31;
     bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;
@@ -1743,7 +1778,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             const std::string label = fleet ? fleet->name : std::format("{}\n{}", v->name, vehicleSummary(ui, *v));
             const bool left = ImGui::Selectable(label.c_str(), tagged(v->id), 0, ImVec2(0, rowH));
             // A right-click opens the row's report too; only Shift with the left button tags.
-            const bool right = ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !inputBlocked_;
+            const bool right = ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !panelsBlocked_;
             if (left || right) {
                 if (left && ImGui::GetIO().KeyShift) {
                     toggleTag(ui, v->id);
@@ -2237,6 +2272,8 @@ void MainWindow::mouse(UiContext& ui) {
     if (auto sec = sectorAt(p)) {
         const game::Location where{shown_, *sec};
         if (pick_ != Pick::None) {
+            // An order given by a click on the map (spec 06 §2.4 "Input").
+            orderGiven_ = OrderGiven::ByMapClick;
             if (right && pick_ == Pick::Patrol) finishPatrol(ui);   // ours: a right click ends the patrol's points
             else if (left) completePick(ui, where, std::nullopt);
             return;
@@ -2246,8 +2283,10 @@ void MainWindow::mouse(UiContext& ui) {
         // sector with an own mobile vehicle selected gives Move To.
         if (right) {
             if (const game::Vehicle* v = selectedVehicle(ui); appSettings().controls.rightClickMoves && v && v->owner == ui.session.player() &&
-                                                              v->location != where && litNow(ui)[static_cast<size_t>(OrderId::MoveTo)])
+                                                              v->location != where && litNow(ui)[static_cast<size_t>(OrderId::MoveTo)]) {
+                orderGiven_ = OrderGiven::ByMapClick;
                 giveOrder(ui, game::Order{game::OrderKind::MoveTo, where});
+            }
             return;
         }
         // With no pick armed, a click on a sector of a system we have not
@@ -2340,10 +2379,11 @@ void MainWindow::hotkeys(UiContext& ui) {
         const int slot = (digit + 9) % 10;
         if (alt && !ctrl) {
             startLocationPick(ui, Pick::Waypoint, slot);
-        } else if (ctrl && !alt && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)]) {
+        } else if (ctrl && !alt && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)] && takes(MainWindowInput::OrderButton)) {
             game::Order o{game::OrderKind::MoveToWaypoint};
             o.amount = slot;
             giveOrder(ui, o);
+            orderGiven_ = OrderGiven::ByOrderButton;   // a key, as its button (inferred)
         }
     }
 
@@ -2354,7 +2394,11 @@ void MainWindow::hotkeys(UiContext& ui) {
         const auto a = orderAction(o);
         if (!a || !pressed(*a) || isReplayOrder(o)) continue;
         if (!lit) lit = litNow(ui);
-        if ((*lit)[i]) runOrder(ui, o);
+        // An order key as its button: none while an order button's moves are shown (inferred).
+        if ((*lit)[i] && takes(MainWindowInput::OrderButton)) {
+            runOrder(ui, o);
+            orderGiven_ = OrderGiven::ByOrderButton;
+        }
     }
 }
 
@@ -2369,7 +2413,7 @@ void MainWindow::render(gfx::Renderer2D& r, UiContext& ui) {
     // a call stopped at a battle, which puts back the game as it was before
     // it) may have moved or freed them: the list is made again from the game
     // as it is now.
-    if (sectorsRevision_ != ui.session.revision() || sectorsVehicles_ != ui.state().vehicles.data()) prepareSectors(ui);
+    if (sectorsRevision_ != ui.session.revision() || sectorsVehicles_ != ui.state().vehicles.data() || sectorsGone_ != goneRevision_) prepareSectors(ui);
     r.rect(Rect{{geo.left, 0}, {geo.right, frameH()}}, Color::hex(0x000000));
     drawSystem(r, ui);
     drawGalaxy(r, ui);
@@ -2501,38 +2545,105 @@ void MainWindow::trackGlides(UiContext& ui) {
     // What the engine calls made since did, in the order they did it: each
     // group's steps, which play after those still under way, and the view
     // following the player's own groups, a marker in the queue (followMove).
+    // A run of the player's own that moves makes the top-left square current
+    // before its first step (spec 06 §7 Q123, observed).
+    bool runStarts = false;
     for (ClassicSession::ShownMove& m : ui.session.takeMoves()) {
         if (m.step) {
-            glides_.enqueue(std::span<const game::MovementStep>(&*m.step, 1));
+            if (runStarts && m.original && m.step->kind == game::MovementStep::Kind::Move) {
+                enqueueFollow(PendingFollow{{}, false, PendingFollow::Kind::Corner});
+                runStarts = false;
+            }
+            glides_.enqueue(std::span<const game::MovementStep>(&*m.step, 1), m.original);
         } else if (m.follow) {
-            const uint64_t id = nextFollow_++;
-            follows_.emplace(id, PendingFollow{*m.follow, m.turnStart});
-            glides_.enqueueMarker(id);
+            enqueueFollow(PendingFollow{*m.follow, m.turnStart});
+            runStarts = !m.follow->jump;
         }
+    }
+    // After a tagged group's order, once its moves are shown.
+    if (std::exchange(reselectAfterMoves_, false)) enqueueFollow(PendingFollow{{}, false, PendingFollow::Kind::Reselect});
+    // The player's own vehicles destroyed on their way, drawn until their steps are shown.
+    for (game::Vehicle& v : ui.session.takeGone()) {
+        gone_[v.id] = std::move(v);
+        ++goneRevision_;
     }
     const game::GameState& s = ui.state();
     const game::EmpireId me = ui.session.player();
     std::vector<ShipGlides::Seen> vehicles;
-    vehicles.reserve(s.vehicles.size());
+    vehicles.reserve(s.vehicles.size() + gone_.size());
     for (const game::Vehicle& v : s.vehicles)
         if (v.count > 0) vehicles.push_back({v.id, v.location, v.heading, turnsToHeading(ui.rules(), s, v), knownVehicle(ui, v), v.owner == me});
+    for (const auto& [id, v] : gone_)
+        if (!s.vehicle(id)) vehicles.push_back({id, v.location, v.heading, turnsToHeading(ui.rules(), s, v), true, true});
     // The pause after each step: Settings.txt `System Ship Movement Delay
     // Milliseconds`, read as seconds as the original does (spec 06 §1.9,
     // §2.4); the movement log replay never pauses (spec 06 §7 Q62). The
     // frames at the player's speed, the groups one after another or all at
-    // once (Options, OpenSE4).
+    // once, and the other empires' and simultaneous turns' moves animated
+    // only when the player asks (Options, OpenSE4): the original animates
+    // only the player's own moves in its turn of a turn-based game.
     const double pause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
     const bool enabled = settings().animateSystemMovement && !replay_.active();
     const MovementPace pace{settings().systemMovementSpeed};
     const ShipGlides::Order order = settings().shipsMoveAllAtOnce ? ShipGlides::Order::AllAtOnce : ShipGlides::Order::OneGroupAtATime;
+    const ShipGlides::Animated animated{settings().animateOthersMoves, ui.session.turnBased()};
     // The queue stops at each marker: the view follows, and the steps after
     // it are shown in the system it shows then.
+    // Their clock stands still while a window over the main window holds them.
+    const double now = glideTime(ui);
     const size_t rounds = follows_.size() + 1;
     for (size_t round = 0; round < rounds; ++round) {
-        glides_.track(ui.time, shown_, enabled, vehicles, geo.cell, pause, pace, order);
+        glides_.track(now, shown_, enabled, vehicles, geo.cell, pause, pace, order, animated);
         const std::vector<uint64_t> reached = glides_.takeReached();
         if (reached.empty()) break;
         for (const uint64_t id : reached) followMove(ui, id);
+    }
+    // Mines striking the player's group: the explosion's sound once its frames are shown (MineBlast).
+    for ([[maybe_unused]] const game::Location& at : glides_.takeBooms()) audio().play(MineBlast::kSound);
+    noteRedrawnSquares();
+    // The destroyed are gone from the square once their steps are shown.
+    if (std::erase_if(gone_, [&](const auto& g) { return !glides_.moving(g.first); }) > 0) ++goneRevision_;
+}
+
+double MainWindow::glideTime(const UiContext& ui) {
+    if (glideClockAt_ < 0.0) glideClockAt_ = ui.time;
+    if (ui.time != glideClockAt_) {
+        if (!holdMoves_) glideClock_ += std::max(0.0, ui.time - glideClockAt_);
+        glideClockAt_ = ui.time;
+    }
+    return glideClock_;
+}
+
+void MainWindow::enqueueFollow(PendingFollow f) {
+    const uint64_t id = nextFollow_++;
+    follows_.emplace(id, std::move(f));
+    glides_.enqueueMarker(id);
+}
+
+void MainWindow::noteRedrawnSquares() {
+    // The squares the glides redraw (spec 06 §2.4): the one a slide leaves
+    // when it starts, the one a step reaches when it is over.
+    std::vector<Slide> now;
+    for (const ShipGlides::Glide& g : glides_.all())
+        if (ShipGlides::sliding(g))
+            now.push_back(Slide{g.lead, game::Sector{int(std::floor(g.from.x)), int(std::floor(g.from.y))},
+                                game::Sector{int(std::floor(g.to.x)), int(std::floor(g.to.y))}, g.start});
+    std::vector<game::Sector> redrawn;
+    for (const Slide& n : now)
+        if (std::find(slides_.begin(), slides_.end(), n) == slides_.end()) redrawn.push_back(n.from);
+    for (const Slide& o : slides_)
+        if (std::find(now.begin(), now.end(), o) == now.end()) redrawn.push_back(o.to);
+    slides_ = std::move(now);
+    if (!marksApart_ || marksApart_->epoch != selectionEpoch_) {
+        marksApart_.reset();
+        return;
+    }
+    for (const game::Sector sec : redrawn) {
+        if (sector_ && sec == *sector_) {
+            marksApart_.reset();   // the current square redrawn: its marks with it
+            return;
+        }
+        if (marksApart_->at && sec == *marksApart_->at) marksApart_->at.reset();   // redrawn without them
     }
 }
 
@@ -2601,13 +2712,32 @@ void MainWindow::followMove(UiContext& ui, uint64_t id) {
     const PendingFollow f = it->second;
     follows_.erase(it);
     if (!ui.session.turnBased() || replay_.active()) return;
+    if (f.kind == PendingFollow::Kind::Corner) {
+        // The run moves: the top-left square becomes current, and nothing is
+        // selected; the report and the lit orders stay the moving object's.
+        // The marks stay where they were drawn until that square is redrawn
+        // (with the animation off, at once) (spec 06 §7 Q123, observed).
+        const std::optional<game::Sector> marks = marksAt();
+        marksApart_ = MarksApart{settings().animateSystemMovement ? marks : std::nullopt, selectionEpoch_};
+        sector_ = game::Sector{0, 0};
+        return;
+    }
+    if (f.kind == PendingFollow::Kind::Reselect) {
+        // The current square selected again, as the game does it (no selection the player made).
+        const uint64_t made = selections_;
+        if (sector_ && shown_.valid()) selectSector(ui, *sector_, false);
+        selections_ = made;
+        return;
+    }
     const game::LiveStep& st = f.step;
     const game::GameState& s = ui.state();
     if (!st.at.system.valid() || st.at.system.index() >= s.galaxy.systems.size()) return;
     const uint64_t made = selections_;   // the game's selections are none the player made
     if (st.jump) {
+        // The exit warp point's square current, its marks drawn (the panels are redrawn).
         shown_ = st.at.system;
         sector_ = st.at.sector;
+        marksApart_.reset();
     } else if (f.turnStart) {
         // Selected in turn: its system shown, its sector current, its report opened.
         clearSelection();
@@ -2705,15 +2835,28 @@ void MainWindow::prepareSectors(UiContext& ui) {
     // not drawn and does not count in the sector's number of stellar objects.
     for (game::ObjectId id : shownStellarObjects(ui.rules(), s, ui.session.player(), shown_)) bySector[s.galaxy.object(id).sector].first.push_back(id);
     if (replay_.active()) {
-        for (const game::Vehicle& v : replay_.vehicles())
-            if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id))
-                bySector[v.location.sector].second.push_back(&v);
+        // An entry still to come this day, or turning, leaves its vehicle on
+        // the square it starts from (movement_replay.hpp).
+        for (const game::Vehicle& v : replay_.vehicles()) {
+            if (!replaySeen_.contains(v.id) || replay_.motion(v.id)) continue;
+            const auto held = replay_.held(v.id);
+            const game::Location at = held ? held->at : v.location;
+            if (at.system == shown_) bySector[at.sector].second.push_back(&v);
+        }
     } else {
-        // A vehicle waiting for its steps stands where they start (ship_glides.hpp).
+        // A vehicle waiting for its steps stands where they start, and so
+        // does one whose step is turning: nothing of the turn is drawn
+        // (ship_glides.hpp).
         for (const game::Vehicle& v : s.vehicles) {
-            if (!knownVehicle(ui, v) || glides_.find(v.id)) continue;
+            if (!knownVehicle(ui, v) || glides_.drawnGliding(v.id)) continue;
             const game::Location at = glides_.heldAt(v.id).value_or(v.location);
             if (at.system == shown_) bySector[at.sector].second.push_back(&v);
+        }
+        // The player's own destroyed on their way, until their steps are shown.
+        sectorsGone_ = goneRevision_;
+        for (const auto& [id, v] : gone_) {
+            if (s.vehicle(id) || glides_.drawnGliding(id)) continue;
+            if (const auto at = glides_.heldAt(id); at && at->system == shown_) bySector[at->sector].second.push_back(&v);
         }
     }
     for (auto& [sector, contents] : bySector) {
@@ -2763,7 +2906,10 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         if (!turnsToHeading(rules, s, v)) return 0;
         // The engine keeps each vehicle's heading (saved with the game); the
         // replay its own from the start of the turn (§2.4, §7 Q62).
-        if (replay_.active()) return replay_.heading(v.id);
+        if (replay_.active()) {
+            const auto held = replay_.held(v.id);
+            return held ? held->heading : replay_.heading(v.id);
+        }
         // One waiting for its steps keeps the heading it had before them.
         return glides_.heldHeading(v.id).value_or(int(v.heading % 8)) % 8;
     };
@@ -2872,20 +3018,29 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         r.spriteQuad(sp.tex, {at(-h, -h), at(h, -h), at(h, h), at(-h, h)}, sp.uv);
     };
     if (replay_.active()) {
-        // Each entry on its own, the others of the day waiting where they start (§7 Q62).
+        // Each entry's slide on its own, the others of the day waiting where
+        // they start; nothing of the turn before it (§7 Q62).
         for (const game::Vehicle& v : replay_.vehicles()) {
             if (v.location.system != shown_ || !replaySeen_.contains(v.id)) continue;
             if (const auto m = replay_.motion(v.id)) turnedMini(v, gridPoint(m->at), turnsToHeading(rules, s, v) ? m->angle : 0.0);
         }
     } else {
-        // Each group's step as one sprite, its first vehicle's mini (not the
-        // fleet's icon), with the dotted circle when it is cloaked (§2.4).
+        // Each group's slide as one sprite, its first vehicle's mini (not the
+        // fleet's icon) at its new heading, with the dotted circle when it is
+        // cloaked; nothing of the turn before it (§2.4).
         for (const ShipGlides::Glide& g : glides_.all())
-            if (const game::Vehicle* lead = s.vehicle(g.lead)) {
+            if (const game::Vehicle* lead = shownVehicle(ui, g.lead); lead && ShipGlides::sliding(g)) {
                 const Vec2 at = gridPoint(ShipGlides::position(g));
                 turnedMini(*lead, at, turnsToHeading(rules, s, *lead) ? ShipGlides::angle(g) : 0.0);
                 if (lead->status == game::VehicleStatus::Cloaked) cloakCircle(at, lead->owner);
             }
+        // Mines striking the player's group: the small explosion over its square (MineBlast).
+        for (const ShipGlides::Blast& b : glides_.blasts()) {
+            if (!b.frame || b.at.system != shown_) continue;
+            const Sprite boom =
+                ui.art.region(MineBlast::kPicture, *b.frame * MineBlast::kFrameSize, MineBlast::stripY(b.lost), MineBlast::kFrameSize, MineBlast::kFrameSize);
+            spriteAt(boom, spriteSquare(b.at.sector));
+        }
     }
 
     // The selected location: four small yellow corner marks; the pick hover in green.
@@ -2903,10 +3058,11 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     // marks) over the sector's sprite square with black transparent (spec 06
     // §2.4, observed), while the sector holds something we see (§7 Q64);
     // the four corner lines without the picture.
-    if (selectedSectorMarked(ui)) {
+    // They stay where they were drawn when a move run makes the top-left square current (marksAt, §7 Q123).
+    if (const std::optional<game::Sector> marks = marksAt(); marks && sectorMarked(ui, *marks)) {
         if (const Sprite mark = ui.art.image("Pictures/Game/Dialogs/Selection.bmp"))
-            r.sprite(mark.tex, Rect::fromPosSize(spriteSquare(*sector_), {kSpriteSize, kSpriteSize}), mark.uv);
-        else brackets(*sector_, kSelectYellow);
+            r.sprite(mark.tex, Rect::fromPosSize(spriteSquare(*marks), {kSpriteSize, kSpriteSize}), mark.uv);
+        else brackets(*marks, kSelectYellow);
     }
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
     // While the Pick Object window asks, the clicked sector has a 1 px #647EC7 frame (spec 06 §2.9).
@@ -3066,7 +3222,8 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
                 else if (word == "warp-point") holds = anyObject([](const game::SpaceObject& o) { return o.kind == game::ObjectKind::WarpPoint; });
                 else if (word == "ship") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner == me; });
                 else if (word == "enemy") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner != me; });
-                else if (word == "selected") holds = sector_ && *sector_ == sec;
+                else if (word == "selected") holds = sector_ && *sector_ == sec;   // the current sector
+                else if (word == "marked") holds = marksAt() == sec && sectorMarked(ui, sec);   // the yellow marks are drawn on it
                 else if (word == "gliding")   // a mini gliding to its new square is drawn in it now
                     holds = std::any_of(glides_.all().begin(), glides_.all().end(), [&](const ShipGlides::Glide& g) {
                         const Vec2 at = ShipGlides::position(g);
@@ -3082,7 +3239,7 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
                     holds = std::any_of(notes_.begin(), notes_.end(), [&](const ShownNote& n) { return n.system == shown_ && n.sector == sec; });
                 else {
                     error = std::format("unknown sector word '{}' (empty, home, colony, planet, colonizable, star, warp-point, ship, enemy, "
-                                        "selected, noted, gliding, waiting, line, line-start, any; joined with +, negated with !)",
+                                        "selected, marked, noted, gliding, waiting, line, line-start, any; joined with +, negated with !)",
                                         word);
                     return {};
                 }

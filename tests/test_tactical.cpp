@@ -868,6 +868,7 @@ TEST_CASE("turn-based: mines striking a group are reported in the stream of step
     CHECK(steps[2].owner == ar.a);
     CHECK(steps[2].members == std::vector<VehicleId>{ship});
     CHECK(steps[2].day == 0);
+    CHECK(steps[2].destroyed == (s.vehicle(ship) && s.vehicle(ship)->count > 0 ? 0 : 1));
 }
 
 TEST_CASE("turn-based tactical: a battle with human sides asks, and the state stays as it was") {

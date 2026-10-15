@@ -282,15 +282,28 @@ public:
     // the view following the player's own groups (`follow`: a group's run
     // starts there, or it jumped through a warp point), marked `turnStart`
     // when it came with the start of the player's turn (orders carried over)
-    // rather than with an order just given. A call a battle stopped made
-    // none: it is made again with the answer. Network and e-mail games' new
-    // states come without them. Taking them forgets them.
+    // rather than with an order just given. `original`: a step the original
+    // animates, one made for the human player whose turn it is in a
+    // turn-based game (spec 06 §2.4); the others only with OpenSE4's option.
+    // A call a battle stopped made none: it is made again with the answer. A
+    // network game's host sends the player's own steps and LiveSteps of a
+    // turn-based game with its new state (net::OwnMoves, protocol 10), its
+    // commands' and its turn start's; other players' moves, a simultaneous
+    // turn's and an e-mail game's new states come without them. Taking them
+    // forgets them.
     struct ShownMove {
         std::optional<game::MovementStep> step;
         std::optional<game::LiveStep> follow;
         bool turnStart = false;
+        bool original = false;
     };
     std::vector<ShownMove> takeMoves() { return std::exchange(moves_, {}); }
+    // The player's own vehicles those steps name that the call removed from
+    // the game (destroyed on the way: mines, a battle), as they were before
+    // it, placed where their last step took them: the animation draws them
+    // until their steps are shown (spec 06 §2.4: the square is redrawn
+    // without them after the strike). Taking them forgets them.
+    std::vector<game::Vehicle> takeGone() { return std::exchange(gone_, {}); }
 
     // The game as the last engine call that carried orders out found it, for
     // the movement line drawn while its moves are shown (docs/spec/06 §2.4
@@ -484,6 +497,11 @@ private:
     // The steps of the engine call under way (runCall), and what takeMoves() gives.
     std::vector<game::MovementStep> callSteps_;
     std::vector<ShownMove> moves_;
+    // The human players' vehicles before the call under way, and the
+    // player's own it removed that its steps name (takeGone()).
+    std::vector<game::Vehicle> callBefore_, gone_;
+    void keepOwnVehicles(const game::GameState& before);
+    void noteGone(const std::vector<game::MovementStep>& steps);
     // Takes a turn-based call's messages for the local player.
     void takeLive(game::TurnResult& res);
     // Adds the finished call's steps and the local player's own LiveSteps to moves_, in order.

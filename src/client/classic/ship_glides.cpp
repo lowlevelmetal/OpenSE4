@@ -15,7 +15,7 @@ int squaresBetween(game::Sector a, game::Sector b) { return std::max(std::abs(a.
 
 } // namespace
 
-void ShipGlides::enqueue(std::span<const game::MovementStep> steps) {
+void ShipGlides::enqueue(std::span<const game::MovementStep> steps, bool originals) {
     for (const game::MovementStep& m : steps) {
         Step st;
         st.members = m.members;
@@ -23,6 +23,9 @@ void ShipGlides::enqueue(std::span<const game::MovementStep> steps) {
         st.from = m.from;
         st.to = m.to;
         st.heading = m.heading;
+        st.others = !originals;
+        st.mines = m.kind == game::MovementStep::Kind::MinesStruck;
+        st.lost = st.mines && m.destroyed > 0;
         hold(st);
         pending_.push_back(std::move(st));
     }
@@ -70,13 +73,29 @@ void ShipGlides::finish() {
     pending_.clear();
     running_.clear();
     glides_.clear();
+    blasts_.clear();
     held_.clear();
     queuedTo_.clear();
     freeAt_.clear();
 }
 
-void ShipGlides::begin(Step st, double start, game::SystemId shown, bool enabled, const SeenMap& seen, float cellPixels, double pauseSeconds,
-                       MovementPace pace) {
+void ShipGlides::begin(Step st, double start, const Look& look, const SeenMap& seen) {
+    auto doneAtOnce = [&] {
+        complete(st);
+        for (const game::VehicleId id : st.members) freeAt_[id] = start;
+        lastEnd_ = std::max(lastEnd_, start);
+    };
+    if (st.mines) {
+        // Mines strike the group: the explosion over its square, with the
+        // animation or without, for the moves the original shows.
+        if (st.others || st.to.system != look.shown) return doneAtOnce();
+        Running r;
+        r.blast = Blast{st.to, st.lost, start, 0};
+        r.end = start + MineBlast::duration();
+        r.step = std::move(st);
+        running_.push_back(std::move(r));
+        return;
+    }
     // The members the player sees now and saw before the moves (or its own);
     // the group's first vehicle is drawn, or the first of them it sees.
     Glide g;
@@ -89,13 +108,8 @@ void ShipGlides::begin(Step st, double start, game::SystemId shown, bool enabled
         if (!lead || id == st.lead) lead = v->second;
     }
     const bool inSystem = st.from.system == st.to.system && st.from.sector != st.to.sector;
-    if (!enabled || !inSystem || st.from.system != shown || !lead) {
-        // Not shown: done at once, in its turn.
-        complete(st);
-        for (const game::VehicleId id : st.members) freeAt_[id] = start;
-        lastEnd_ = std::max(lastEnd_, start);
-        return;
-    }
+    // Not shown: done at once, in its turn.
+    if (!look.enabled || (st.others && !look.animated.others) || !inSystem || st.from.system != look.shown || !lead) return doneAtOnce();
     g.lead = lead->id;
     g.from = cellCenter(st.from.sector);
     g.to = cellCenter(st.to.sector);
@@ -108,18 +122,26 @@ void ShipGlides::begin(Step st, double start, game::SystemId shown, bool enabled
     g.angle1 = g.angle0 + delta;
     g.turnFrames = int(std::lround(std::abs(delta) / kDegreesPerTurnFrame));
     const int squares = squaresBetween(st.from.sector, st.to.sector);
-    g.slideFrames = std::max(1, int(std::lround(double(squares) * double(cellPixels))));
+    g.slideFrames = std::max(1, int(std::lround(double(squares) * double(look.cellPixels))));
     // The pause comes after every step; a move seen without its steps stands for one a square.
-    g.pause = std::max(0.0, pauseSeconds) * double(st.straight ? std::max(1, squares) : 1);
+    g.pause = std::max(0.0, look.pauseSeconds) * double(st.straight ? std::max(1, squares) : 1);
     g.start = start;
-    g.pace = pace;
+    g.pace = look.pace;
     g.frame = 0;
-    const double end = start + pace.duration(g.turnFrames, g.slideFrames) + g.pause;
-    running_.push_back(Running{std::move(st), std::move(g), end});
+    Running r;
+    r.end = start + look.pace.duration(g.turnFrames, g.slideFrames) + g.pause;
+    r.step = std::move(st);
+    r.glide = std::move(g);
+    running_.push_back(std::move(r));
 }
 
-bool ShipGlides::startDue(game::SystemId shown, bool enabled, const SeenMap& seen, float cellPixels, double pauseSeconds, MovementPace pace,
-                          Order order, bool& stop) {
+void ShipGlides::boom(Running& r) {
+    if (!r.blast || r.boomed) return;
+    r.boomed = true;
+    booms_.push_back(r.blast->at);
+}
+
+bool ShipGlides::startDue(const Look& look, const SeenMap& seen, Order order, bool& stop) {
     bool any = false;
     if (order == Order::OneGroupAtATime) {
         // Each step when the one before is over (or at once when the queue was idle).
@@ -135,7 +157,7 @@ bool ShipGlides::startDue(game::SystemId shown, bool enabled, const SeenMap& see
                 stop = true;
                 return any;
             }
-            begin(std::move(st), start, shown, enabled, seen, cellPixels, pauseSeconds, pace);
+            begin(std::move(st), start, look, seen);
         }
         return any;
     }
@@ -163,32 +185,36 @@ bool ShipGlides::startDue(game::SystemId shown, bool enabled, const SeenMap& see
         double start = st.queued;
         for (const game::VehicleId id : st.members)
             if (const auto f = freeAt_.find(id); f != freeAt_.end()) start = std::max(start, f->second);
-        begin(std::move(st), start, shown, enabled, seen, cellPixels, pauseSeconds, pace);
+        begin(std::move(st), start, look, seen);
         any = true;
     }
     return any;
 }
 
 void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span<const Seen> vehicles, float cellPixels, double pauseSeconds,
-                       MovementPace pace, Order order) {
+                       MovementPace pace, Order order, Animated animated) {
     SeenMap seen;
     for (const Seen& v : vehicles) seen.emplace(v.id, &v);
     for (Step& st : pending_)
         if (st.queued < 0.0) st.queued = now;
+    const Look look{shown, enabled, cellPixels, pauseSeconds, pace, animated};
 
-    if (!enabled) {
-        // The setting off: every ship is simply where it is, and the view follows at once.
-        finish();
-    } else {
-        if (shown != lastShown_) {
-            // Another system shown: the glides under way end there; the queue goes on.
-            for (const Running& r : running_) {
-                complete(r.step);
-                for (const game::VehicleId id : r.step.members) freeAt_[id] = now;
-                lastEnd_ = std::max(lastEnd_, now);
+    // Another system shown: the glides under way end there; the queue goes
+    // on. The setting off: they end too, and every move after them takes no
+    // time, in its turn (mines' explosions take theirs).
+    if (shown != lastShown_ || !enabled) {
+        for (auto it = running_.begin(); it != running_.end();) {
+            if (it->blast && shown == lastShown_) {
+                ++it;
+                continue;
             }
-            running_.clear();
+            complete(it->step);
+            for (const game::VehicleId id : it->step.members) freeAt_[id] = now;
+            lastEnd_ = std::max(lastEnd_, now);
+            it = running_.erase(it);
         }
+    }
+    if (enabled) {
         // Moves of vehicles seen before and now found without their steps:
         // one straight glide per group of vehicles that started and ended
         // together, queued in the game's vehicle order.
@@ -200,7 +226,11 @@ void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span
             const auto queued = queuedTo_.find(v.id);
             const game::Location expected = queued != queuedTo_.end() ? queued->second : was->second;
             if (expected == v.location) continue;
-            auto same = std::find_if(found.begin(), found.end(), [&](const Step& st) { return st.from == expected && st.to == v.location; });
+            // The original animates only the player's own moves, in a turn-based game.
+            const bool others = !(v.own && animated.ownFound);
+            if (others && !animated.others) continue;   // simply drawn on its new square
+            auto same = std::find_if(found.begin(), found.end(),
+                                     [&](const Step& st) { return st.from == expected && st.to == v.location && st.others == others; });
             if (same == found.end()) {
                 Step st;
                 st.lead = v.id;
@@ -208,6 +238,7 @@ void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span
                 st.to = v.location;
                 st.heading = v.turns ? v.heading % 8 : 0;
                 st.straight = true;
+                st.others = others;
                 st.queued = now;
                 found.push_back(std::move(st));
                 same = std::prev(found.end());
@@ -233,15 +264,22 @@ void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span
             }
             lastEnd_ = std::max(lastEnd_, it->end);
             for (const game::VehicleId id : it->step.members) freeAt_[id] = it->end;
+            boom(*it);   // an explosion over before it was drawn still sounds
             complete(it->step);
             it = running_.erase(it);
             changed = true;
         }
-        changed = startDue(shown, enabled, seen, cellPixels, pauseSeconds, pace, order, stop) || changed;
+        changed = startDue(look, seen, order, stop) || changed;
     }
-    for (Running& r : running_) r.glide.frame = r.glide.pace.framesDrawn(r.glide.turnFrames, r.glide.slideFrames, now - r.glide.start);
+    for (Running& r : running_) {
+        if (r.blast) {
+            if (now - r.blast->start + 1e-9 >= MineBlast::soundAt()) boom(r);
+            continue;
+        }
+        r.glide.frame = r.glide.pace.framesDrawn(r.glide.turnFrames, r.glide.slideFrames, now - r.glide.start);
+    }
     if (!active()) freeAt_.clear();
-    rebuildGlides();
+    rebuildGlides(now);
 
     lastSeen_.clear();
     lastHeadings_.clear();
@@ -256,9 +294,18 @@ void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span
     lastShown_ = shown;
 }
 
-void ShipGlides::rebuildGlides() {
+void ShipGlides::rebuildGlides(double now) {
     glides_.clear();
-    for (const Running& r : running_) glides_.push_back(r.glide);
+    blasts_.clear();
+    for (const Running& r : running_) {
+        if (!r.blast) {
+            glides_.push_back(r.glide);
+            continue;
+        }
+        Blast b = *r.blast;
+        b.frame = MineBlast::frameAt(now - b.start);
+        blasts_.push_back(b);
+    }
 }
 
 const ShipGlides::Glide* ShipGlides::find(game::VehicleId v) const {
@@ -280,7 +327,8 @@ std::optional<int> ShipGlides::heldHeading(game::VehicleId v) const {
 }
 
 Vec2 ShipGlides::position(const Glide& g) {
-    // Turning on the old square, then 1 px a frame toward the new one.
+    // On the old square while it turns (where nothing of it is drawn), then
+    // 1 px a frame toward the new one.
     if (g.frame <= g.turnFrames) return g.from;
     const int slid = std::min(g.frame - g.turnFrames, g.slideFrames);
     const float t = g.slideFrames > 0 ? float(slid) / float(g.slideFrames) : 1.0f;
@@ -288,9 +336,9 @@ Vec2 ShipGlides::position(const Glide& g) {
 }
 
 double ShipGlides::angle(const Glide& g) {
-    if (g.frame >= g.turnFrames) return g.angle1;
-    const double step = g.angle1 >= g.angle0 ? kDegreesPerTurnFrame : -kDegreesPerTurnFrame;
-    return g.angle0 + step * std::max(0, g.frame);
+    // Drawn only while it slides, at its new heading from the slide's first
+    // frame: nothing of the turn is drawn (spec 06 §2.4).
+    return g.angle1;
 }
 
 } // namespace opense4::client::classic

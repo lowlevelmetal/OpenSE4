@@ -226,6 +226,15 @@ TEST_CASE("classic options: the per-computer settings keep the Options window's 
     s.shipsMoveAllAtOnce = false;
     CHECK_FALSE(settingsFromToml(settingsToToml(s)).shipsMoveAllAtOnce);
     CHECK_FALSE(settingsFromToml("[options]\nship_movement = \"sideways\"\n").shipsMoveAllAtOnce);
+    // OpenSE4's option to animate the other empires' and simultaneous turns'
+    // moves too: off by default, as the original animates only the player's own.
+    CHECK_FALSE(s.animateOthersMoves);
+    CHECK_FALSE(odd.animateOthersMoves);
+    s.animateOthersMoves = true;
+    CHECK(settingsToToml(s).find("animate_other_moves = true") != std::string::npos);
+    CHECK(settingsFromToml(settingsToToml(s)).animateOthersMoves);
+    s.animateOthersMoves = false;
+    CHECK_FALSE(settingsFromToml(settingsToToml(s)).animateOthersMoves);
     // New empires start with the Empire Options defaults of spec 06 §1.9.
     const InterfaceOptions o;
     CHECK(o.confirmEndTurn);

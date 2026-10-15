@@ -13,4 +13,13 @@ TurnStartGate turnStartGate(const TurnStartFacts& f) {
     return g;
 }
 
+bool mainWindowTakes(OrderGiven given, MainWindowInput input) {
+    switch (given) {
+        case OrderGiven::None: return true;
+        case OrderGiven::ByMapClick: return false;
+        case OrderGiven::ByOrderButton: return input != MainWindowInput::OrderButton;
+    }
+    return true;
+}
+
 } // namespace opense4::client::classic
