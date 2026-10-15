@@ -1359,7 +1359,8 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             m.tone = 2;
             m.text = std::format("The {} declares war on the {}.", empireFullName(*victim), empireFullName(s.empire(t.other)));
             s.messages.push_back(m);
-            diplomacy::deliverMessage(ctx, m.id, score::fileDate(s));
+            // The faked sender is told nothing.
+            diplomacy::deliverMessage(ctx, m.id, score::fileDate(s), diplomacy::MessageLookup::Window, true);
             if (s.options.simultaneous) {
                 DiplomaticMessage again = m;
                 again.id = MessageId{s.nextMessageId++};

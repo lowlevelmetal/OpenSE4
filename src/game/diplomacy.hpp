@@ -59,8 +59,10 @@ const DiplomaticMessage* newestMessage(const GameState& s, EmpireId reader, Empi
 void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt, MessageLookup lookup = MessageLookup::Window);
 // Delivers one message not yet delivered, as deliverMessages does, dated
 // `date` (`Politics - Fake Messages`: the date of the attacker's end-of-turn
-// processing). Nothing when it is gone or already delivered.
-void deliverMessage(TurnContext& ctx, MessageId id, uint32_t date, MessageLookup lookup = MessageLookup::Window);
+// processing). Nothing when it is gone or already delivered. `faked`: a
+// declaration of war sent in the sender's name, whose sender gets no "War
+// Declared" entry (spec 05 §2.3, confirmed: binary).
+void deliverMessage(TurnContext& ctx, MessageId id, uint32_t date, MessageLookup lookup = MessageLookup::Window, bool faked = false);
 // The first-contact check in one system (spec 05 §3.1, confirmed: binary):
 // every pair of living empires that have not both met the other, that each
 // detect an object of the other in `sys` now (a vehicle or a colony there
@@ -146,8 +148,10 @@ std::string firstContactText(const GameState& s, EmpireId other);
 // The log text of a contact lost with `other` (likewise).
 std::string contactLostText(const GameState& s, EmpireId other);
 // Declare War (spec 05 §3.4): both sides are at War whatever the treaty was,
-// and both are told. Also used by `Politics - Fake Messages` (§2.3).
-void declareWar(TurnContext& ctx, EmpireId from, EmpireId to);
+// and both are told ("War Declared"), the sender only with `tellSender` (a
+// declaration `Politics - Fake Messages` makes in its name tells it nothing,
+// §2.3).
+void declareWar(TurnContext& ctx, EmpireId from, EmpireId to, bool tellSender = true);
 // A destroyed empire (spec 05 §6): every relation with it returns to "no
 // contact" (no contact, treaty None, trade counter 0) on both sides.
 void forgetEmpire(GameState& s, EmpireId gone);
