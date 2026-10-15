@@ -1209,7 +1209,7 @@ their defaults:
 |---|---|
 | 1.42 | Options: the seven data-set checksums (0) |
 | 1.43 | Options: the connection (1, manual file moving) |
-| 1.46 | Empires: the network name (empty). Fleets and ships: experience as a float; before, a whole number in an int **(inferred)** |
+| 1.46 | Empires: the network name (empty). Fleets and ships: experience as a float; before, one byte (0 to 255) turned into a float (confirmed: binary; corrected 2026-10-14, complete listing: not an int). Since 2026-10-14 ours reads and writes it so (`classic_save_codec.cpp` `experience`) |
 | 1.51 | Empires: the drone-name counter (0); strategies: the Drones target category, the last of 14, in both the type priorities and the break-formation flags (13 categories before); orders: the target name (empty); drone groups: their name (empty). Reading an empire of an older file appends the design types Anti-Planet Drone and Anti-Ship Drone to its list |
 | 1.62 | Designs: the computer players' template name (empty) |
 | 1.72 | Options: the game code, the turn code and the program's byte sum (0) |
@@ -1685,7 +1685,10 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     three codes to come with 1.72. Which fields each gate covers, in the executable, would
     settle it; only a pre-1.72 file with non-zero values there would show the difference.
     Likewise a fleet's or ship's experience before 1.46 is read as a whole number in an
-    int, which no file of that age has confirmed.
+    int, which no file of that age has confirmed. **Answer** (confirmed: binary, 2026-10-14):
+    the 1.72 gate covers the game code, the turn code and the byte sum, the 1.42 gate the seven
+    checksums, as OpenSE4 assumes; before 1.46 the fleet's and the ship's experience are one
+    byte each (0 to 255), not an int (§5.2). Since 2026-10-14 ours reads and writes the byte.
 24. **Empire files: what game creation resets (§13).** Begin Game copies each listed
     empire into the game whole (confirmed: binary); whether anything at game creation then
     resets what an empire file brought (the minister switches, the Empire Options, anger
@@ -1963,7 +1966,8 @@ count is 0.
    valid design goes into the list's first free slot, or at its end, marked changed; an
    invalid one is dropped without a message.
 4. Any error in the stream ends the load with a "Load Error" box saying that the empire
-   file could not be loaded and naming it; nothing is added.
+   file could not be loaded and naming it; the empire is not added. The designs already read
+   stay in Game Setup's list (corrected 2026-10-14, complete listing; see §13.4).
 
 ### 13.4 Game Setup's Players page
 
@@ -1975,7 +1979,15 @@ The buttons, in order: Add New, Add Existing, Edit, Remove, Save To File
   Directory. No password is asked. The file is read with its designs, then checked at once
   against the setup on the screen; if both checks pass the empire is added as the next
   player, its stored player number ignored (it becomes its place in the list). A failed
-  check shows one "Invalid Empire" box and adds nothing **(confirmed: binary)**:
+  check shows one "Invalid Empire" box and does not add the empire **(confirmed: binary)**.
+  Game Setup keeps the designs Add Existing read under a key from 100 up, and when the empire
+  is refused (or its file fails partway) the designs already read stay in that list. Begin
+  Game gives designs only to the keys of the listed empires, the design clean-up looks only at
+  players 1 to N, and Save Game writes every design, so such a game's file holds designs owned
+  by a number above the player count (confirmed: binary, but for the last step: inferred
+  that nothing else removes them). Since 2026-10-14 OpenSE4's import keeps such a design as a
+  free slot, which no empire lists (`classic_save_import.cpp`), where it refused the whole
+  file before. The checks:
   - *Technology:* the sum of the empire's tech levels, each capped at its area's maximum,
     must not exceed the sum, over the allowed areas, of the level a new player gets at the
     setup's Technology Level for New Player (Low: the area's start level; Medium: its raise
@@ -2060,7 +2072,9 @@ the lobby; a failure shows "Empire Load Error".
   in lower case; Save for SE IV lower-cases the file name, not the folder (folder names can
   matter outside Windows); there is no New Empire File button (the file is named after
   the empire, or typed); a file that cannot be read is named under the picker's list
-  rather than in a "Load Error" box, and the picker stays open.
+  rather than in a "Load Error" box, and the picker stays open; a refused empire's designs
+  are not kept (in the original they stay in Game Setup's list and are saved with the game
+  owned by no player, §13.4, which changes nothing in play).
 - **Checked** on the 20 stock files (opt-in test): each decodes to its end with the data
   set's trait count, encodes again with its own keys to the same bytes, imports, and
   exports and imports again to the same empire.

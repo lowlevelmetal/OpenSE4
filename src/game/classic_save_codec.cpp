@@ -607,12 +607,12 @@ void io(Ar& ar, OrderList& o) {
 }
 
 // A fleet's or ship's experience: a float from release::kFloatExperience
-// on, a whole number in an int before (inferred).
+// on, one byte (0 to 255) before (§5.2, confirmed: binary).
 template <class Ar>
 void experience(Ar& ar, Float80& v) {
     if (ar.since(release::kFloatExperience)) return ar.real(v, "experience");
-    auto whole = static_cast<int32_t>(float80Tenths(v) / 10);
-    ar.i32(whole, "experience");
+    auto whole = static_cast<uint8_t>(std::clamp<int64_t>(float80Tenths(v) / 10, 0, 255));
+    ar.u8(whole, "experience");
     if constexpr (Ar::kReading) v = toFloat80(xmath::Ext(int64_t{whole}));
 }
 

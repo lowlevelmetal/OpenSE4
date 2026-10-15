@@ -71,7 +71,7 @@ inline constexpr std::string_view kChecksums = "1.42";
 // Options: the connection (before: 1, manual file moving).
 inline constexpr std::string_view kConnection = "1.43";
 // Empires (§3.6.10): the network name. Fleets and ships (§3.6.12, §3.8.6):
-// experience as a float; before, a whole number in an int (inferred).
+// experience as a float; before, one byte (confirmed: binary).
 inline constexpr std::string_view kNetworkName = "1.46";
 inline constexpr std::string_view kFloatExperience = "1.46";
 // Drones: the empire's drone-name counter (§3.6.9), the target category
