@@ -1010,7 +1010,9 @@ from the last ship it selected itself, its "Stop once per location" table holdin
 stops; the fleet cycle goes by fleet number through the fleets that can still move, selecting
 the first such member; the colony cycle goes by planet name, letter case counting, and selects
 the colony's sector as a click does; Drop Cargo asks the kind of cargo before the destination; Esc and Enter close a large window
-without its closing step, so Fleet Transfer then keeps an empty fleet. OpenSE4's additions there became options, off by default:
+without its closing step, so Fleet Transfer then keeps an empty fleet; the sector's list writes
+"<design> Class" under the player's own ships and bases only, and sorts its stellar objects by
+owner, then name in capitals. OpenSE4's additions there became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|

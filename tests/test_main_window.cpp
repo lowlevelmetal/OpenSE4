@@ -1242,6 +1242,32 @@ TEST_CASE("main window: the sector's list shows each own fleet as one row, sorte
     CHECK(fleetReportMembers(r, s, *s.fleet(first)) == std::vector<VehicleId>{c, b});
 }
 
+TEST_CASE("main window: stellar objects in the sector's list by owner, then name in capitals (spec 06 §2.5)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const ObjectId home = homeworld(s, kMe).planet;
+    s.galaxy.object(home).name = "Mid";
+    // Unowned objects of any kind: a free planet, a star, a warp point.
+    ObjectId freePlanet, star, warp;
+    for (const SpaceObject& o : s.galaxy.objects) {
+        if (!freePlanet.valid() && o.kind == ObjectKind::Planet && !s.colony(o.id)) freePlanet = o.id;
+        if (!star.valid() && isStarKind(o.kind)) star = o.id;
+        if (!warp.valid() && o.kind == ObjectKind::WarpPoint) warp = o.id;
+    }
+    REQUIRE(freePlanet.valid());
+    REQUIRE(star.valid());
+    REQUIRE(warp.valid());
+    s.galaxy.object(freePlanet).name = "alpha";
+    s.galaxy.object(star).name = "Zz Star";
+    s.galaxy.object(warp).name = "_Under";
+    const std::vector<ObjectId> objects{home, warp, star, freePlanet};
+    const std::vector<SectorListRow> rows = sectorListRows(r, s, kMe, objects, {});
+    // The unowned first, by name compared in capitals ("_" after the letters),
+    // then our colony.
+    const std::vector<SectorListRow> want{{freePlanet, {}, {}}, {star, {}, {}}, {warp, {}, {}}, {home, {}, {}}};
+    CHECK(rows == want);
+}
+
 TEST_CASE("main window: the stellar object a sector shows") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

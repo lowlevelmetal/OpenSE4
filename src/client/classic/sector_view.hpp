@@ -96,10 +96,12 @@ struct SectorListRow {
 // The rows for `objects` (the stellar objects the viewer sees there) and
 // `vehicles` (the vehicles it sees there): each of the viewer's own fleets is
 // one row, other empires' fleet members are listed one by one. The rows are
-// sorted: stellar objects first (among themselves by name, ignoring case,
-// inferred); then by fleet number, highest first, vehicles in no fleet last;
-// then by the owner's player number; then by hull in VehicleSize.txt order,
-// unit groups after ships; then by name, ignoring case (confirmed: binary).
+// sorted by five keys (confirmed: binary): stellar objects first; then by
+// fleet number, highest first, rows in no fleet last; then by the owner's
+// player number, unowned first (stars, warp points, storms and uncolonized
+// planets; a colony counts its owner as the viewer sees it); then by hull in
+// VehicleSize.txt order, unit groups after ships; then by name, ignoring case
+// (compared in capitals).
 std::vector<SectorListRow> sectorListRows(const game::Rules& r, const game::GameState& s, game::EmpireId viewer,
                                           std::span<const game::ObjectId> objects, std::span<const game::Vehicle* const> vehicles);
 // The Fleet Report's member list (spec 06 §2.5 "The Fleet Report"): the

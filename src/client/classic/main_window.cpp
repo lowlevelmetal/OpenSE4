@@ -1730,51 +1730,68 @@ void MainWindow::reportPanel(UiContext& ui) {
         }
     } else if ((listMode_ || !tagged_.empty()) && listAt_) {
         // Everything in the sector the list was built for, which another
-        // system shown leaves as it is: planets first, then vehicles. Each
-        // row: the picture, the name, a ship's class, and status icons for
-        // own objects; Shift+click tags a vehicle (§2.5, §7 Q103).
+        // system shown leaves as it is, in the original's order (sectorListRows:
+        // stellar objects first, by owner and name). Each row (spec 06 §2.5,
+        // confirmed: binary): the picture, the name at x 40, for the
+        // player's own ships and bases "<design> Class" under it at (46,16)
+        // (no class line for unit groups, fleets and other empires'
+        // vehicles), and status icons for own objects; Shift+click tags a
+        // vehicle (§2.5, §7 Q103).
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float rowH = ui.px(36);
         const game::Location at = *listAt_;
-        for (game::ObjectId id : shownStellarObjects(ui.rules(), s, me, at.system, at.sector)) {
-            const game::SpaceObject& o = s.galaxy.object(id);
-            ImGui::PushID(int(id.value));
-            image(ui, objectSprite(ui, o), {36, 36});
-            ImGui::SameLine();
-            if (ImGui::Selectable(objectName(s, id, me).c_str(), false, 0, ImVec2(0, rowH))) {
-                // The tags stay (spec 06 §2.5): a row of the list is no sector's selection.
-                clearSelection();
-                if (o.system == shown_) sector_ = o.sector;
-                object_ = id;
-                reportFromList_ = true;
-                ++selections_;
-            }
-            if (const game::Colony* col = s.colony(id); col && col->owner == me) ui.tagItem("report:colony");   // for lessons
-            if (script::collectingItems()) {
-                // Input scripts name the rows by kind: report:colony (the player's), report:planet, report:object.
-                const game::Colony* col = s.colony(id);
-                const bool planet = o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids;
-                script::reportItem(col && col->owner == me ? "report:colony" : planet ? "report:planet" : "report:object");
-            }
-            iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
-            ImGui::PopID();
-        }
-        // Each of the player's own fleets is one row, with the fleet's
-        // picture, name and status icons and no class line; it opens the
-        // Fleet Report. Other empires' fleet members are listed one by one
-        // (spec 06 §2.5 "Fleets in the list").
+        const std::string& style = s.empire(me).race.style;
+        // One row: its picture, name and class line, and the Selectable that
+        // takes its clicks; input scripts find it by the name.
+        auto rowAt = [&](const Sprite& picture, const std::string& name, const std::string& classLine, bool selected) {
+            const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+            const bool clicked = ImGui::Selectable("##row", selected, 0, ImVec2(0, rowH));
+            script::reportItem(name);
+            if (picture)
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(picture.tex.value)), rowMin, {rowMin.x + ui.px(36), rowMin.y + ui.px(36)},
+                             {picture.uv.min.x, picture.uv.min.y}, {picture.uv.max.x, picture.uv.max.y});
+            dl->AddText({rowMin.x + ui.px(40), rowMin.y + ui.px(1)}, IM_COL32_WHITE, name.c_str());
+            if (!classLine.empty()) dl->AddText({rowMin.x + ui.px(46), rowMin.y + ui.px(16)}, IM_COL32_WHITE, classLine.c_str());
+            return std::pair{clicked, rowMin};
+        };
+        const std::vector<game::ObjectId> objects = shownStellarObjects(ui.rules(), s, me, at.system, at.sector);
         const std::vector<const game::Vehicle*> here = vehiclesAt(ui, at);
-        for (const SectorListRow& row : sectorListRows(r, s, me, {}, here)) {
+        for (const SectorListRow& row : sectorListRows(r, s, me, objects, here)) {
+            if (row.object.valid()) {
+                const game::ObjectId id = row.object;
+                const game::SpaceObject& o = s.galaxy.object(id);
+                ImGui::PushID(int(id.value));
+                if (rowAt(objectSprite(ui, o), objectName(s, id, me), {}, false).first) {
+                    // The tags stay (spec 06 §2.5): a row of the list is no sector's selection.
+                    clearSelection();
+                    if (o.system == shown_) sector_ = o.sector;
+                    object_ = id;
+                    reportFromList_ = true;
+                    ++selections_;
+                }
+                if (const game::Colony* col = s.colony(id); col && col->owner == me) ui.tagItem("report:colony");   // for lessons
+                if (script::collectingItems()) {
+                    // Input scripts name the rows by kind: report:colony (the player's), report:planet, report:object.
+                    const game::Colony* col = s.colony(id);
+                    const bool planet = o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids;
+                    script::reportItem(col && col->owner == me ? "report:colony" : planet ? "report:planet" : "report:object");
+                }
+                iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
+                ImGui::PopID();
+                continue;
+            }
+            // Each of the player's own fleets is one row, with the fleet's
+            // picture, name and status icons and no class line; it opens the
+            // Fleet Report. Other empires' fleet members are listed one by one
+            // (spec 06 §2.5 "Fleets in the list").
             const game::Vehicle* v = s.vehicle(row.vehicle);
             if (!v) continue;
             const game::Fleet* fleet = s.fleet(row.fleet);
             ImGui::PushID(int(v->id.value) + 1000000);
-            const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-            const std::string& style = s.empire(me).race.style;
-            image(ui, fleet ? ui.art.groupMini(style, "Fleet") : vehicleMini(ui, *v), {36, 36});
-            ImGui::SameLine();
-            const std::string label = fleet ? fleet->name : std::format("{}\n{}", v->name, vehicleSummary(ui, *v));
-            const bool left = ImGui::Selectable(label.c_str(), tagged(v->id), 0, ImVec2(0, rowH));
+            std::string classLine;
+            if (!fleet && v->owner == me && !game::isUnitType(game::vehicleType(r, s, *v))) classLine = s.design(v->design).name + " Class";
+            const auto [left, rowMin] = rowAt(fleet ? ui.art.groupMini(style, "Fleet") : vehicleMini(ui, *v), fleet ? fleet->name : v->name,
+                                              classLine, tagged(v->id));
             // A right-click opens the row's report too; only Shift with the left button tags.
             const bool right = ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !inputBlocked_;
             if (left || right) {

@@ -2212,9 +2212,13 @@ binary). Our client follows since 2026-10-14.
 ### 2.5 Ship list / report panel
 
 Shows either a list of everything at the selected location, or a single report (ship,
-planet, storm, fleet, system). Each list row has the object's 36x36 picture, its name,
-for ships the class (design) name, and for own objects a row of status icons on the
-right. Clicking a row replaces the list with that object's report and enables the order
+planet, storm, fleet, system). Each list row has the object's 36x36 picture, its name at
+x 40, for the player's own ships and bases "<design name> Class" on a second line at
+(46,16), and for own objects a row of status icons on the right. Unit groups have no
+class line, and other empires' vehicles show their name only, no design and no owner
+(confirmed: binary; corrected 2026-10-15, complete listing). Since 2026-10-15 ours follows
+(`MainWindow::reportPanel`); before, every vehicle showed its design, with "xN" for a
+group, and other empires' vehicles their owner's name in brackets. Clicking a row replaces the list with that object's report and enables the order
 buttons; an up-arrow button at the top right of the report returns to the list. Shift+click
 tags several ships (a green arrow is drawn on each) so one order goes to all of them;
 the group dissolves after the order; Shift+A tags all, Shift+C clears [T]. Tagging a ship
@@ -2246,8 +2250,11 @@ fleet members included. So a sector holding one of the player's fleets and nothi
 player sees counts one object, and a click on it opens the Fleet Report at once (§2.4). The
 rows are sorted: stellar objects (planets, stars, warp points, storms) first; then by fleet
 number, highest first, vehicles in no fleet last; then by the owner's player number; then by
-hull, in VehicleSize.txt order, unit groups after ships; then by name, ignoring case. A
-left-click on a row opens its report (a fleet's row the Fleet Report), and so does a
+hull, in VehicleSize.txt order, unit groups after ships; then by name, ignoring case. The five
+keys apply to stellar objects too: after "stellar first" they tie on fleet number, then sort by
+owner number (unowned stars, warp points, storms, comets and uncolonized planets first,
+colonies by their owner's player number), then by name, compared in capitals (confirmed:
+binary; 2026-10-15, complete listing). A left-click on a row opens its report (a fleet's row the Fleet Report), and so does a
 right-click; Shift with the left button tags the row instead, a fleet's row tagging every
 member at the fleet's location.
 
@@ -2262,10 +2269,11 @@ right-click opens the member's Ship Report as a popup window, on Detail like eve
 popup. Neither changes the panel, the order buttons or the selection. The up-arrow returns
 to the sector's list. Any selection of a member of one of the player's own fleets (the ship
 and fleet arrows, the Gotos, a sector holding that one object) shows the Fleet Report alone
-too (confirmed: binary, §7 Q111). Since 2026-10-05 our client follows (§7 Q110), with these
-choices of its own: the stellar objects are sorted among themselves by name (inferred); and
-the Fleet Report ends with the fleet's order list, as our Ship Report does (an OpenSE4
-addition).
+too (confirmed: binary, §7 Q111). Since 2026-10-05 our client follows (§7 Q110), and the
+Fleet Report ends with the fleet's order list, as our Ship Report does (an OpenSE4 addition).
+Since 2026-10-15 the stellar objects are sorted by the same keys, a colony counting its owner
+as the viewer sees it, and every name is compared in capitals (`sectorListRows`); before, the
+list drew the stellar objects in the system's order, sorted only by name elsewhere.
 
 **What replaces the report** (confirmed: binary; observed, spec 07 session 6). The panel
 changes only when the player selects something:
