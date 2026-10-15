@@ -1382,7 +1382,13 @@ after every hit, and the weapons flag by an intact weapon other than a warhead n
 also broke ties by the type ranks with the flag off and treated a rank of 0 as last.
 
 **The Strategies window** (confirmed: binary). Its pages are Movement, Firing, Damage,
-Launching and Formation. Damage holds the four `Damage Percent` settings and `Damage Until
+Launching and Formation. Firing shows the target categories as one comma-separated list in
+rank order, edited in a "Target Type Order" ordering window; afterwards the ranks are
+numbered 1, 2, 3… in the new order, and a category whose rank is outside 1 to 14 is not
+listed (added 2026-10-14, complete listing; ours follows since then, `firingPage` in
+`empire_status.cpp`, where it used to give each category a rank field; the "Dont Fire On"
+switches stay under it, and the window shows a key a record leaves out with the value it
+stands for, a new strategy's). Damage holds the four `Damage Percent` settings and `Damage Until
 All Weapons Gone`. Launching holds two pick lists: Fighter Group Size (5, 8, 10, 15, 20, 30,
 40 or 50) and Drones Per Target (1, 2, 3, 5, 8, 10, 15 or 20). Add asks "Enter Strategy
 Name" and makes a new strategy from built-in values (confirmed: binary; completed
