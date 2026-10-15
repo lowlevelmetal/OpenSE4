@@ -315,6 +315,22 @@ bool isUnitDesign(const game::Rules& r, const game::GameState& s, game::DesignId
     return game::isUnitType(r.hull(s.design(d).hull).type);
 }
 
+std::vector<LaunchCarrier> launchCarriers(const game::Rules& r, const game::GameState& s, game::EmpireId owner, game::Location where) {
+    std::vector<LaunchCarrier> out;
+    for (const game::ObjectRef& ref : game::objectOrder(s)) {
+        if (ref.object.valid()) {
+            const game::Colony* c = s.colony(ref.object);
+            if (c && c->owner == owner && game::locationOf(s.galaxy, ref.object) == where && game::colonyCargoCapacity(r, s, *c) > 0)
+                out.push_back(LaunchCarrier{{}, ref.object});
+            continue;
+        }
+        const game::Vehicle* v = s.vehicle(ref.vehicle);
+        if (!v || v->count <= 0 || v->owner != owner || v->location != where || game::isUnitType(game::vehicleType(r, s, *v))) continue;
+        if (game::vehicleCargoCapacity(r, s, *v) > 0 && launchRates(r, s, *v).any()) out.push_back(LaunchCarrier{v->id, {}});
+    }
+    return out;
+}
+
 LaunchRates launchRates(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     const auto abilities = game::vehicleAbilities(r, s, v);
     LaunchRates out;
@@ -405,14 +421,20 @@ int compareNoCase(std::string_view a, std::string_view b) {
 
 } // namespace
 
-void sortScrapList(const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass) {
-    auto designName = [&](const game::Vehicle* v) -> std::string_view {
-        return v->design.valid() && v->design.index() < s.designs.size() ? std::string_view(s.design(v->design).name) : std::string_view{};
+void sortScrapList(const game::Rules& r, const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass) {
+    // The class key: the design's name compared exactly, by character code;
+    // a unit group has none, so groups come before every ship and base.
+    auto className = [&](const game::Vehicle* v) -> std::string_view {
+        if (!v->design.valid() || v->design.index() >= s.designs.size() || game::isUnitType(game::vehicleType(r, s, *v))) return {};
+        return s.design(v->design).name;
     };
+    // The original's sort is not stable; ours keeps ties in the order they came in.
     std::stable_sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
-        const int first = byClass ? compareNoCase(designName(a), designName(b)) : compareNoCase(a->name, b->name);
+        const int byName = compareNoCase(a->name, b->name);
+        const int byDesign = className(a).compare(className(b));
+        const int first = byClass ? byDesign : byName;
         if (first != 0) return first < 0;
-        return (byClass ? compareNoCase(a->name, b->name) : compareNoCase(designName(a), designName(b))) < 0;
+        return (byClass ? byName : byDesign) < 0;
     });
 }
 

@@ -174,6 +174,20 @@ public:
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("In tactical combat, a click on an enemy that fires no weapon writes why at the map's\n"
                               "top left (out of range, reloading, no supplies, nothing ticked). The original says nothing.");
+        changed |= lampToggle(ui, "Explain failed orders", &s.explainFailedOrders);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The original says nothing when most orders fail (no route, an unset waypoint,\n"
+                              "a warp point that is gone, a battle on entering a sector, a drop with nothing\n"
+                              "to drop): the list is just cleared. With this on, such a failure gives a\n"
+                              "message box in a turn-based game and an \"Unable to ...\" entry in the log in\n"
+                              "a simultaneous one, and the log notes a Sentry that ends, a target that is gone\n"
+                              "and orders cleared on meeting another empire, for the turns this computer\n"
+                              "carries out.");
+        changed |= lampToggle(ui, "More in item reports", &s.reportExtras);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The Component Report shows the original's lines. With this on it also shows\n"
+                              "OpenSE4's own: the component's group, its limit per vehicle, the technology\n"
+                              "it requires and a weapon mount's to-hit modifier.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

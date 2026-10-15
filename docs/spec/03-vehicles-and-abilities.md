@@ -363,7 +363,7 @@ type, none = defined but unused.
 | `Combat To Hit Offense Plus` | C, H | % | – | Improves own chance to hit. Per-family aggregation (§3.2). |
 | `Combat To Hit Defense Plus` | C, H | % | – | Makes the vehicle harder to hit. Per-family aggregation (§3.2). |
 | `Mine Sweeping` | C | mines | – | Enemy mines removed per sweep (§12). |
-| `Medical Bay` | C | plague level | – | Automatically, after each step and at turn processing, cures a plague of level ≤ V1 (largest on the vehicle) on a planet in the same sector owned by the vehicle's owner or an empire with Military Alliance or better (confirmed: binary). |
+| `Medical Bay` | C | plague level | – | Automatically, after each step and at turn processing, cures a plague of level ≤ V1 (largest on the vehicle) on a planet in the same sector owned by the vehicle's owner or an empire with Military Alliance or better (confirmed: binary). It is part of the depot check (§7): after every step of a ship or base that is not mothballed, the colonies in its sector that it may use as depots (the owner's, or of an empire with the treaty the depot rule asks for, the owner's side) have their plague cured when the ship's best `Medical Bay` is at least the plague's level, and in the same pass the ship is refilled when such a colony has `Supply Generation`; the same check runs again in the end-of-turn supply step (confirmed: binary, 2026-10-14). So a medical ship that passes through a plagued colony during movement cures it before the plague strikes that turn. The cure writes "Plague Cured" (Events) to the curing empire and to the colony's owner when that is another empire (confirmed: binary, 2026-10-15). Since 2026-10-14 ours follows (`movement_util.cpp` `depotCheck`); before, a Medical Bay cured only in the plague step, and only if the ship stood in the sector then. |
 | `Movement Bonus` | C | MP | – | Engine bonus: the smallest value on the vehicle applies (§6.1). |
 | `Emissive Armor` | C | points | – | Each hit of the ordinary damage types (normal, shield-skipping and the shield-multiplier types) is reduced by the vehicle's largest V1; a hit of V1 or less does nothing (confirmed: binary; details in the combat spec). |
 | `Shield Regeneration` | C | points/combat turn | – | Restores shields during combat. |
@@ -424,7 +424,7 @@ type, none = defined but unused.
 | `Destroy Black Hole` / `Create Black Hole` | C | – | – | As above, for black holes. |
 | `Stop Planet Destroyer` / `Stop Star Destroyer` / `Stop Nebulae Creator` / `Stop Black Hole Creator` / `Stop Open Warp Point` / `Stop Close Warp Point` | F | – | – | Blocks that manipulation in the whole system, whoever owns the blocking object; `Stop Planet Destroyer` protects only its sector (§8) (confirmed: binary). |
 | `Component Destroyed On Use` | C | – | – | The component becomes destroyed after its use ability fires. |
-| `Ancient Ruins` | S | count | – | When the planet is colonized, N = the planet's largest V1. If N > 0: N times, one research area is drawn at random (up to 1000 draws) among areas whose requirements the colonizing empire meets, that it may research and that are below their maximum level, and it gains one level; then this ability is removed from the planet. `Ancient Ruins Unique` is then not applied and stays on the planet (confirmed: binary). |
+| `Ancient Ruins` | S | count | – | When the planet is colonized, N = the planet's largest V1. If N > 0, the owner first gets the log entry "Ruins Discovered", category Misc, and then N times one research area is drawn at random among all areas, up to 1,001 draws, until one comes up whose requirements the colonizing empire meets, that it may research and that is below its maximum level; it gains one level only when it came up within the first 999 draws, so a find on the 1,000th or 1,001st draw is thrown away. Then this ability is removed from the planet. `Ancient Ruins Unique` is then not applied and stays on the planet (confirmed: binary; corrected 2026-10-14, complete listing: the draws were given as up to 1,000, every find counting). Since 2026-10-14 ours follows (`research::grantRandomAdvances`, `movement_upkeep.cpp` `grantRuins`); before, it made 1,000 draws and wrote a Research entry "Ancient ruins found on <planet>". |
 | `Ancient Ruins Unique` | S | tech id | – | When the planet is colonized and it has no `Ancient Ruins` above 0: the unique area V1 is added to the colonizing empire's unique areas, every research area with that unique id that is not at its maximum level gains one level (requirements are not checked), and this ability is removed from the planet (confirmed: binary). |
 | `Combat Best Experience` | C | – | – | In combat, uses the highest experience among the owner's combatants. |
 | `Combat Movement` | C | MP | – | Extra movement in combat only. Largest value on the vehicle (§3.2). |
@@ -652,7 +652,9 @@ that were there and a ship hit during another empire's player turn alike. Nothin
 steps already made: a ship of speed 6 that made two steps (4 left) and comes out of a battle
 with a maximum of 3 has 3 left and can use them at once. An ordinary step lowers the MP left by
 1 and recomputes nothing. The MP left are set to the maximum at the start of the owner's turn
-(§6.3). Unspent MP do not carry over (confirmed: binary; §19 Q85). The maximum is found in
+(§6.3). Unspent MP do not carry over (confirmed: binary; §19 Q85). Only ships and bases are
+capped this way: a unit group's recompute sets its maximum and leaves its movement left alone
+(§12; confirmed: binary, 2026-10-14). The maximum is found in
 these steps (confirmed: binary), where L is the ship's ability list (§3.1: hull plus components
 not destroyed; empty when mothballed):
 
@@ -695,7 +697,8 @@ Consequences worth stating:
   to the MP left without a ceiling, so they can then exceed the maximum, until the next
   recompute (a component lost, a resupply on a step, a cloak...) throws away what is above it
   (confirmed: binary).
-- Units (fighters, drones) in space use their own movement rules (§12).
+- Units (fighters, drones) in space use their own movement rules (§12); their movement left
+  is never cut when their maximum drops.
 
 ### 6.2 Grid, paths and warp points
 
@@ -831,8 +834,13 @@ over a **30-day** month (confirmed: binary):
    fails. So a Move To that arrives, a Load Cargo and a Drop Cargo can all happen in one action,
    and an object that acts on day 1 only runs all of its orders that need no movement then.
    MP are not spent in this mode: after the action the vehicle's MP is put back to its value
-   before the action, unless its maximum fell below that value during the action; then it keeps
-   what the action left (0 after a step) and gains nothing on the following days. It still acts
+   before the action, unless that value is above its current maximum (its maximum fell
+   during the action); then it keeps
+   what the action left (0 after a step) and gains nothing on the following days. This holds
+   for unit groups too: a fighter group that ran out of supply on its step keeps what the
+   action left it. For a fleet, every member at the fleet's location gets the acting member's
+   earlier value back, with the same maximum rule for each (confirmed: binary, 2026-10-15;
+   ours since then, `Mover::action`). It still acts
    while its counter holds a whole unit (speeds above 30, Emergency Energy), each time with 1 MP
    again, so it can take one more step per such action, and then stops for the rest of the turn
    (confirmed: binary). A maximum lowered between actions (by combat damage) caps the MP, which
@@ -950,7 +958,7 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   destination in the same run while MP last, although the lists are already empty, so nothing is
   left of it for a later turn if MP run out first; in a simultaneous game the action ends
   there.
-- If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1), whoever's
+- If a ship's or base's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1), whoever's
   turn it is; the steps it already made do not count (§19 Q85). In a simultaneous game a drop during the vehicle's own action (supply running out on its step, for
   example) stops it once its counter has no whole unit left (§6.3 step 4), and a drop between
   its actions slows it (§6.3).
@@ -1062,26 +1070,67 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
 - Repeat with a single order that completes without effect makes the vehicle idle. This is legal.
 - New orders are **appended**. Giving orders to a vehicle that already has some is a common player
   mistake, so the UI should show the queue.
-- **Where the player reads why an order failed** (confirmed: binary for Move and Colonize, the
-  same two ways inferred for the others). In a turn-based game, while the human whose turn it is
-  carries orders out (an order just given, or the orders carried over at the start of its
-  turn), a message box comes at once, titled after what failed, and nothing is logged. In a
-  simultaneous game the owner gets a log entry instead, "Unable to <order>", in the words of
-  the minister in charge (the Fleet Minister for a vehicle's order, the Planetary Minister for
-  a colony's: inferred). The boxes: "Move" (a vehicle that cannot move, such as one whose
-  space yard is building, or one with no route), "Colonize" (below), "Damage Taken" (a group
-  damaged on its way through a damaging sector), "Drop Cargo" or "Drop Troops", "Launch
-  Warning" and "Recover Warning" (a launch or recovery that could not fully happen, with
-  its reasons, §12 "Warnings": the order is still done),
-  "Cannot Mothball", a retrofit's, a stellar manipulation's "Cannot <action>" and "Minefield"
-  (stopped by a minefield). The Colonize gives a computer player's failure in a turn-based
-  game no message; OpenSE4 logs a computer player's other failures as in a simultaneous game
-  (inferred). A battle on entering a sector fails the order with an entry and no box (the
-  battle is the news, inferred). OpenSE4 follows this since 2026-10-14 (`movement.cpp`
-  `tell`, `fail`, `logFailure`; the boxes are `TurnResult::messages`, shown by the client as
-  titled OK boxes over the view, spec 06 §2.7); before, every failure but a Colonize was a
-  Misc entry "<name>: <order> order cancelled" in both turn styles. When a warning comes for
-  Launch and Recover, and the titles other than Move and Colonize, are (inferred).
+- **Where the player reads why an order failed** (confirmed: binary; corrected 2026-10-14,
+  complete listing). Most failed orders say nothing at all: the list is cleared and that is
+  all. Silent are no route, an invalid destination, an unset waypoint, a warp point that is
+  gone or that fighters or neutral empires cannot use, a battle on entering a sector (the
+  battle is the news), and a Drop with nothing of the kind aboard or no valid target. The
+  original tells the player only of these:
+  - **Move**, only for a vehicle whose space yard is building;
+  - **Colonize** (below);
+  - **Damage Taken**, for a group damaged on its way through a damaging sector or by warp
+    turbulence;
+  - the **Minefield** entries;
+  - **Launch Warning** and **Recover Warning**, for a launch or recovery that could not
+    fully happen, with its reasons (§12 "Warnings"; the order is still done);
+  - the **Load Cargo** and **Drop Cargo** boxes of a load or drop that found no room
+    (below);
+  - Mothball, Unmothball and Retrofit (§15);
+  - a stellar manipulation's "Cannot <action>".
+
+  In a turn-based game, while the human whose turn it is carries orders out (an order just
+  given, or the orders carried over at the start of its turn), such a report is a message box
+  at once, titled after what failed, and nothing is logged. Otherwise the owner gets a log
+  entry, in the words of the minister in charge. The Colonize gives a computer player's
+  failure in a turn-based game no message; OpenSE4 logs a computer player's other reported
+  failures as in a simultaneous game (inferred). Launch and Recover warnings come as a box
+  while a turn-based human carries its orders out; otherwise a human owner gets a Misc log
+  entry, and a computer player nothing (confirmed: binary, 2026-10-14). No colony order can
+  fail: remote launch and recovery, Convert Resources, Use Facility and Abandon are always
+  done, so no "Unable to ..." comes from a colony (confirmed: binary, 2026-10-14). The box
+  titles other than Move, Colonize, the warnings, Load Cargo and Drop Cargo are (inferred).
+  - **The Load and Drop boxes** (confirmed: binary). A member of the group that loads
+    nothing because its hold has no room for what the sources offer, or drops nothing because
+    the place it drops at has no room, gives the human whose turn it is in a turn-based game a
+    box titled "Load Cargo" or "Drop Cargo" naming the ship (the original's words say that
+    nothing was loaded, or dropped, for lack of room). A colonization whose population or
+    units do not fit gives the Drop Cargo box too. Nothing else comes of either: a
+    simultaneous game never logs a Load or a Drop, and the executable's "Unable to Drop Cargo"
+    entry can never be reached. Which shortfall gives the box when part of the cargo moved is
+    (inferred): ours gives it only when the member moved nothing at all, and a colonization
+    only when a kind aboard (its population, or one unit kind) found no room at all, once
+    (§19 Q86).
+  - **Silent too** (confirmed: binary, 2026-10-15): a Sentry that ends, a pursuit whose
+    target is gone, the Ship Orders options' clearing after a warp (§6.4), an Attack with no
+    movement left, and an Explore, Resupply or Repair that finds no target (nothing is added).
+  - **OpenSE4's option "Explain failed orders"** (Options → OpenSE4, off by default, per
+    computer: it acts on the orders that computer carries out, the turns of a local game or
+    of the games it hosts; the server's `--explain-failed-orders`). With it on, OpenSE4's own
+    notes of those five come back (a Sentry's "enemy sighted" or "supplies low" and "target
+    gone" and "no movement left to attack" in Combat, "orders cleared" and an expansion with
+    nowhere to go in Misc), and the silent failures are told as the reported ones are: a box titled after the order ("Move" for the
+    moves) in the player's turn of a turn-based game, otherwise an entry "Unable to <order>"
+    in the words of the minister in charge (the Fleet Minister for a vehicle's order, the
+    Planetary Minister for a colony's, inferred), with the acting object's picture; a battle on
+    entering a sector gives the entry only. Off, they say nothing and the game comes out as the
+    original's.
+
+  Since 2026-10-14 ours follows (`movement.cpp` `fail`, `failReported`, `tell`,
+  `logFailure`, `roomBox`; `TurnContext::explainFailedOrders`; the boxes are
+  `TurnResult::messages`, shown by the client as titled OK boxes over the view, spec 06
+  §2.7). Before, every failure was told, a box or an "Unable to ..." entry, combat on
+  entering a sector included, and a Drop that found no room failed with "Nothing could be
+  dropped here." as a box or an entry.
 - **Fleets:** a fleet has no list of its own; its orders are copies in the lists of its members
   at the fleet's location. Orders given to the fleet or to any member are appended to each of
   those lists, and every change to the list applies to each of them. The Stellar
@@ -1130,6 +1179,19 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
     sector with enemies (§6.2), and a battle on entry, or the Attack order at the end, takes
     them all into one battle (spec 04 §2). If any of them has no movement left when the
     order is given, the whole group waits where it is.
+  - **Orders expanded once** (confirmed: binary, 2026-10-14). Each composite order is worked
+    out once, for the first tagged vehicle, from where its list leaves it, and the same orders
+    go into every tagged list: Explore picks one warp point and every tagged vehicle gets the
+    same Move To and Warp; Resupply and Repair give one Move To to them all; Colonize's Load
+    Cargo goes to every tagged list or to none, depending only on whether the first tagged
+    vehicle carries population.
+  - **Changes other than adding** (confirmed: binary, 2026-10-14). Repeat Orders sets or
+    clears the flag of the first tagged vehicle only (or of its fleet's members at the
+    location); no list is otherwise touched. Set Patrol ending on the object's own sector
+    switches Repeat on for that vehicle alone. Clear Orders reaches every tagged list, and so
+    does the "exactly one order" clearing at the end of a patrol, which is tested on the first
+    tagged vehicle's list. Sentry tests the first tagged vehicle's head order: if it is a
+    Sentry, every tagged list is cleared.
   - The tags are cleared once the order is given and carried out (spec 06 §2.5). Whatever is
     left of the orders when movement runs out, because the target is further away than the
     slowest tagged vehicle can go this turn, is carried out at the start of the next turn by
@@ -1141,17 +1203,22 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   Since 2026-10-05 the engine follows (§19 Q82). The client gives an order to tagged vehicles
   as one command (`cmd::OrderTagged`) that names them in tag order; a fleet member stands for
   every member at its fleet's location (`taggedVehicles`), and the vehicles named must share
-  a sector. Each tagged list gets the orders appended as an order given to that vehicle (or
-  fleet) alone would: composite orders are expanded from where that list leaves it, so lists
-  that held different orders can get different expansions (inferred, §19 Q83). In a
+  a sector. Since 2026-10-14 the orders are expanded once, for the first one tagged, and the
+  same orders are appended to every tagged list (`cmd::OrderTagged` in `commands.cpp`; before,
+  each list expanded them from where it left its vehicle, inferred, §19 Q83). In a
   turn-based game the group then runs at once (`LiveMove::tagged`): the first tagged vehicle
   still in the game acts, every tagged vehicle in its sector is a member and a holder, a
   member whose maximum movement is 0 makes the group wait as it does a fleet (inferred), and
   the Attack Sector question names the whole group once (`EntryQuestion::tagged`, answered
   by `cmd::EnterSector::tagged`; declining clears every tagged list, logged under the first
   vehicle's name "and N others"). The question stays open while the first tagged vehicle
-  still in the game has orders (inferred). Set Patrol given to tagged vehicles appends its
-  Move To orders to each list and switches Repeat on in each (inferred).
+  still in the game has orders: equivalent to the original's blocking box as long as it is
+  answered before anything else runs (§19 Q83). Since 2026-10-14 Set Patrol given to tagged
+  vehicles appends its Move To orders to each list and switches Repeat on in the first one's
+  alone (`cmd::OrderTagged::repeat`), Repeat Orders switches the first one's alone
+  (`cmd::OrderTagged::toggleRepeat`, save format 11), and Sentry clears every tagged list when
+  the first one's starts with a Sentry; before, Set Patrol switched Repeat on in each list, and
+  Repeat Orders gave every tagged vehicle the first one's list with Repeat switched.
 
 Several orders are expanded into simpler ones at the moment they are given; they never exist as
 stored orders (confirmed: binary). "Composite" orders below become Move To (when the target
@@ -1159,7 +1226,7 @@ sector is elsewhere) plus the action.
 
 | Order (hotkey) | Parameters | Behaviour |
 |---|---|---|
-| Move To (M) | sector, in any known system | Paths and warps as needed (§6.2). Done on arrival; waits when out of MP; fails on an invalid destination or a blocked path. |
+| Move To (M) | sector, in any known system | Paths and warps as needed (§6.2). Done on arrival; waits when out of MP; fails on an invalid destination or a blocked path. One run of the order takes at most 51 steps (a warp jump counts as one): after the 51st the Move To counts as done, even if the group has not arrived, and the next order runs. This holds for Move To Waypoint and the patrol's moves too, and matters only in a turn-based game with more than 51 movement points (stacked Emergency Energy, modded hulls) (confirmed: binary). Since 2026-10-14 ours follows (`movement.cpp` `moveTo`, `kMoveRunSteps`); before, a run had no limit. |
 | Move To Waypoint (Ctrl 1–9, 0) | waypoint | The waypoint is looked up when the order runs; if it has been deleted the order fails (§8.1). |
 | Set Waypoint (Alt 1–9, 0) | sector | Empire-level. Defines a waypoint (§8.1): the key asks for a sector, which the next click on the system panel gives (spec 06 §3.1). |
 | Attack (A) | target | In turn-based games (except for drones) it becomes Move To the sector the target is in when the order is given (added even when the group is already there) plus an Attack. The stored Attack names no target and no place: it attacks wherever the group stands when it runs, which costs 1 MP and one move's supply and starts combat at once; with no MP left it is removed doing nothing. It decloaks nobody (§6.4). In simultaneous games, and for drones, it becomes a pursuit: on each action the group moves toward the target's current sector, warping as needed. Once there, a group holding a drone whose own first order pursues an object in that sector attacks: its cloaked drones decloak, then 1 MP and one move's supply (the battle itself comes from the day's combat check, §6.3, or at once in a turn-based game). A group with no such drone just waits there, spending neither MP nor supply. The order stays either way. The pursuit is done when the target no longer exists (or its slot holds another object), belongs to the attacker's owner, or is a planet without a colony; there is no visibility test. In a battle, a drone group's target is the object its first order pursues (§12). A drone given a warp point as target gets Move To plus Warp instead (confirmed: binary). |
@@ -1169,12 +1236,12 @@ sector is elsewhere) plus the action.
 | Explore (E) | — | Expanded at once into Move To plus Warp for the warp point, nearest by travel distance from the selected object's current sector (whatever orders come before), that lies in a system the empire has explored and leads to one it has not (nothing else about the link is checked), skipping every warp point that some own vehicle has a Warp order for anywhere in its list, the ordered vehicle's own earlier orders and fleet copies included. The Move To is added even when the warp point is in the current sector. With no candidate nothing is added (confirmed: binary). |
 | Colonize (C) | planet | Composite. It first adds Load Cargo (population) where the list then leaves the ship, but only if the selected object's own cargo holds no population now, whatever the orders before it load (confirmed: binary); that Load Cargo completes and chains into the next order within the same action (§6.3). See the rules below the table. |
 | Sentry (Y) | — | Stays at the head at no MP cost. It ends when the owner can see, anywhere in the same **system**, an object (ship, base, unit group or colony) of an empire whose treaty with it is below Non-Aggression (War, Non-Intercourse, None or no contact), or when any group member's supply is below `Supply Amount for Low Supply Warning` (for fighter groups one tenth of it). The Sentry then counts as done: without Repeat it is removed and the following orders run; with Repeat on it stays in the list and execution moves past it. The list is not cleared (confirmed: binary). |
-| Set Patrol (P) | list of points | Each click appends a Move To at once to the existing list; the prompt names the point by its ordinal and says that a click on the ship ends the route. A click on the object's own system and sector appends that Move To too, ends the pick and turns Repeat on; if the whole list then holds exactly one order, it is cleared instead (confirmed: binary). Our client follows since 2026-10-14; Enter and a right click also end the route (OpenSE4's), turning Repeat on and keeping a list of one order as a plain move. In a turn-based game each point's Move To runs as it is added, as every order given there does (inferred, spec 06 §7 Q116). |
+| Set Patrol (P) | list of points | Each click appends a Move To to the existing list; the prompt names the point by its ordinal and says that a click on the ship ends the route. A click on the object's own system and sector appends that Move To too, ends the pick and turns Repeat on; if the whole list then holds exactly one order, it is cleared instead (confirmed: binary). In a turn-based game nothing runs while the player picks: the points are only appended, and when the click on the object's own sector closes the route, Repeat goes on and only then does the list run, from its first order (confirmed: binary; corrected 2026-10-14, complete listing: each point was said to run as it was added, inferred). When the pick is cancelled (another order given, or the turn ended; the original's main window has no Esc for it), the points picked so far stay as plain Move To orders, Repeat as it was, nothing cleared, and in a turn-based game they run the next time the list runs: when the next order is given, or at the owner's next turn start (confirmed: binary, 2026-10-15). Our client follows since 2026-10-14: each point is appended at once but held (`cmd::SetOrders::hold`, `cmd::OrderTagged::hold`, save format 11: a turn-based game does not run the list then), and closing the route switches Repeat on and runs it (`MainWindow::addPatrolPoint`, `finishPatrol`); before, each point was given and, in a turn-based game, run at once, so a point reached during the picking was completed and removed while Repeat was still off. Enter and a right click also end the route (OpenSE4's), turning Repeat on and keeping a list of one order as a plain move. Esc cancels the pick as another order would (OpenSE4's), leaving the points as plain moves (`abandonPatrol`). |
 | Repeat Orders (K) | toggle | See the list rules above. |
 | Clear Orders (Del) | — | Empties the list and switches Repeat off. |
 | View Orders (V) | — | UI only. |
-| Load Cargo (L) | cargo kind, sector | Composite. The sector is picked first; at the click a picker asks for the kind of cargo, always the same seven: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms, whatever the selection carries. Loads as much of the kind as fits, every design of it, from own planets in the sector first, then own vehicles; in a group each member loads for itself. Always done, even when nothing loads (confirmed: binary). |
-| Drop Cargo (D) | cargo kind, sector, object | Composite. The sector first, then its destination (spec 06 §2.9), then the kind from the same seven. Drops every design of the kind into that own colony or vehicle, as far as it has room. Can fail (confirmed: binary). |
+| Load Cargo (L) | cargo kind, sector | Composite. The sector is picked first; at the click a picker asks for the kind of cargo, always the same seven: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms, whatever the selection carries. In a group each member loads for itself, as much of the kind as fits, every design of it (population race by race in the colony's stored order, the owner's race no first, the colony keeping 1M of its total over all races), in two passes: first from the own colonies in the sector, in the system's object order, then, while it still has room, from the cargo of the empire's own bases there that are not cloaked, in object order. Ships are never sources, so a transport cannot take troops or population from another transport through this order; that is what Cargo Transfer is for. A plague makes no difference: only the Cargo Transfer window refuses a plagued planet (§11). Always done, even when nothing loads (confirmed: binary; corrected 2026-10-14, complete listing: this row said the second pass took from own vehicles). |
+| Drop Cargo (D) | cargo kind, sector, object | Composite. The sector first, then its destination (spec 06 §2.9), then the kind from the same seven. Every living member drops every design of the kind it carries into that own colony or vehicle, as far as it has room; population race by race in the ship's stored cargo order, each up to what the target can still take, the owner's race no first (confirmed: binary, 2026-10-15; before, ours took the owner's race first). The order's result is the result of the **last** living member in group order: it fails, clearing the lists, when that member dropped nothing, whatever the earlier members dropped, and it is done when that member dropped something, even if all the others dropped nothing (confirmed: binary). |
 | Launch Units Remotely (I) | unit kind, sector | Composite. The sector first, then the kind: Fighters, Satellites, Mines or Drones. Launches as many units of the kind as allowed, every design of it (§12). A colony's: only the kind is asked; the order goes at once into the colony's list at its own sector, and in a turn-based game the colony carries out its list then. Always done; what could not be launched gives a warning (§12) (confirmed: binary). |
 | Recover Units Remotely (O) | unit kind, sector | Composite. The sector first, then the kind: Fighters, Satellites or Drones (a colony's: the kind only, as for the launch). Names a unit kind, not a design. For each own group of that kind in the sector, in object order, it recovers the units of every design as far as cargo room allows, and moves on to the next group only while the previous one gave at least one unit. Drones never come back, which gives a warning (§12). Always done (confirmed: binary). |
 | Cargo Transfer (T) | — | Instant window, both turn styles (§11; spec 06 §2.8). |
@@ -1186,7 +1253,7 @@ sector is elsewhere) plus the action.
 | Sweep Mines (Ctrl M) | — | Runs the whole mine encounter of the current sector again (sweeping, then the remaining hostile mines strike the group, §12), then, if the group survived, costs 1 MP (if any is left) and one move's supply. Always done (confirmed: binary). |
 | Add / Remove Tagged Minefield (Ctrl T / Ctrl R) | sector | Empire-level. |
 | Use Component (Ctrl Z) | component position | Given through a picker; in a turn-based game it first clears the list. Only the acting group's first member uses the part (rules below the table). A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap (the next recompute of the maximum throws away what is left above it, §6.1); in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
-| Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15) (confirmed: binary). |
+| Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15). Each run destroys only the first member of the group, when that member can self-destruct (for a fleet its member at the fleet's location that comes first in object order, as for Scrap), and the order is done either way, saying nothing when nobody could; companions keep their own order and carry it out on their next action (confirmed: binary; corrected 2026-10-14, complete listing). The window gives each vehicle its own order, so the end result is the same. Since 2026-10-14 ours follows (`movement.cpp` `selfDestruct`); before, every member that could was destroyed at once. |
 | Stellar Manipulation (B) | action | See below. |
 | Scrap / Analyze / Mothball (G) | — | §15. |
 | Change Name (N) | text | A vehicle, fleet or colony cannot take a name that some space object of the game has, exactly and case counting: a ship, base or unit group, a planet, star, warp point or other stellar object, of any empire, its own included; fleets' names are not compared. The prompt then says the name is in use and asks again (spec 06 §1.3) (confirmed: binary). Our engine takes the object's own name again as no change instead of refusing it (OpenSE4's choice). A design keeps the rule of §4.1. |
@@ -1196,7 +1263,11 @@ sector is elsewhere) plus the action.
 Since 2026-10-14 the engine follows the table's Explore, Resupply, Repair and Colonize
 expansions (`orders.cpp`, `OrderContext::here`): before, it searched from where the list left
 the group, added no Move To for the current sector, and judged Colonize's Load Cargo by the
-group's cargo after the orders before it (inferred).
+group's cargo after the orders before it (inferred). Since 2026-10-14 ours also follows the
+Load Cargo and Drop Cargo rows (`movement_util.cpp` `loadCargo`, `movement.cpp` `cargo`):
+before, Load Cargo's second pass took from every own ship and base in the sector outside the
+group, in creation order, it skipped plagued colonies, and a group's Drop failed only when no
+member dropped anything.
 
 **Colonize** (confirmed: binary):
 
@@ -1218,10 +1289,35 @@ group's cargo after the orders before it (inferred).
   cloaked, or if no member has the `Colonize Planet - *` ability matching the planet type. The game
   options that limit colonization to the empire's own planet type or to breathable atmospheres
   apply.
-- The colonizer is the last suitable member in group order. The colony starts with
-  `Automatic Colonization Population`, and then every kind of cargo on the ship is dropped under
-  the Drop Cargo rules, so only what fits arrives; the rest is lost with the ship, which is
-  consumed. Then the planet's ancient ruins take effect (§3.3).
+- The colonizer is the last suitable member in group order. The colony is made with
+  `Automatic Colonization Population` of the owner's race, even above the planet's maximum.
+  Then the ship is unloaded by the Drop Cargo rules, kind by kind (confirmed: binary;
+  corrected 2026-10-14, complete listing):
+  - its population, each race entry in the ship's order, up to the colony's free population
+    room (its maximum population less its current population, never below 0). The drop is
+    tried twice; the second try matters only if the first changed the room;
+  - then troops, fighters, mines, satellites, drones and weapon platforms, in that kind
+    order. Each kind goes stack by stack in the ship's cargo order, one unit at a time while
+    its hull tonnage fits the colony's free cargo space, so a unit too large is skipped and a
+    later, smaller one still goes;
+  - whatever is left is lost with the ship, which is consumed. A colonization that leaves
+    something behind for lack of room gives the human whose turn it is in a turn-based game
+    the Drop Cargo box (§8 "Where the player reads why").
+
+  Then the planet's ancient ruins take effect (§3.3).
+- **What else founding a colony does** (confirmed: binary): when the colonizing empire's
+  "Automatically use Individual Ministers for newly built vehicles" is on, the new colony's
+  own minister flag is switched on, as for built ships and launched units (spec 02 "Minister
+  options"); the empire gains 100 experience, capped at 500,000,000 as always (spec 02
+  "Experience and race age"); and the colony ship counts as scrapped in its design's
+  statistics, so it leaves In Service (spec 04 §15). The owner gets the log entry "New Colony
+  in <system>", category Misc, in the Colonization Minister's words naming the planet and the
+  system, with the picture `Colony<Surface><Atmosphere>` (spec 06 §4.1). Since 2026-10-14
+  ours follows all of this (`movement_upkeep.cpp` `colonize`, `unloadColonyShip`): before,
+  it copied everything aboard and then trimmed the population from the last race entry
+  (which could cut the starting colonists when the owner's race was not aboard) and the units
+  one at a time from the last stack whatever their size; it left the minister flag off, gave
+  no experience, counted the ship as still in service, and wrote "<planet> colonized".
 - When the colonizing empire's Empire Options switch "claim every system we colonize" is on (it
   is on for a new empire, computer players included), the planet's system is claimed for it as
   the colony is founded, whatever the system's other claims (spec 06 §7 Q47).
@@ -1438,14 +1534,28 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   orders (below). A vehicle in a fleet cannot be mothballed, scrapped, analyzed or retrofitted,
   because the Scrap window does not list it (§15, §19 Q74).
 - **Create Fleet** (Fleet Transfer) asks for the name in a box with OK and Cancel. It offers
-  "<letter> Fleet" with the Greek letters Alpha to Kappa for the empire's number of fleets plus
-  one, going up past names in use, and two words past ten (OpenSE4 writes "Alpha Alpha Fleet"
-  for the 11th, "Alpha Beta Fleet" for the 12th, and so on to "Kappa Kappa Fleet", then
-  "Fleet N", inferred). The typed name is not checked. The fleet is created **empty** at the
+  the n-th default name, n being the empire's count of fleets ever created plus one, going up
+  past names already in use (confirmed: binary; corrected 2026-10-14, complete listing):
+  - The count rises by one for every fleet the empire creates; disbanding a fleet never lowers
+    it, and it is saved (spec 08 §3.6.12). So after three fleets were made and two disbanded,
+    the next one is still "Delta Fleet".
+  - The name is built from the ten Greek words Alpha to Kappa. Up to 10 it is the word for n
+    and " Fleet". For 11 to 100 it is the word for n div 10, a space, the word for n − 10 and
+    " Fleet". Only words 1 to 10 exist; any other number gives an empty word. So the 11th to
+    19th are "Alpha Alpha Fleet" to "Alpha Iota Fleet", the 20th is "Beta Kappa Fleet", and
+    from the 21st the second word is empty: "Beta  Fleet", with two spaces. Names in use are
+    skipped, so the next one is "Gamma  Fleet" (the 30th), and so on.
+  - Above 100 three words are used the same way (inferred for ours: the word for n div 100,
+    the word for (n − 100) div 10 and the word for n − 100; §19 Q87).
+
+  The typed name is not checked. The fleet is created **empty** at the
   window's sector, with the first formation and the first strategy, and under minister control
   when the empire's "new vehicles use ministers" option is on; the player then clicks vehicles
   into it. A fleet still empty when the window closes is deleted. Our engine follows this since
-  2026-10-13 (`cmd::CreateFleet` with no members and a `location`, `defaultFleetName`); an empty
+  2026-10-13 (`cmd::CreateFleet` with no members and a `location`, `defaultFleetName`), and the
+  default names since 2026-10-14 (`Empire::fleetsCreated`, save format 11; before, the names
+  started from the empire's current number of fleets and paired the words in order, "Beta
+  Alpha Fleet" for the 21st, and an old game reads its fleet count as the fleets created); an empty
   fleet survives the tidying that disbands a fleet with no member at its location, and turn
   processing deletes any left (OpenSE4's own, for a window that never closed).
   `cmd::CreateFleet` with members, which the computer players and scripts use, is OpenSE4's;
@@ -1568,7 +1678,8 @@ All rules in this section are (confirmed: binary).
   sector that have capacity above 0; never with allies. It costs nothing and uses no MP. It moves
   1, 5, 10, 100 or all per click and only what fits; the empire's options keep the choice, Ten
   at first (spec 08 §3.6.7). Nothing can be loaded from a planet quarantined by plague: the
-  window says so in a message box. Taking population from a planet always leaves at least 1M;
+  window says so in a message box (the Load Cargo order has no such test, §8). Taking
+  population from a planet always leaves at least 1M;
   emptying a colony needs the Abandon Planet order.
   - **The window** (Cargo Transfer, order T, lit for every own ship, base and colony in both
     turn styles, spec 06 §2.8). The left list ("Cargo From") holds the selected ship, base or
@@ -1592,7 +1703,8 @@ All rules in this section are (confirmed: binary).
 
 **The engine's cargo orders.** Since 2026-10-14 the orders a player gives name their kind
 of cargo (`Order::cargo`, save format 10) and move every design of it, stack by stack in
-each holder's cargo order (inferred within a holder), as described above; the original's
+each holder's cargo order, each unit while it fits, a stack too large skipped (confirmed:
+binary, 2026-10-14), as described above; the original's
 saved games carry the kind both ways (spec 08 §3.8.8). An order that names one design
 instead (`Order::design` with no kind: OpenSE4's computer players give them, and so did
 games saved before format 10) moves only that design, as it always did; population is
@@ -1652,7 +1764,10 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
     plus cloak supply when cloaked. No racial scaling applies to upkeep.
   - Per-move cost = Σ over designs of (the design's per-move cost × count), then the racial
     `Supply Cost` percentage, rounded.
-  - Group MP = the lowest design speed in the group, or 1 at zero supply.
+  - Group MP = the lowest design speed in the group, or 1 at zero supply. A recompute sets
+    this maximum and never cuts the group's movement left, so a group that runs out of
+    supply mid-turn keeps its movement (confirmed: binary, 2026-10-14; ours since then,
+    `capMovement` caps ships and bases only).
 - **Resupply:** a fighter group is refilled when it shares a sector with a colonized planet that has
   a `Supply Generation` facility, owned by the same empire or by one whose treaty allows depot
   use. Drones can never be resupplied. Satellites and mines have no supply at all (maximum 0, no
@@ -1704,7 +1819,9 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   recover at all is ours (inferred): the kind and launcher tests warn whatever the hold
   holds, the caps only for units that would have gone.
 - **The window** Launch \ Recover Units (order U, turn-based games only, spec 06 §1.3;
-  confirmed: binary). A click acts at once on exactly the ship, base or colony clicked,
+  confirmed: binary). Its carrier list holds the empire's own objects in the sector that hold
+  cargo, have cargo space above 0, and are a colony or have a fighter, satellite, mine or drone
+  launch ability, in the system's object order (spec 06 §7 Q119). A click acts at once on exactly the ship, base or colony clicked,
   never on its fleet-mates: a unit under a carrier launches from that carrier, a group in
   space comes back aboard the carrier selected in the left list, by the amount the radios
   set. The order list is neither touched nor run, nothing is logged, and launches count
@@ -1833,15 +1950,20 @@ A button is lit only when every selected vehicle passes its test (the window is 
   is done. If it fails, the order counts as done all the same: it leaves the list (with Repeat
   on, it goes to the end), the orders behind it run, and the list is never cleared. Only
   Mothball, Unmothball and Retrofit report a failure, each with one log entry: the Mothball
-  minister's "Cannot Unmothball" says that there are not enough resources or that no space
-  yard is present. Scrap, Analyze and Fire On say nothing. Analyze, Mothball, Unmothball,
+  minister's "Cannot Mothball" or "Cannot Unmothball" (category Misc; the latter says that
+  there are not enough resources or that no space yard is present), and "Retrofit Problem"
+  (category Construction). Scrap, Analyze and Fire On say nothing. A Mothball order that
+  succeeds logs "Ship Mothballed" (Misc); a Retrofit that succeeds logs "Vehicle Retrofit"
+  (Construction) (confirmed: binary, 2026-10-14). Analyze, Mothball, Unmothball,
   Retrofit and Fire On act on the acting vehicle only, even when it heads an ad-hoc group
   (§8), so each vehicle carries out its own order.
 - **The Scrap order** scraps one vehicle, the first of the group that carries it out: the
   acting vehicle, or for a fleet member its fleet's member at the fleet's location that comes
   first in object order, whichever member holds the order. The test is the order's: an own
   working space yard in that vehicle's sector and no cloak (not the window's fleet test). The
-  refund is the one above, and the owner gets a "Vehicle Scrapped" log entry. When the acting
+  refund is the one above, and the owner gets a "Vehicle Scrapped" log entry, or "Group
+  Scrapped" for a unit group, a Construction entry from the Scrap Minister (confirmed:
+  binary, 2026-10-14). When the acting
   vehicle itself was scrapped the run counts as failed and the lists of the members left at
   the fleet's location are cleared (Repeat off); otherwise the order leaves every member's list
   there and the member that held it stays in the fleet. Only the Scrap minister's orders put
@@ -1908,12 +2030,16 @@ A button is lit only when every selected vehicle passes its test (the window is 
   - satellite groups, minefields, drone groups and planets never count, whatever they carry.
 
   The armed vehicle may be cloaked, in a fleet, out of supply or out of movement, and may itself
-  be selected. Nothing else is tested: no treaty, range, sight, supply or yard, and the target
-  may be any listed vehicle, unit groups and minefields included.
+  be selected. The target itself must not be cloaked (corrected 2026-10-14, complete listing;
+  the engine already refused it, `scrapActionProblem`). Nothing else is tested: no treaty,
+  range, sight, supply or yard, and the target may be any listed vehicle, unit groups and
+  minefields included.
 - **The last armed vehicle.** Because the test needs another armed vehicle, the last armed
   vehicle in a sector can never be fired on. When several armed vehicles are selected the
   button is lit (each sees the others), but the one carried out last finds no armed companion
-  left: in a turn-based game it stays, and in a simultaneous game its order fails.
+  left: in a turn-based game it stays, and in a simultaneous game its order is refused, which
+  counts as done and does not fail: the list goes on, nothing is said (corrected 2026-10-14,
+  complete listing; the engine already did this, `scrapWindowAction`).
 - **Effect.** The target is removed at once, as by scrapping. Nobody fires: there is no battle, no
   shot, no damage roll, no movement or supply spent, no experience and no kill statistic. Cargo
   aboard is lost. The system's sight is recalculated.
@@ -1956,14 +2082,31 @@ OpenSE4's own choices, (inferred):
   minister gives a Move To and the Scrap order, and the Retrofit minister retrofits a ship at
   once at the yard it chose, or gives it a Move To there and the Retrofit (`cmd::Retrofit`
   with `moveFirst`, followed since 2026-10-14).
-- Scrap and Self-Destruct count each living unit of a unit group in "Number Scrapped".
-- A self-destructed vehicle still gets its "destroyed" Misc entry, but raises no "ship lost"
-  mood (it is not lost). A Self-Destruct order nobody in the group can carry out counts as
-  done, like the window's other orders, and says nothing.
-- "Vehicle Scrapped" is a Construction entry naming the vehicle and its sector in our words,
-  written for a unit group too and in a turn-based game's window as well. "Cannot Mothball"
-  and "Cannot Retrofit" are our titles for those two failures (Construction entries with the
-  reason in our words), "Cannot Unmothball" the original's.
+- The words of the entries below are ours; their titles and categories are the original's.
+
+Settled from the complete listing on 2026-10-14 (confirmed: binary; §19 Q78, Q84):
+- Scrap and Self-Destruct count each living unit of a unit group in "Number Scrapped" (a
+  self-destructed drone group nothing), and
+  self-destruct raises no happiness event.
+- A self-destructed vehicle writes a Construction entry from the Demolition Minister:
+  "Group Self-Destructed" for a minefield or a satellite group (a fighter group too, though it
+  can never self-destruct), with the unit kind's picture, each living unit counting in its
+  design's Number Scrapped; "Vehicle Self-Destructed" for a ship or base, adding 1 to its
+  design's Number Scrapped, with the design's picture, and for a drone group, which records
+  nothing in any design's statistics and has no picture of its own (confirmed: binary,
+  2026-10-15; ours counted a drone group's units as scrapped until then). A Self-Destruct
+  order nobody in the group can carry out counts as done and says nothing.
+- "Vehicle Scrapped" and "Group Scrapped" are Construction entries from the Scrap Minister.
+  That a turn-based game's window writes them too, as an order does, is (inferred).
+- A failed Mothball or Unmothball order writes "Cannot Mothball" or "Cannot Unmothball",
+  Misc; a failed Retrofit "Retrofit Problem", Construction; a Mothball carried out as an order
+  "Ship Mothballed", Misc (not when the window carries it out at once); a Retrofit "Vehicle
+  Retrofit", Construction (ours also when the window carries it out at once, inferred).
+
+Since 2026-10-14 ours follows these (`scrap.cpp`, `movement.cpp` `scrapWindowAction`,
+`cannot`): before, a self-destruct wrote "<name> destroyed" (Misc), a unit group's scrapping
+"Vehicle Scrapped", the failures "Cannot Mothball" and "Cannot Retrofit" as Construction
+entries, a successful Mothball order nothing, and a retrofit "<name> retrofitted to <design>".
 
 ---
 
@@ -2213,6 +2356,9 @@ All rules in this section are (confirmed: binary).
     colonized. When two ships reach a planet in the same turn the lower vehicle id wins.
     **Answer:** cargo beyond capacity is lost; the first ship processed (object-slot order) wins
     and the other's order fails; the colony also receives `Automatic Colonization Population`.
+    What arrives is what the Drop Cargo rules unload, kind by kind, population first; the
+    colonists come first, even above the planet's maximum (corrected 2026-10-14, complete
+    listing; §8 Colonize).
     The colony type is picked by the player in a dialog when the empire's option for it is on (the
     default) and a human colonizes in a turn-based game, and otherwise chosen automatically as a
     computer player would. `Ancient Ruins` are used up (removed) once applied; `Ancient Ruins
@@ -2699,6 +2845,13 @@ marked (inferred) in the code.
       game's window) or, carried out as an order, writes the Mothball minister's "Cannot
       Unmothball" entry. Our engine follows this since 2026-10-13 (§15).
 
+    **Answer** to the second and third points (confirmed: binary, 2026-10-14): a
+    self-destructed unit group counts each living unit in "Number Scrapped" (a drone group
+    records nothing, 2026-10-15), and
+    self-destruct raises no happiness event; its entry is "Vehicle Self-Destructed" or
+    "Group Self-Destructed", Construction, from the Demolition Minister (§15). The first
+    point (the ministers' Scrap and Retrofit) is spec 05's.
+
 **Players' reports on v0.8.1 (2026-10-04).** The Colonize picker is spec 06 §7 Q100 (with the
 rules in §8); this one is ours:
 
@@ -2847,6 +3000,15 @@ fleet's row in the sector list is spec 06 §7 Q110.
     first tagged vehicle has orders (OpenSE4) or ends with the order run, and whether a member
     whose maximum movement is 0 (a base, a mothballed ship) makes the group wait (OpenSE4, as
     for a fleet, §19 Q74) or makes the order fail.
+
+    **Answer** (confirmed: binary, 2026-10-14): once, for the first one tagged, and the same
+    orders go into every tagged list (§8 "Tagged vehicles"): Explore picks one warp point for
+    them all, Resupply and Repair give one Move To, and Colonize's Load Cargo goes to every
+    list or none as the first one carries population or not. A member with no movement left (a
+    base, for example) makes the group wait; it does not fail. The entry question is a
+    blocking box asked during the step, and nothing stays pending; OpenSE4's open question is
+    equivalent as long as it is answered before anything else runs. Since 2026-10-14 ours
+    expands once (`cmd::OrderTagged`).
 84. **The Scrap window, Create Fleet and Abandon Planet: details the 2026-10-11 audit left
     open.** OpenSE4's choices since 2026-10-13 (inferred), to verify in the executable:
     - Create Fleet's default name past the tenth fleet is "two words": OpenSE4 pairs the
@@ -2864,10 +3026,31 @@ fleet's row in the sector list is spec 06 §7 Q110.
     - The Scrap window's Order By Class: OpenSE4 sorts by design name, then by vehicle name.
       And what Status shows with nothing selected (OpenSE4: "-").
 
-    *Abandon Planet's refund percentage settled* (confirmed: binary, 2026-10-14, complete
-    listing): the percentage, the larger of the setting and the best reclamation in the
-    sector, is worked out once, and then every facility is scrapped with it. OpenSE4 matches
-    (spec 02 §3). The entry's title and category and the other points stay open.
+    **Answer** (confirmed: binary, 2026-10-14):
+    - Create Fleet's default name: §9 (the n-th name built from the Greek words by
+      division; from the 21st fleet the second word is empty).
+    - "Vehicle Scrapped", or "Group Scrapped" for a unit group, is a Construction entry from
+      the Scrap Minister (§15).
+    - A failed Mothball or Unmothball order writes "Cannot Mothball" or "Cannot Unmothball",
+      category Misc; a failed Retrofit "Retrofit Problem", Construction. A successful Mothball
+      order writes "Ship Mothballed" (Misc) when it is not carried out live, a successful
+      Retrofit "Vehicle Retrofit" (Construction) (§15).
+    - A Self-Destruct order nobody in the group can carry out says nothing.
+    - Abandon Planet works the refund percentage (the larger of the setting and the best
+      reclamation in the sector) out once, before the first facility goes, and scraps every
+      facility with it, as OpenSE4 does; the entry is "Planet Abandoned", category Misc
+      (spec 02 §3).
+    - Order By Class sorts by the design's name compared exactly (letter case counts, by
+      character code), then by the vehicle's name with letter case ignored; a unit group has
+      no design name for this key, so groups come before every ship and base. Order By Name
+      uses the same two keys the other way round. The original's sort is not stable, so the
+      order of exact ties is not fixed; ours keeps them in the order they came in (confirmed:
+      binary, 2026-10-15; `sortScrapList`; before, ours ignored letter case in the design name
+      and gave a unit group its design's name).
+    - What Status shows with nothing selected was not checked; ours shows "-".
+
+    Since 2026-10-14 ours follows (`scrap.cpp`, `movement.cpp` `cannot`, `abandon`); the
+    texts are ours.
 85. **Movement left after a battle (GitHub issue #13).** "Ships damaged in combat can display as
     having more than their maximum movement after combat." "I went to move the ship which
     displayed 4 / 3, and it changed to 0 / 3 movement and queued it for the next turn instead of
@@ -2918,5 +3101,27 @@ fleet's row in the sector list is spec 06 §7 Q110.
     everything, hence "0 / 3" and the waiting Move To. `TurnMoves` is now unused and its list
     always empty; it stays in the saved game so that the format does not change. Simultaneous
     games did not change: their daily cap (§6.3) already gave the same results. Our client shows
-    the Movement line as "3/6" since then, without the gauge. Open: unit groups (fighters,
-    drones) were not checked in the executable; OpenSE4 caps them the same way (inferred).
+    the Movement line as "3/6" since then, without the gauge. Unit groups (fighters, drones)
+    are never capped: a group's recompute sets its maximum and leaves the movement left
+    alone (confirmed: binary; corrected 2026-10-14, complete listing: OpenSE4 capped them
+    the same way, inferred). Since 2026-10-14 ours caps ships and bases only (`capMovement`).
+
+**The accuracy pass of 2026-10-14** (the rules settled from the complete listing) left these
+questions of ours:
+
+86. **The Load and Drop boxes when part of the cargo moved (§8).** The original's boxes say
+    that nothing was loaded, or dropped, for lack of room. Does a member that loaded or
+    dropped some of the kind before the room ran out get the box too, and does a
+    colonization give one box per kind that did not fit, or one for the whole unloading?
+    OpenSE4 gives the box only to a member that moved nothing although the sources offered
+    something (Load) or it carried something of the kind to a place that could take it
+    (Drop), and at most one Drop Cargo box for a colonization, when its population or one of
+    its unit kinds found no room at all (inferred; `movement_util.cpp` `loadCargo`,
+    `dropCargo`, `movement_upkeep.cpp` `unloadColonyShip`).
+87. **Default fleet names past the 100th (§9).** The original builds names above 100 from
+    three Greek words "the same way" as the two-word names (the word for n div 10 and the word
+    for n − 10, empty outside 1 to 10). Which numbers give the three words? OpenSE4 uses the
+    word for n div 100, the word for (n − 100) div 10 and the word for n − 100, so most of
+    those names have empty words and are skipped once in use (inferred; `defaultFleetName`
+    in `commands.cpp`, which gives up after 100,000 names and writes "Fleet N", its own
+    guard).

@@ -114,28 +114,16 @@ void planetChanges(TurnContext& ctx, Colony& c) {
 
 // ---- Plague (spec 02 §3) ------------------------------------------------------------------------------
 
-int64_t medicalBayAt(const Rules& r, const GameState& s, const Colony& c) {
-    const Location where = locationOf(s.galaxy, c.planet);
-    int64_t best = 0;
-    for (const Vehicle& v : s.vehicles)
-        if (v.location == where && v.count > 0 && allied(s, c.owner, v.owner))
-            best = std::max(best, bestValue1(vehicleAbilities(r, s, v), AbilityKind::MedicalBay));
-    return best;
-}
-
 // Millions a plague of this level kills at least each turn (confirmed: binary).
 int64_t plagueBase(int level) {
     static constexpr std::array<int64_t, 6> kBase{10, 50, 100, 150, 300, 500};
     return kBase[static_cast<size_t>(std::clamp(level, 1, 6) - 1)];
 }
 
-void cure(TurnContext& ctx, Colony& c) {
-    c.plagueLevel = 0;
-    ctx.log(c.owner, LogCategory::Events, std::format("Plague on {} cured", ctx.state.galaxy.object(c.planet).name), {},
-            locationOf(ctx.state.galaxy, c.planet), "PlagueCured");
-}
-
-// Returns false when the colony died out and was removed.
+// Returns false when the colony died out and was removed. A Medical Bay
+// cures in the depot check instead, after each step of a ship or base and in
+// the end-of-turn supply step (movement::detail::depotCheck, spec 03 §3.3,
+// confirmed: binary), not here.
 bool plague(TurnContext& ctx, Colony& c) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
@@ -144,9 +132,10 @@ bool plague(TurnContext& ctx, Colony& c) {
         c.plagueLevel = 0;
         return true;
     }
-    // No Plagues cures it the next time it would strike, with no loss.
-    if (r.hasTrait(s.empire(c.owner).race, "No Plagues") || medicalBayAt(r, s, c) >= c.plagueLevel) {
-        cure(ctx, c);
+    // No Plagues cures it the next time it would strike, with no loss and no
+    // entry (spec 02 §3, confirmed: binary).
+    if (r.hasTrait(s.empire(c.owner).race, "No Plagues")) {
+        c.plagueLevel = 0;
         return true;
     }
     const int64_t base = plagueBase(c.plagueLevel);
@@ -621,7 +610,7 @@ void applySystemAbilities(TurnContext& ctx, EmpireId e) {
                 g.millions += share;
             }
         }
-        if (c.plagueLevel > 0 && bestInSystem(r, s, e, sys, AbilityKind::PlaguePreventionSystem) >= c.plagueLevel) cure(ctx, c);
+        if (c.plagueLevel > 0 && bestInSystem(r, s, e, sys, AbilityKind::PlaguePreventionSystem) >= c.plagueLevel) curePlague(ctx, c);
         if (yearly) {
             SpaceObject& p = s.galaxy.object(planet);
             if (const int64_t v = bestInSystem(r, s, e, sys, AbilityKind::PlanetValueChangeSystem); v > 0)
@@ -631,6 +620,17 @@ void applySystemAbilities(TurnContext& ctx, EmpireId e) {
                 setMultipliedConditions(ctx, c, p.conditions.value() * Ext(100 + v) / Ext(100));
         }
     }
+}
+
+void curePlague(TurnContext& ctx, Colony& c, EmpireId by) {
+    c.plagueLevel = 0;
+    // "Plague Cured", in the Events category (spec 02 §3, confirmed: binary;
+    // the words are ours), to the empire that cured it and to the owner.
+    const EmpireId curer = by.valid() ? by : c.owner;
+    const std::string text = std::format("{} is free of the plague.", ctx.state.galaxy.object(c.planet).name);
+    const Location where = locationOf(ctx.state.galaxy, c.planet);
+    ctx.log(curer, LogCategory::Events, "Plague Cured", text, where, "PlagueCured");
+    if (c.owner != curer) ctx.log(c.owner, LogCategory::Events, "Plague Cured", text, where, "PlagueCured");
 }
 
 } // namespace opense4::game::economy

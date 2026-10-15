@@ -169,7 +169,7 @@ private:
         if (!where_) return out;
         for (const game::Vehicle* v : ownVehiclesAt(ui, *where_))
             if (listed(*v)) out.push_back(v);
-        sortScrapList(ui.state(), out, byClass_);
+        sortScrapList(ui.rules(), ui.state(), out, byClass_);
         return out;
     }
 

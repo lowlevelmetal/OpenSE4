@@ -32,8 +32,13 @@ bool exportAllowed(const ruleset::Settings& data);
 std::vector<ExportTable> weaponAndComponentTables(const game::Rules& r);
 
 // Writes each table to `dir` (created when missing), prefixed with `prefix`
-// (empty for the original's names); the paths written, in table order.
-std::expected<std::vector<std::filesystem::path>, std::string> writeExportTables(const std::filesystem::path& dir, std::string_view prefix,
-                                                                                const std::vector<ExportTable>& tables);
+// (empty for the original's names), each file on its own: one that cannot be
+// written does not stop the others (spec 06 §1.9, §7 Q83, confirmed: binary).
+// One result per table, in table order.
+struct ExportResult {
+    std::filesystem::path file;
+    bool ok = false;
+};
+std::vector<ExportResult> writeExportTables(const std::filesystem::path& dir, std::string_view prefix, const std::vector<ExportTable>& tables);
 
 } // namespace opense4::client::classic

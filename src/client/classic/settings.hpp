@@ -76,6 +76,18 @@ struct ClassicSettings {
     // the original says nothing then (spec 06 §1.9, §1.10.1). Options and
     // Combat Options, under OpenSE4. Off by default.
     bool tacticalShotNotes = false;
+    // "Explain failed orders" (Options, under OpenSE4): the orders the
+    // original fails without a word (no route, an unset waypoint, a warp point
+    // that is gone, a battle on entering a sector, a Drop with nothing to
+    // drop...) get a message box in a turn-based game or an "Unable to ..."
+    // log entry, for the turns this computer carries out
+    // (game::TurnContext::explainFailedOrders). Off by default, as in the
+    // original (spec 03 §8). `explain_failed_orders` in the file.
+    bool explainFailedOrders = false;
+    // "More in item reports" (Options, under OpenSE4): the Component Report
+    // adds OpenSE4's lines (Group, Limit, Requires, the mount's To Hit) after
+    // the original's (spec 06 §1.2). Off by default. `report_extras` in the file.
+    bool reportExtras = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

@@ -92,6 +92,7 @@ takes only Launch Units, Recover Units, Use Facility and Convert Resources.
 | `orders` | list of order | The new list (see [Orders](#orders)). |
 | `repeat` | bool | Repeat the list when it ends (false by default). |
 | `own_list` | bool | With `vehicle`: change only that vehicle's own list, even when it is in a fleet, as the Stellar Manipulation window does; the other members keep theirs. When false, a fleet member's orders go to its whole fleet. |
+| `hold` | bool | In a turn-based game, do not carry the list out now: it runs at its next run (the next order given without `hold`, or the start of the owner's next turn), as the points of a patrol route being picked. False by default. |
 
 ```json
 {"kind": "set_orders", "vehicle": 31, "orders": [{"kind": "move_to", "location": {"system": 4, "x": 6, "y": 6}}, {"kind": "sentry"}]}
@@ -100,15 +101,18 @@ takes only Launch Units, Recover Units, Use Facility and Convert Resources.
 ### `order_tagged`
 
 An order given to several vehicles at once, as when the player tags vehicles
-in a sector's list: the orders are added to the end of each vehicle's own
-list, a fleet member standing for its whole fleet. The vehicles must share a
+in a sector's list: the orders are worked out once, for the first vehicle
+tagged, and the same orders are added to the end of each vehicle's own list,
+a fleet member standing for its whole fleet. The vehicles must share a
 sector. In a turn-based game they then act at once as one group.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `vehicles` | list of vehicle id | The tagged vehicles, in the order they were tagged. |
-| `orders` | list of order | The orders to add. |
-| `repeat` | bool | Switch Repeat on in each list. |
+| `orders` | list of order | The orders to add (may be empty: then only the Repeat switches apply, and in a turn-based game the group runs). |
+| `repeat` | bool | Switch Repeat on in the first tagged vehicle's list (its fleet's lists, for a fleet member), as a patrol route that ends does; the other lists keep theirs. |
+| `toggle_repeat` | bool | Switch the first tagged vehicle's Repeat over (on when off, off when on), as Repeat Orders does with vehicles tagged. |
+| `hold` | bool | In a turn-based game, do not run the group now, as `set_orders`' `hold`. |
 
 ```json
 {"kind": "order_tagged", "vehicles": [31, 32], "orders": [{"kind": "attack", "vehicle": 77}]}

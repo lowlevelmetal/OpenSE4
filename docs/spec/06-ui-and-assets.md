@@ -135,7 +135,7 @@ simultaneous game is loaded from a saved game (Load Game, Resume Game, the Game 
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Damage, Launching, Formation); Add asks "Enter Strategy Name" (spec 04 §16, confirmed: binary) [T]. Copy and Remove are ours. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
 | Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. The original's Manual opens the installed `manual\SE4 Manual.htm` in the browser at once (confirmed: binary); ours opens OpenSE4's Manual window, and since 2026-10-14 the gap (slot 11) holds Original Manual, which opens the installed manual in the browser, when the install has one. | F1. |
-| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). Ours: a weapon whose type the mount does not take keeps its plain figures (inferred, §7 Q113). | Help; Create Design. |
+| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). Only a right click on a weapon opens its report (confirmed: binary, 2026-10-14; ours opened it on a left click too until then). Ours: a weapon whose type the mount does not take keeps its plain figures (inferred, §7 Q113). | Help; Create Design. |
 | Galaxy Map | Enlarged strategic map. | See §2.6. | Right-click the galaxy panel. |
 
 #### 1.2.1 Player Computer Control
@@ -371,7 +371,7 @@ reports render inside the right-hand panel (§2.5).
 | Race Report | Detail, Descr (free-text blocks), Race (characteristics, each with its level word as on Empire Setup's Characteristics page (spec 02 §9, confirmed: binary), traits), Tech (known tech). Detail (confirmed: binary): the race's 128×128 portrait at (0,0) with no flag; the empire's name in the Button face at y 4 from x 120, further left when long; for another empire, labels in #7D9FFF at x 130, Treaty (y 20), Trade (y 50) and Mood (y 80), with white values at x 140 15 px under each: our treaty with it by name in the treaty colours ("Unknown" with no contact; red for war, non-intercourse and no contact, yellow for none, non-aggression, subjugation and protectorate, green from trade alliance up), the trade percentage with "%" as in the Empires window, its mood word toward us; a conquered empire shows Treaty "Conquered" in white and "None" for Trade and Mood. For every empire, labels in #7D9FFF at x 4 with white values at x 140 on the same line: Age (y 134, the race-age word), Culture (148), Demeanor (162), Home Atmosphere (190), Home Planet Type (204), Race Directory (232, the race's art folder with a capital first letter); for our own, Experience Points (260); our own has no Treaty, Trade or Mood. The Tech page is headed "Known Technology" for another empire and "Technology used on our Ships" for our own, listing without repeats and sorted the technology areas of the components of that empire's designs the viewer has seen (all of ours for our own; medium confidence on the exact list). It opens from Empires, Communicate, population right-clicks and an object report's flag (§1.4 "Right-clicks"). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate, the main window, the Combat Piece Report) and closes with it; over a report popup it opens as a popup of its own. Esc closes it (inferred, as the Combat Piece Report). Since 2026-10-14 its Detail page follows the original's (§7 Q120), "Conquered" meaning an empire no longer alive (inferred); our Tech page still lists the empire's known areas with their levels, for our own empire and partners only. |
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
 | System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). Our client follows these places since 2026-10-04 and adds the type and the location as label lines beside the picture; the picture, opaque where a planet's portrait is keyed, sits at (0,0) just inside the panel's frame rail and is clipped there (v0.9.0 drew it 3 px higher, over the rail: GitHub issue #2); it wraps the description and every ability (a black hole's are long), and when they do not fit the panel (a long text, a larger Text size) the description and the abilities scroll together with the lists' arrow column from y 140 down (inferred: what the original does with text longer than its boxes is not described). |
-| Component / Facility / Ship Size / Formation reports | Cost with resource icons, size, damage resistance, vehicle types, weapon data including damage by range, abilities; formation diagram. |
+| Component / Facility / Ship Size / Formation reports | Cost with resource icons, size, damage resistance, vehicle types, weapon data including damage by range, abilities; formation diagram. The Component Report (confirmed: binary, 2026-10-14): beside the picture the component's description, then labelled lines in this order: Cost, Size, Damage Resistance, Supplies Used, Vehicle Types; Mount Used, when a mount applies (when exactly is medium confidence); for a weapon Weapon Type (with "(Speed N)" for a seeker), Can Target, Fire Rate, Damage Type, Seeker Dmg Res and Damage At Range; then Abilities. Ours follows since 2026-10-14 (`componentDetail` in `screens/item_reports.cpp`; the name above the description, Seeker Dmg Res for seekers only, Fire Rate as the reload number, the damage as a table: ours, inferred); before, it had its own labels and layout (Group, Mount, Structure, Supply Use, Vehicles, Limit, Requires, a Weapon section with Type, Targets, Damage, Reload and To Hit) and the description last. OpenSE4's option "More in item reports" (Options, off by default) adds Group, Limit, Requires and a mount's To Hit after the original's lines. |
 
 **Right-clicks inside a report's pages** (confirmed: binary; observed, spec 07 session 6).
 They work wherever the report appears: the main window's report panel, a report popup and
@@ -943,7 +943,10 @@ Other Settings.txt keys the client must honour (confirmed: binary):
 - `Allow Export of Weapon And Component Data`: when TRUE the Weapons Report gets an Export
   button, which writes four plain-text tables (weapons, components, weapon families,
   component families) to the SaveGame folder, each followed by a message titled "Export
-  Successful" naming the path. The original's files are `Weapons.txt`, `Comps.txt`,
+  Successful" naming the path. Each file is written on its own: one that cannot be written
+  gives a message saying it could not be exported, and the others are still written
+  (confirmed: binary, 2026-10-14; ours since then, `writeExportTables`, with our own words and
+  the title "Export Failed"; before, ours stopped at the first failure). The original's files are `Weapons.txt`, `Comps.txt`,
   `WeaponFamilies.txt` and `CompFamilies.txt`, every component of the data set in fixed-width
   columns described in §7 Q83 (confirmed: binary). Ours writes the same four files with those
   columns since 2026-10-03 (`help.cpp`, `src/client/classic/data_export.cpp`), into the
@@ -5305,7 +5308,9 @@ counterpart:
     for viewing only: a left-click on a row does nothing (normally it goes to the object
     and closes the window); this holds in the real game's Fleet Transfer too. In the
     simulator, Fleet Transfer itself lists the chosen side's ships and bases from the
-    setup (not its unit groups or planets) and that side's copied fleets.
+    setup (not its unit groups or planets) and that side's copied fleets, and a right click
+    on a fleet's row there opens no Fleet Report (confirmed: binary, 2026-10-14; ours opened
+    one until then, `fleet_transfer.cpp`).
 
     Since 2026-10-01 our client follows this (`screens/fleet_transfer.cpp`,
     `screens/ships.cpp`): the button is there in both cases and opens the real game's
@@ -5375,8 +5380,10 @@ counterpart:
 
     **Answer:** (confirmed: binary)
     - *Export.* The Weapons Report's Export button (slot 9, only with `Allow Export of Weapon
-      And Component Data`) writes four plain-text files into the save folder, each followed
-      by an "Export Successful" message naming the file, in this order: `Weapons.txt`,
+      And Component Data`) writes four plain-text files into the save folder, each on its
+      own and each followed by an "Export Successful" message naming the file (or one saying
+      that file could not be exported, the others still written; corrected 2026-10-14,
+      complete listing), in this order: `Weapons.txt`,
       `Comps.txt`, `WeaponFamilies.txt`, `CompFamilies.txt`. They list **every component of
       the data set** in data order, researched or not, with base values (no empire, no
       mount): the two weapon files every component that is a weapon, the two component files
@@ -5703,7 +5710,11 @@ choices (inferred):
       name. Design rows are 36 px: the lamp (General.bmp, 13×13; the selected design's green,
       the others' blue) at (4,11); the hull's picture at (21,0); the name in white at
       (61,−2); the hull's name in small type at (71,12); "Prototype" at (71,23), under the
-      hull, for a design never built. An obsolete design looks like any other.
+      hull, for a design never built, on every tab, the enemy tabs included (confirmed:
+      binary, 2026-10-14; ours showed it on the player's own tabs only until then; a
+      player's view of another empire's design has no statistics, so ours reads "never
+      built" there from the design's built-at-least-once mark, `Design::everBuilt`). An
+      obsolete design looks like any other.
     - *Note:* "(obsolete designs are deleted automatically)" in small #7D9FFF type at
       (16,450), just under the list.
     - *Detail:* a box outlined in #617BC2 from (269,58) to (573,461). Its top part (302×150
@@ -5798,7 +5809,12 @@ choices (inferred):
       list. The label reads "Components Available (<group>)"; the mount's name is drawn
       apart, to its right, at x 319.
     - *Names and Create Design:* the Design Name list shows every line of the name file in
-      file order, names in use included; without a file it is empty. A design without a name
+      file order, names in use included; without a file it is empty. The list reads the name
+      file each time the Design Name list window opens, from the designer's Design Name
+      button, and only then: when the empire has a names file set that cannot be opened, a
+      "Load Error" box says so and names the file (confirmed: binary, 2026-10-15; not at
+      startup, not when the designer opens, not when a name is proposed). Ours since then, in
+      our own words, showing the box instead of the empty list (inferred). A design without a name
       holds the words "Design Name" in its box, so a design made without typing is named
       "Design Name", and an erased name is accepted as empty. Create Design (the button keeps
       that caption when editing) refuses a design with any warning in a box titled "Design
@@ -5814,9 +5830,12 @@ choices (inferred):
     with the empire, `InterfaceOptions::designToHit`, `designCondensed`; the bonuses from
     `game::designToHit`), and the reordering, list windows, names and Create Design checks
     since 2026-10-11 (`condenseEntries`, `designNameClashes` in `screens/design_tools.cpp`;
-    `screens/design_pickers.cpp`). Our choices: the strip's arrows are the small left and
-    right arrows (`SmallLeftRightArrows.bmp`), 16 × 38, at its ends; a tile holds the 36 px
-    picture, the name and the size in small type; the Component Details box shows our compact
+    `screens/design_pickers.cpp`). The tiles of Components Available are all drawn alike,
+    nothing greyed whether the component fits or not, with a thin separator line between the
+    picture and the text (confirmed: binary, 2026-10-14; ours since then, the line in the
+    frame colour, inferred; before, ours dimmed the tiles that did not fit). Our choices: the
+    strip's arrows are the small left and right arrows (`SmallLeftRightArrows.bmp`), 16 × 38,
+    at its ends; a tile holds the 36 px picture, the name and the size in small type; the Component Details box shows our compact
     report; a design opened while Condensed View is on is reordered only at its next added
     component, the strip merging its identical entries meanwhile; the size list's Abilities
     box shows the hull under the pointer, else the design's, a design being edited keeps its
@@ -6368,6 +6387,13 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      first point as soon as it is clicked, and a point it reaches leaves the list before the
      route is closed. Does the original run the list after each point, or only when the route
      ends?
+
+     **Answer** (confirmed: binary, 2026-10-14; spec 03 §8 Set Patrol): only when the route
+     ends. In a turn-based game the points are only appended while the player picks; the click
+     on the object's own sector closes the route, Repeat goes on, and only then does the list
+     run, from its first order. Since 2026-10-14 our client appends each point held
+     (`cmd::SetOrders::hold`, `cmd::OrderTagged::hold`, save format 11), so nothing runs
+     before the route closes (`MainWindow::addPatrolPoint`, `finishPatrol`).
 117. **Held keys.** Which of the main window's keys repeat while held, and does End Turn?
      Ours repeats only the selection cycles and the movement log's single step (§3).
 118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is
@@ -6385,6 +6411,13 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
        which on the map?
      - Which own ships and bases the map's left list holds besides the colonies: ours lists
        those with a launcher, with units aboard, and the one the window opened with.
+       **Answer** (confirmed: binary, 2026-10-14): the empire's own objects in the sector
+       that hold cargo, have cargo space above 0, and are a colony or have a fighter,
+       satellite, mine or drone launch ability, in the system's object order (colonies and
+       vehicles mixed). Since 2026-10-14 ours follows (`launchCarriers` in
+       `screens/ships_logic.cpp`); before, it also listed ships without a bay that carried
+       units and the one the window opened with, tested no cargo space, and put colonies
+       first.
      - *The pickers of Load, Drop, Launch and Recover Remotely.* For Drop Cargo, does the
        kind picker come before or after the Pick Object window? Ours asks the destination
        first. Their titles and look are ours.

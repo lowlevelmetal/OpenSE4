@@ -34,6 +34,10 @@ struct SetOrders {           // replaces the order list (vehicle, fleet or plane
     // window's order, spec 06 §1.3). Otherwise a fleet member's orders go to
     // its fleet (spec 03 §8).
     bool ownList = false;
+    // A turn-based game does not carry the list out now: it runs at the
+    // list's next run (Set Patrol's points while the route is picked, spec
+    // 03 §8). Save format 11.
+    bool hold = false;
 };
 // A new fleet (spec 03 §9, confirmed: binary). The Fleet Transfer window's
 // form names no members: an empty fleet at `location`, which the window then
@@ -48,18 +52,27 @@ struct CreateFleet {
     Location location;           // the empty form's sector (format 10)
 };
 // An order given to the vehicles tagged in the report panel's list (spec 03
-// §8 "Tagged vehicles", confirmed: binary): `orders` are appended to the own
-// list of every tagged vehicle, in the order they were tagged, a fleet member
-// standing for every member at its fleet's location (game::taggedVehicles),
-// each list expanding them as cmd::SetOrders does; `repeat` (Set Patrol)
-// switches Repeat on in each of those lists. The vehicles named must share a
-// sector. In a turn-based game the orders then run at once, as one group of
+// §8 "Tagged vehicles", confirmed: binary): `orders` are worked out once, for
+// the first one tagged (composite orders expanded from where its list leaves
+// it, as cmd::SetOrders expands them), and the same orders are appended to the
+// own list of every tagged vehicle, in the order they were tagged, a fleet
+// member standing for every member at its fleet's location
+// (game::taggedVehicles). `repeat` (Set Patrol ending on the object's own
+// sector) switches Repeat on in the first tagged vehicle's list alone (its
+// fleet's lists at the location, for a fleet member); `toggleRepeat` (Repeat
+// Orders, save format 11) switches it on or off there, and `orders` may then
+// be empty; the other lists keep their Repeat. The vehicles named must share
+// a sector. In a turn-based game the orders then run at once, as one group of
 // every tagged vehicle acting through the first one (applyLive); in a
 // simultaneous game nothing else happens.
 struct OrderTagged {
     std::vector<VehicleId> vehicles;
     std::vector<Order> orders;
     bool repeat = false;
+    bool toggleRepeat = false;
+    // As cmd::SetOrders::hold: a turn-based game does not run the group now
+    // (save format 11).
+    bool hold = false;
 };
 struct JoinFleet { FleetId fleet; VehicleId vehicle; };
 struct LeaveFleet { VehicleId vehicle; };

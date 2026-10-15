@@ -351,6 +351,7 @@ public:
     // Movement phase only (start + 30 days), then dead vehicles are removed.
     void move(const movement::CombatHooks& hooks = {}) {
         TurnContext ctx{r_, s, {}, {}, {}};
+        ctx.explainFailedOrders = explainFailedOrders;
         movement::startTurn(ctx);
         movement::runMovementAndCombat(ctx, hooks);
         s.removeDeadVehicles();
@@ -398,6 +399,9 @@ public:
 
     GameState s;
     std::vector<MoodEvent> lastMoods;
+    // OpenSE4's "Explain failed orders" for move() (TurnContext::explainFailedOrders):
+    // off, as in the original, failures the original passes over say nothing.
+    bool explainFailedOrders = false;
 
 private:
     void sync() {

@@ -562,8 +562,10 @@ TEST_CASE("turn-based: a human left with units only is destroyed without the Los
 }
 
 TEST_CASE("turn-based: a failed order of the human whose turn it is is a message box; otherwise a log entry") {
-    // Spec 03 §8 (confirmed: binary for a move): a titled box at once and
-    // nothing logged; in a simultaneous game the minister's log entry.
+    // Spec 03 §8 (confirmed: binary): the original says nothing about a
+    // missing route. With OpenSE4's "Explain failed orders" a titled box comes
+    // at once and nothing is logged; in a simultaneous game the minister's log
+    // entry.
     {
         Duel d;
         const SystemId island = d.w.system("Island", 30, 30);   // no warp point leads there
@@ -572,7 +574,11 @@ TEST_CASE("turn-based: a failed order of the human whose turn it is is a message
         Order o;
         o.kind = OrderKind::MoveTo;
         o.location = at(island, 1, 1);
-        const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {o}));
+        const TurnResult silent = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {o}));
+        CHECK_FALSE(hasRejection(silent));
+        CHECK(silent.messages.empty());
+        CHECK(d.w.v(d.runner).orders.empty());
+        const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {o}), nullptr, {}, true);
         CHECK_FALSE(hasRejection(res));
         REQUIRE(res.messages.size() == 1);
         CHECK(res.messages.front().empire == kA);
@@ -590,7 +596,9 @@ TEST_CASE("turn-based: a failed order of the human whose turn it is is a message
         o.location = at(island, 1, 1);
         d.w.v(d.runner).orders = {o};
         const std::vector<EmpireOrders> given{EmpireOrders{kA, 0, {}}, EmpireOrders{kB, 0, {}}};
-        const TurnResult res = processTurn(d.r(), d.s(), given);
+        TurnOptions explain;
+        explain.explainFailedOrders = true;
+        const TurnResult res = processTurn(d.r(), d.s(), given, explain);
         CHECK(res.messages.empty());
         CHECK(d.w.logged(kA, "Unable to Move"));
     }
@@ -929,7 +937,7 @@ TEST_CASE("turn-based: an Attack order's approach asks like any step; entering t
     REQUIRE(d.s().vehicle(gunboat));
     CHECK(d.w.v(gunboat).location == at(d.a, 2, 0));
     CHECK(d.w.v(gunboat).orders.empty());
-    CHECK(d.w.logged(kA, "Combat on entering the sector."));
+    CHECK_FALSE(d.w.logged(kA, "Combat on entering the sector."));   // the battle is the news (spec 03 §8)
 }
 
 TEST_CASE("turn-based: the Attack order where the target is fights at once and is used up; sitting together starts nothing") {
@@ -1268,11 +1276,39 @@ TEST_CASE("simultaneous: an order to tagged vehicles is only appended to each li
     CHECK(w.v(one).orders == std::vector<Order>{moveTo(a, 5, 5)});
     CHECK(w.v(two).orders == std::vector<Order>{moveTo(a, 0, 9), moveTo(a, 5, 5)});
     CHECK(w.v(one).location == at(a, 0, 0));
-    // Set Patrol's: Repeat on in each list.
+    // Set Patrol's: Repeat on in the first tagged vehicle's list alone (spec 03 §8, confirmed: binary).
     CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {moveTo(a, 1, 1), moveTo(a, 2, 2)}, true})));
     CHECK(w.v(one).repeatOrders);
-    CHECK(w.v(two).repeatOrders);
+    CHECK_FALSE(w.v(two).repeatOrders);
     CHECK(w.v(one).orders.size() == 3);
+    CHECK(w.v(two).orders.size() == 4);
+    // Repeat Orders with vehicles tagged switches the first one's alone, and touches no list.
+    CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {}, false, true})));
+    CHECK_FALSE(w.v(one).repeatOrders);
+    CHECK_FALSE(w.v(two).repeatOrders);
+    CHECK(w.v(one).orders.size() == 3);
+    CHECK(w.v(two).orders.size() == 4);
+    CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{two, one}, {}, false, true})));
+    CHECK(w.v(two).repeatOrders);
+    CHECK_FALSE(w.v(one).repeatOrders);
+    // No orders and no Repeat to switch: nothing changes (in a turn-based game the group runs).
+    CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {}})));
+    CHECK(w.v(one).orders.size() == 3);
+}
+
+TEST_CASE("turn-based: orders given held run only at the list's next run") {
+    // Set Patrol's points while the route is picked (spec 03 §8, confirmed: binary).
+    Duel d;
+    resumeTurnBased(d.r(), d.s());
+    const Location start = d.w.v(d.runner).location;
+    cmd::SetOrders held{d.runner, {}, {moveTo(d.a, 9, 0)}, false};
+    held.hold = true;
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, held)));
+    CHECK(d.w.v(d.runner).location == start);
+    REQUIRE(d.w.v(d.runner).orders.size() == 1);
+    // The next order given runs the whole list.
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::SetOrders{d.runner, {}, {moveTo(d.a, 9, 0), moveTo(d.a, 9, 1)}, false})));
+    CHECK(d.w.v(d.runner).location != start);
 }
 
 TEST_CASE("turn-based: tagged orders and a fleet's new leader replay from an order file as they were given") {

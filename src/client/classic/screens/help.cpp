@@ -615,8 +615,9 @@ private:
             ImGui::TableNextRow(ImGuiTableRowFlags_None, ui.px(26));
             ImGui::TableNextColumn();
             ImGui::PushID(static_cast<int>(row));
-            const bool clicked = ImGui::Selectable("##w", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, ui.px(24)));
-            if (clicked || ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Component, c, entry.mount});
+            ImGui::Selectable("##w", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, ui.px(24)));
+            // Only a right click opens the weapon's report (spec 06 §1.2, confirmed: binary).
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Component, c, entry.mount});
             ImGui::SameLine(0, 0);
             image(ui, ui.art.component(comp.picture), {24, 24});
             ImGui::PopID();
@@ -672,15 +673,16 @@ private:
         if (d.button("Help Topics")) weapons_ = false;
     }
 
+    // Each of the four files is written on its own, each with its message:
+    // "Export Successful" naming it, or one saying it could not be exported,
+    // and the others are still written (spec 06 §1.9, §7 Q83, confirmed:
+    // binary; the words and the failure's title are ours).
     void exportTables(UiContext& ui) {
         exportQueue_.clear();
-        const auto written = writeExportTables(savesDir(), "", weaponAndComponentTables(ui.rules()));
-        if (!written) {
-            exportQueue_.emplace_back("Export Failed", written.error());
-            return;
+        for (const ExportResult& res : writeExportTables(savesDir(), "", weaponAndComponentTables(ui.rules()))) {
+            if (res.ok) exportQueue_.emplace_back("Export Successful", std::format("Exported to {}.", res.file.string()));
+            else exportQueue_.emplace_back("Export Failed", std::format("The file \"{}\" could not be exported.", res.file.string()));
         }
-        for (const std::filesystem::path& file : *written)
-            exportQueue_.emplace_back("Export Successful", std::format("Exported to {}.", file.string()));
     }
 
     // The export's messages, one after another.

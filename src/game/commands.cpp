@@ -280,12 +280,16 @@ struct Applier {
         return {};
     }
 
-    // Tagged vehicles (spec 03 §8, confirmed: binary): the orders are appended
-    // to each tagged vehicle's own list, in tag order, as cmd::SetOrders
-    // appends them; a fleet's members at its location each hold the copy. The
-    // checks come first, so the command changes every list or none.
+    // Tagged vehicles (spec 03 §8, confirmed: binary): the orders are worked
+    // out once, for the first one tagged, from where its list leaves it (an
+    // Explore picks one warp point for them all, a Colonize's Load Cargo goes
+    // to every list or to none as the first carries population or not), and
+    // the same orders are appended to each tagged vehicle's own list, in tag
+    // order; a fleet's members at its location each hold the copy. Repeat
+    // (Set Patrol's `repeat`, Repeat Orders' `toggleRepeat`) changes only the
+    // first one's list, or its fleet's lists at the location. The checks
+    // come first, so the command changes every list or none.
     R operator()(const cmd::OrderTagged& c) {
-        if (c.orders.empty()) return R::fail("No orders given");
         if (c.vehicles.empty()) return R::fail("No vehicles tagged");
         std::optional<Location> where;
         for (VehicleId id : c.vehicles) {
@@ -300,25 +304,30 @@ struct Applier {
                 return R::fail("Only colonies carry out that order");
             if (scrapWindowOrder(o.kind)) return R::fail("That order is given only in the Scrap window");
         }
-        std::vector<FleetId> fleetsDone;
+        const Vehicle& first = *s.vehicle(c.vehicles.front());
+        const Fleet* firstFleet = first.fleet.valid() ? s.fleet(first.fleet) : nullptr;
+        std::vector<Order> given = first.orders;
+        given.insert(given.end(), c.orders.begin(), c.orders.end());
+        const OrderContext ctx = firstFleet ? orderContextOf(s, *firstFleet, &first) : orderContextOf(s, first);
+        const std::vector<Order> full = expandGivenOrders(r, s, ctx, first.orders, given);
+        std::vector<Order> added(full.begin() + static_cast<std::ptrdiff_t>(first.orders.size()), full.end());
+        // Use Component in a turn-based game: each list is cleared first.
+        const bool cleared = clearBeforeUse(added, 0);
+        // The first one's Repeat as the command sets it: Set Patrol switches it
+        // on, Repeat Orders switches it over (for a fleet, from the fleet's).
+        const bool firstRepeats = firstFleet ? fleetRepeats(s, *firstFleet) : first.repeatOrders;
+        const bool firstRepeat = c.toggleRepeat ? !firstRepeats : (c.repeat || firstRepeats);
         for (VehicleId id : taggedVehicles(s, e, c.vehicles)) {
-            const Vehicle& v = *s.vehicle(id);
-            cmd::SetOrders one;
-            if (v.fleet.valid()) {
-                // Each member at the location holds a copy: one change for them all.
-                if (std::find(fleetsDone.begin(), fleetsDone.end(), v.fleet) != fleetsDone.end()) continue;
-                fleetsDone.push_back(v.fleet);
-                const Fleet& f = *s.fleet(v.fleet);
-                one.fleet = f.id;
-                one.orders = fleetOrders(s, f);
-                one.repeat = c.repeat || fleetRepeats(s, f);
-            } else {
-                one.vehicle = id;
-                one.orders = v.orders;
-                one.repeat = c.repeat || v.repeatOrders;
+            Vehicle& v = *s.vehicle(id);
+            const bool firstList = v.id == first.id || (firstFleet && v.fleet == firstFleet->id);
+            if (cleared) {
+                changeOrderList(v.orders, v.repeatOrders, v.repeatShift, added, std::nullopt, false);
+                continue;
             }
-            one.orders.insert(one.orders.end(), c.orders.begin(), c.orders.end());
-            if (R res = (*this)(one); !res.ok) return res;
+            std::vector<Order> own = v.orders;
+            const size_t held = own.size();
+            own.insert(own.end(), added.begin(), added.end());
+            changeOrderList(v.orders, v.repeatOrders, v.repeatShift, std::move(own), held, firstList ? firstRepeat : v.repeatOrders);
         }
         return {};
     }
@@ -352,6 +361,7 @@ struct Applier {
             f.location = c.location;
             f.minister = emp().ministersForNewVehicles;
             s.addFleet(std::move(f));
+            ++emp().fleetsCreated;   // every fleet made counts, whatever becomes of it (spec 03 §9)
             return {};
         }
         const Vehicle* first = ownVehicle(s, e, c.members.front());
@@ -372,6 +382,7 @@ struct Applier {
         f.leader = c.members.front();
         f.location = where;  // the fleet's own record of where it is (spec 03 §9)
         const FleetId id = s.addFleet(std::move(f)).id;
+        ++emp().fleetsCreated;
         // Joining a fleet clears the vehicle's list (spec 03 §9, §19 Q65).
         for (VehicleId v : c.members) {
             Vehicle& member = *s.vehicle(v);
@@ -1582,20 +1593,30 @@ bool spaceObjectNameInUse(const GameState& s, std::string_view name) {
 }
 
 std::string defaultFleetName(const GameState& s, EmpireId empire) {
+    // The n-th name (spec 03 §9, confirmed: binary): the Greek word for n up
+    // to 10; for 11 to 100 the word for n div 10, a space and the word for
+    // n - 10; only words 1 to 10 exist and any other number gives an empty
+    // word, so the 20th is "Beta Kappa Fleet" and the 21st "Beta  Fleet" with
+    // two spaces. Above 100 three words the same way: the word for n div 100,
+    // the word for (n - 100) div 10 and the word for n - 100 (inferred).
     static constexpr std::array<std::string_view, 10> kLetters{"Alpha", "Beta", "Gamma", "Delta", "Epsilon",
                                                                "Zeta",  "Eta",  "Theta", "Iota",  "Kappa"};
-    auto nameOf = [](size_t n) -> std::string {
-        if (n <= kLetters.size()) return std::format("{} Fleet", kLetters[n - 1]);
-        if (n <= kLetters.size() * (kLetters.size() + 1))
-            return std::format("{} {} Fleet", kLetters[(n - 1) / kLetters.size() - 1], kLetters[(n - 1) % kLetters.size()]);
-        return std::format("Fleet {}", n);
+    auto word = [](uint64_t k) -> std::string_view { return k >= 1 && k <= kLetters.size() ? kLetters[k - 1] : std::string_view{}; };
+    auto nameOf = [&](uint64_t n) -> std::string {
+        if (n <= 10) return std::format("{} Fleet", word(n));
+        if (n <= 100) return std::format("{} {} Fleet", word(n / 10), word(n - 10));
+        return std::format("{} {} {} Fleet", word(n / 100), word((n - 100) / 10), word(n - 100));
     };
     auto inUse = [&](const std::string& name) {
         return std::any_of(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == empire && f.name == name; });
     };
-    size_t n = static_cast<size_t>(std::count_if(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == empire; })) + 1;
-    while (inUse(nameOf(n))) ++n;
-    return nameOf(n);
+    // From the empire's count of fleets ever created plus one, moving on past
+    // names in use (confirmed: binary). OpenSE4 stops looking after 100,000
+    // names and numbers the fleet instead (its own guard).
+    const uint64_t created = empire.valid() && empire.index() < s.empires.size() ? s.empire(empire).fleetsCreated : 0;
+    for (uint64_t n = created + 1; n <= created + 100'000; ++n)
+        if (const std::string name = nameOf(n); !inUse(name)) return name;
+    return std::format("Fleet {}", created + 1);
 }
 
 Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {

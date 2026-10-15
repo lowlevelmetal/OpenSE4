@@ -71,6 +71,13 @@ void spendSupply(const Rules& r, const GameState& s, Vehicle& v, int64_t amount)
 // Refills to the maximum (drones never; satellites and mines have no supply)
 // and caps the movement left (capMovement, spec 03 §6.1).
 void refillSupply(const Rules& r, const GameState& s, Vehicle& v);
+// The depot check (spec 03 §3.3, §7, confirmed: binary), after every step and
+// daily action and in the end-of-turn supply step: a ship or base that is not
+// mothballed cures the plague of every colony in its sector, its owner's or of
+// an empire whose treaty lets it use that colony as a depot, when its best
+// `Medical Bay` is at least the plague's level; and the vehicle is refilled
+// when its sector holds a depot it may use (resupplyDepotAt, refillSupply).
+void depotCheck(TurnContext& ctx, Vehicle& v);
 // Unlimited supply back at its marker; otherwise supply clamped to the capacity.
 void holdSupply(const Rules& r, const GameState& s, Vehicle& v);
 // Fleet pooling (§7): equal shares of the total, each capped by the member's
@@ -96,8 +103,10 @@ bool decloakSweepers(const Rules& r, GameState& s, Location where, std::span<con
 
 // ---- Colonization (spec 03 §8) --------------------------------------------------------------------
 // `colonizer` founds a colony on `planet`, which it has checked it may: the
-// ship is consumed and its people and cargo land (movement_upkeep.cpp).
-void foundColony(TurnContext& ctx, VehicleId colonizer, ObjectId planet);
+// ship is consumed and its people and cargo land by the Drop Cargo rules,
+// the rest lost (movement_upkeep.cpp). True when something of a kind aboard
+// found no room at all (the Drop Cargo box, spec 03 §8).
+bool foundColony(TurnContext& ctx, VehicleId colonizer, ObjectId planet);
 // The colonizer's own part of the Colonize tests: the `Colonize Planet - *`
 // ability matching the planet's surface, and the game options that exclude
 // it (empty = it could settle that kind of planet). Nothing about the
@@ -122,15 +131,22 @@ CargoWhat cargoWhat(const Order& o);
 // The designs of `c`'s unit stacks that `what` takes, in cargo order.
 std::vector<DesignId> designsIn(const Rules& r, const GameState& s, const Cargo& c, const CargoWhat& what);
 
-// Load/drop at the vehicle's sector: own colonies first, then own ships and
-// bases outside `group` (troops are also dropped onto a hostile colony to
-// invade it). amount < 0: as much as possible.
-int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group = {});
+// Load at the vehicle's sector, as far as its room allows: from own colonies
+// first, in the system's object order, then from own bases that are not
+// cloaked, in object order; never from ships (spec 03 §8). amount < 0: as
+// much as possible. `noRoom` (if given) is set when nothing came aboard
+// although a source held something of the kind: the hold had no room.
+int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, bool* noRoom = nullptr);
+// Drop at the vehicle's sector: own colonies first, then own ships and bases
+// outside `group` (troops are also dropped onto a hostile colony to invade
+// it). amount < 0: as much as possible. `noRoom` (if given) is set when
+// nothing left the ship although it held something of the kind and a place
+// to drop it was there: that place had no room.
 // `colony` or `holder`: the destination the player picked (spec 06 §2.9):
 // only that own colony or vehicle takes the cargo; with neither, every own
 // colony there, enemy planets for troops, then every own holder.
 int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group = {},
-                  ObjectId colony = {}, VehicleId holder = {});
+                  ObjectId colony = {}, VehicleId holder = {}, bool* noRoom = nullptr);
 // Colony ships take colonists from an own colony where the order starts.
 int64_t loadColonists(TurnContext& ctx, VehicleId id);
 

@@ -557,6 +557,8 @@ bool ClassicSession::showsBattles() const { return kind_ == SessionKind::Local |
 
 game::LiveOptions ClassicSession::liveOptions() {
     game::LiveOptions o;
+    // OpenSE4's "Explain failed orders" (Options), for the orders this computer carries out.
+    o.explainFailedOrders = settings().explainFailedOrders;
     // Local and hotseat games stop when no human is left (spec 06 §1.2.1).
     o.endWithoutHumans = kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat;
     // The autosave: at the start of the first human player's turn of each new
@@ -689,7 +691,8 @@ void ClassicSession::startJob(const std::vector<game::BattleAnswer>* answers) {
     std::vector<game::EmpireOrders> orders = callOrders_;
     std::optional<std::vector<game::BattleAnswer>> given;
     if (answers) given = *answers;
-    job->thread = std::thread([j, rules = std::move(rules), orders = std::move(orders), given = std::move(given)] {
+    const bool explain = settings().explainFailedOrders;   // read here: the settings belong to this thread
+    job->thread = std::thread([j, rules = std::move(rules), orders = std::move(orders), given = std::move(given), explain] {
         try {
             // The engine's frames on a stack as large as the script players' own.
             sdk::Worker worker;
@@ -701,6 +704,7 @@ void ClassicSession::startJob(const std::vector<game::BattleAnswer>* answers) {
                     j->stepsDone.store(done);
                 };
                 options.movementStep = [j](const game::MovementStep& st) { j->steps.push_back(st); };
+                options.explainFailedOrders = explain;
                 j->result = game::processTurn(*rules, j->state, orders, options);
             });
         } catch (...) {
@@ -754,13 +758,16 @@ void ClassicSession::runCall() {
     };
     try {
         switch (call_) {
-            case Call::Issue: res = game::applyLive(*rules_, state_, player_, *callCommand_, answers, observe); break;
+            case Call::Issue:
+                res = game::applyLive(*rules_, state_, player_, *callCommand_, answers, observe, settings().explainFailedOrders);
+                break;
             case Call::EndTurn: res = game::endPlayerTurn(*rules_, state_, player_, live(), answers); break;
             case Call::Resume: res = game::resumeTurnBased(*rules_, state_, live(), answers); break;
             case Call::Process: {
                 game::TurnOptions options;
                 options.battles = answers;
                 options.movementStep = observe;
+                options.explainFailedOrders = settings().explainFailedOrders;
                 res = game::processTurn(*rules_, state_, callOrders_, options);
                 break;
             }
@@ -1090,6 +1097,7 @@ bool ClassicSession::replayLastTurn(const std::function<void(int day, const game
     game::TurnOptions options;
     options.movementDay = day;
     options.movementStep = step;
+    options.explainFailedOrders = settings().explainFailedOrders;
     game::processTurn(*rules_, again, turnStartOrders_, options);
     return true;
 }
@@ -1134,8 +1142,10 @@ void ClassicSession::replaceState(game::GameState s) {
 void ClassicSession::simulateTurns(int n) {
     if (kind_ == SessionKind::Pbem) return;  // only the host plays PBEM turns
     // A turn-based game plays whole game turns the same way (processTurn).
+    game::TurnOptions options;
+    options.explainFailedOrders = settings().explainFailedOrders;
     for (int i = 0; i < n && !state_.gameOver; ++i) {
-        const game::TurnResult result = game::processTurn(*rules_, state_, {});
+        const game::TurnResult result = game::processTurn(*rules_, state_, {}, options);
         if (kind_ != SessionKind::NetworkClient) writePlayerRecords(result.records);
     }
     if (n > 0 && turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();

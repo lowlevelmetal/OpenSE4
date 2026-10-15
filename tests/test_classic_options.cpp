@@ -235,6 +235,15 @@ TEST_CASE("classic options: the per-computer settings keep the Options window's 
     CHECK(settingsFromToml(settingsToToml(s)).animateOthersMoves);
     s.animateOthersMoves = false;
     CHECK_FALSE(settingsFromToml(settingsToToml(s)).animateOthersMoves);
+    // OpenSE4's "Explain failed orders" and "More in item reports": off by default, kept.
+    CHECK_FALSE(s.explainFailedOrders);
+    CHECK_FALSE(s.reportExtras);
+    s.explainFailedOrders = true;
+    s.reportExtras = true;
+    CHECK(settingsFromToml(settingsToToml(s)).explainFailedOrders);
+    CHECK(settingsFromToml(settingsToToml(s)).reportExtras);
+    s.explainFailedOrders = false;
+    s.reportExtras = false;
     // New empires start with the Empire Options defaults of spec 06 §1.9.
     const InterfaceOptions o;
     CHECK(o.confirmEndTurn);

@@ -34,8 +34,12 @@ inline constexpr size_t kMaxProjects = 12;
 // Every point pool (resources, research, intelligence) is capped at this
 // when income is added (spec 05 §8, confirmed: binary).
 inline constexpr int64_t kPoolCap = 2'000'000'000;
-// Ancient ruins: draws of a random tech area per advance (spec 05 §1.2).
-inline constexpr int kRuinsDraws = 1000;
+// Ancient ruins: draws of a random tech area per advance, and the draws
+// within which a researchable area is granted; one found on a later draw
+// ends the draws and is thrown away (spec 05 §1.2, spec 03 §3.3, confirmed:
+// binary).
+inline constexpr int kRuinsDraws = 1001;
+inline constexpr int kRuinsGrantDraws = 999;
 
 // RP to reach `level` in an area under this game's Technology Cost option.
 int64_t levelCost(const Rules& r, const GameState& s, ruleset::TechAreaId area, int level);
@@ -89,7 +93,7 @@ void grantLevel(TurnContext& ctx, EmpireId e, ruleset::TechAreaId area, int newL
 bool analyzeLevel(TurnContext& ctx, EmpireId e, ruleset::TechAreaId area);
 // Ancient ruins (spec 05 §1.2): `count` advances; for each, up to kRuinsDraws
 // uniform draws among all tech areas until one is researchable, which gains
-// one level.
+// one level when it came within the first kRuinsGrantDraws.
 void grantRandomAdvances(TurnContext& ctx, EmpireId e, int count, Rng& rng, std::string_view source);
 // Names of items (components, facilities, hulls, intel projects) that
 // require exactly this level of the area.

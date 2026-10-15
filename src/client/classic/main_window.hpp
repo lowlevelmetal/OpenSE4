@@ -156,8 +156,10 @@ private:
     void chooseFormation(UiContext& ui);
     void chooseStrategy(UiContext& ui, game::FleetId fleet);
     void giveOrder(UiContext& ui, game::Order o);
-    // Orders for the tagged group, as one cmd::OrderTagged; `repeat` switches Repeat on (Set Patrol).
-    void giveTagged(UiContext& ui, std::vector<game::Order> orders, bool repeat);
+    // Orders for the tagged group, as one cmd::OrderTagged; `repeat` switches
+    // Repeat on in the first tagged list (Set Patrol), `toggleRepeat` over
+    // (Repeat Orders).
+    void giveTagged(UiContext& ui, std::vector<game::Order> orders, bool repeat, bool toggleRepeat = false);
     void replaceOrders(UiContext& ui, std::vector<game::Order> orders, bool repeat);
     void orderDone();  // the tagged group dissolves after an order
     void startPick(UiContext& ui, Pick p, std::string prompt);
@@ -180,12 +182,20 @@ private:
     void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c);
     void drawPickObject(UiContext& ui);
     // Set Patrol (spec 03 §8, confirmed: binary): each point clicked appends
-    // a Move To at once; a click on the object's own sector appends that one
-    // too and ends the route with Repeat on, or clears a list of one order.
-    // Enter or a right click also ends it (ours): Repeat on, a list of one
-    // order kept as a plain move.
+    // its Move To at once, held (cmd::SetOrders::hold), so that a turn-based
+    // game runs nothing before the route is closed; a click on the object's
+    // own sector adds that one too and closes the route with Repeat on (the
+    // first tagged vehicle's alone), and the list runs, or clears the lists
+    // when the first one's then holds exactly one order. Enter or a right
+    // click also ends it (ours): Repeat on, a list of one order kept as a
+    // plain move. Esc, another order or the turn's end leaves the points as
+    // plain moves (abandonPatrol).
     void addPatrolPoint(UiContext& ui, game::Location where);
     void finishPatrol(UiContext& ui, bool atHome = false);
+    void abandonPatrol(UiContext& ui);
+    // The list of the object the orders go to first (the first tagged
+    // vehicle's, a fleet's, the selected vehicle's) and its Repeat.
+    std::pair<std::vector<game::Order>, bool> firstOwnerList(UiContext& ui) const;
     std::optional<game::Location> patrolHome(UiContext& ui) const;
     std::string patrolPrompt() const;
     // The location picks of Alt+0..9 (`slot`, waypoint slot+1), Ctrl+T and

@@ -538,6 +538,12 @@ TEST_CASE("movement: explore picks the nearest unexplored warp point and skips c
     w.move();
     CHECK(w.v(s3).orders.empty());
     CHECK(w.v(s3).location == at(a, 6, 6));
+    // Silent in the original; OpenSE4's "Explain failed orders" writes a note (spec 03 §8).
+    CHECK_FALSE(w.logged(kA, "nothing left to explore"));
+    w.order(s3, mk(OrderKind::Explore));
+    w.explainFailedOrders = true;
+    w.move();
+    w.explainFailedOrders = false;
     CHECK(w.logged(kA, "nothing left to explore"));
 }
 
@@ -717,6 +723,7 @@ TEST_CASE("movement: resupply at own and allied depots, also when passing throug
     const SystemId la = lone.system("L");
     const VehicleId stray = lone.spawn(lone.ship(kA, "Stray", 3), at(la, 0, 0));
     lone.order(stray, mk(OrderKind::Resupply));
+    lone.explainFailedOrders = true;   // OpenSE4's note; the original says nothing (spec 03 §8)
     lone.move();
     CHECK(lone.v(stray).orders.empty());
     CHECK(lone.logged(kA, "resupply depot"));
@@ -855,6 +862,7 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         }
         void run(bool refill = true) {
             TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+            ctx.explainFailedOrders = w.explainFailedOrders;
             if (refill) movement::startTurn(ctx, kA);
             movement::runLive(ctx, movement::LiveMove{kA}, spy.hooks());
             w.s.removeDeadVehicles();
@@ -903,6 +911,7 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         const VehicleId picket = picketAt(l, 5, 5);
         l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
         l.w.v(gunboat).movement = 0;
+        l.w.explainFailedOrders = true;   // OpenSE4's note; the original says nothing (spec 03 §8)
         l.run(false);
         CHECK(l.spy.asked.empty());
         CHECK(l.w.v(gunboat).orders.empty());
@@ -920,7 +929,8 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         REQUIRE(l.spy.fought.size() == 1);
         CHECK(l.w.v(gunboat).location == at(l.a, 5, 5));
         CHECK(l.w.v(gunboat).orders.empty());
-        CHECK(l.w.logged(kA, "Combat on entering the sector."));
+        // The battle is the news: the original says nothing more (spec 03 §8).
+        CHECK_FALSE(l.w.logged(kA, "Combat on entering the sector."));
     }
     SUBCASE("the Attack goes to the sector its target was in when given and attacks there") {
         // Spec 03 §8: Move To the target's sector plus an Attack there.
@@ -1156,11 +1166,12 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     // same action (spec 03 §6.3, §8).
     CHECK(w.v(watch).orders.empty());
     CHECK(w.v(watch).location == at(a, 10, 9));
-    CHECK(w.logged(kA, "enemy sighted"));
+    CHECK_FALSE(w.logged(kA, "enemy sighted"));   // a Sentry ends silently (spec 03 §8, confirmed: binary)
 
     // Low supplies end it too.
     const VehicleId thirsty = w.spawn(w.ship(kA, "Thirsty", 2), at(b, 3, 3));
     w.order(thirsty, mk(OrderKind::Sentry));
+    w.explainFailedOrders = true;   // OpenSE4's note of why it ended
     w.move();
     CHECK(w.v(thirsty).orders.empty());
     CHECK(w.logged(kA, "supplies low"));
@@ -1408,6 +1419,7 @@ TEST_CASE("movement: a Join Fleet order chases the fleet and joins where it stan
     fuel(w, late);
     w.order(late, mk(OrderKind::JoinFleet, {}, {}, {}, {}, static_cast<int>(fleet.value)));
     disbandFleet(w.s, fleet);
+    w.explainFailedOrders = true;   // OpenSE4's option: the failure explained
     w.move();
     CHECK(w.v(late).orders.empty());
     CHECK(w.v(late).location == at(a, 0, 9));
@@ -1509,6 +1521,13 @@ TEST_CASE("movement: unreachable destinations, immobile vehicles and waypoints")
     w.move();
     CHECK(w.v(ship).orders.empty());
     CHECK(w.v(ship).location == at(a, 0, 0));
+    // The original says nothing about a missing route (spec 03 §8, confirmed:
+    // binary); OpenSE4's "Explain failed orders" writes why.
+    CHECK(w.s.empire(kA).log.empty());
+    w.order(ship, moveTo(b, 3, 3));
+    w.explainFailedOrders = true;
+    w.move();
+    CHECK(w.v(ship).orders.empty());
     CHECK(w.logged(kA, "No known route"));
 
     const VehicleId base = w.spawn(w.design(kA, "Post", "Test Station", {"Test Bridge"}), at(a, 5, 5));
@@ -1592,7 +1611,15 @@ TEST_CASE("movement: load and drop cargo orders") {
     w.move();
     CHECK_FALSE(w.logged(kA, "Load Cargo order cancelled"));
     CHECK(w.v(carrier).location == at(a, 8, 7));
+    // Nowhere to drop: the order fails, without a word in the original
+    // (spec 03 §8); OpenSE4's "Explain failed orders" logs why.
     w.order(carrier, mk(OrderKind::DropCargo, {}, {}, {}, fighter, -1));
+    w.order(carrier, moveTo(a, 9, 7));
+    w.move();
+    CHECK(w.v(carrier).orders.empty());
+    CHECK_FALSE(w.logged(kA, "Unable to Drop Cargo"));
+    w.order(carrier, mk(OrderKind::DropCargo, {}, {}, {}, fighter, -1));
+    w.explainFailedOrders = true;
     w.move();
     CHECK(w.logged(kA, "Unable to Drop Cargo"));
     CHECK(w.v(carrier).cargo.unitCount(fighter) == 3);
@@ -1766,6 +1793,7 @@ TEST_CASE("movement: fighters cannot use warp points") {
     const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
     const VehicleId group = w.spawn(fighter, at(a, 6, 6));
     // A Move To into another system travels to the warp point and fails there (spec 03 §6.2).
+    w.explainFailedOrders = true;   // OpenSE4's option: the failure explained
     w.order(group, moveTo(b, 1, 6));
     w.move();
     CHECK(w.v(group).orders.empty());
@@ -1858,6 +1886,7 @@ TEST_CASE("movement: cloak and decloak orders") {
 
     const VehicleId plain = w.spawn(w.ship(kA, "Plain", 2), at(a, 1, 1));
     w.order(plain, mk(OrderKind::Cloak));
+    w.explainFailedOrders = true;   // OpenSE4's option: the failure explained
     w.move();
     CHECK(w.v(plain).status == VehicleStatus::Normal);
     CHECK(w.logged(kA, "cloaking device"));
@@ -2641,7 +2670,10 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     CHECK(c->foundedTurn == w.s.turn);
     CHECK(w.s.vehicle(ship) == nullptr);
     CHECK(hasMood(w.lastMoods, kA, "Any Planet Colonized"));
-    CHECK(w.logged(kA, "colonized"));
+    // "New Colony in <system>", a Misc entry (spec 03 §8, confirmed: binary).
+    REQUIRE_FALSE(w.s.empire(kA).log.empty());
+    CHECK(w.s.empire(kA).log.back().title == "New Colony in A");
+    CHECK(w.s.empire(kA).log.back().category == LogCategory::Misc);
     REQUIRE_FALSE(w.s.empire(kA).historyEvents.empty());
     CHECK(w.s.empire(kA).historyEvents.back().text == std::format("Colonized {}", w.s.galaxy.object(target).name));
     CHECK(w.s.empire(kA).historyEvents.back().empire == kA);
@@ -2933,7 +2965,11 @@ TEST_CASE("movement: ruins give technology; automatic colonists are added") {
     CHECK(parseAbilityKind(w.s.galaxy.object(ruin).abilities[0].type) == AbilityKind::AncientRuinsUnique);
     REQUIRE(w.s.colony(ruin));
     CHECK(w.s.colony(ruin)->totalPopulation() == 1 + 5);
-    CHECK(w.logged(kA, "Ancient ruins"));
+    // "Ruins Discovered", a Misc entry (spec 03 §3.3, confirmed: binary).
+    const auto ruinsEntry = std::find_if(w.s.empire(kA).log.begin(), w.s.empire(kA).log.end(),
+                                         [](const LogEntry& l) { return l.title == "Ruins Discovered"; });
+    REQUIRE(ruinsEntry != w.s.empire(kA).log.end());
+    CHECK(ruinsEntry->category == LogCategory::Misc);
 
     // Unique ruins alone: the unique area is added and every area of that
     // unique id gains a level, requirements unchecked; then they are used up.
@@ -3389,7 +3425,7 @@ TEST_CASE("movement: a failed order clears every fleet member's list and switche
         CHECK_FALSE(w.v(id).repeatOrders);
     }
     CHECK(w.v(one).location == at(a, 1, 0));
-    CHECK(w.logged(kA, "No known route"));
+    CHECK_FALSE(w.logged(kA, "No known route"));   // the original says nothing (spec 03 §8)
 
     // A done order stays at the end with Repeat on (the list cycles).
     const VehicleId solo = w.spawn(w.ship(kA, "Solo", 2, {"Test Quantum Reactor"}), at(a, 6, 6));
@@ -3411,7 +3447,9 @@ TEST_CASE("movement: done orders chain within one action; a vehicle with no move
     w.order(base, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, 1));
     w.order(base, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, 1));
     w.order(base, moveTo(a, 5, 5));  // needs movement: fails (a base cannot move)
+    w.explainFailedOrders = true;   // OpenSE4's option: the failure explained
     w.move();
+    w.explainFailedOrders = false;
     CHECK(w.v(base).orders.empty());
     CHECK(w.v(base).cargo.unitCount(fighter) == 0);
     CHECK(w.logged(kA, "It cannot move"));
@@ -3568,7 +3606,9 @@ TEST_CASE("movement: warp links work both ways; only the first 10 warp points of
     w.s.empire(kB).kind = PlayerKind::Neutral;
     const VehicleId drifter = w.spawn(w.ship(kB, "Stay Home", 2), at(a, 12, 6));
     w.order(drifter, mk(OrderKind::Warp, {}, ab));
+    w.explainFailedOrders = true;   // OpenSE4's option: the failure explained
     w.move();
+    w.explainFailedOrders = false;
     CHECK(w.v(drifter).location == at(a, 12, 6));
     CHECK(w.logged(kB, "Neutral empires cannot use warp points"));
     // A neutral empire a human plays stays neutral (spec 06 §7 Q84).
@@ -4320,6 +4360,7 @@ TEST_CASE("movement: in-system steps are greedy and re-chosen around hazards and
     const VehicleId stuck = m.spawn(m.ship(kA, "Stuck", 3), at(ma, 0, 0));
     fuel(m, stuck);
     m.order(stuck, moveTo(ma, 0, 12));
+    m.explainFailedOrders = true;   // OpenSE4's option: the failure explained
     m.move();
     CHECK(m.v(stuck).location == at(ma, 0, 0));
     CHECK(m.v(stuck).orders.empty());
@@ -4419,6 +4460,7 @@ TEST_CASE("movement: the Ship Orders options empty every member's list; a turn-b
         fuel(t.w, ship);
         t.w.give(ship, {moveTo(t.b, 4, 6)});
         TurnContext ctx{r, t.w.s, {}, {}, {}};
+        ctx.explainFailedOrders = true;   // OpenSE4's note; the original clears silently (spec 03 §6.4)
         movement::startTurn(ctx, kA);
         movement::runLive(ctx, movement::LiveMove{kA});
         CHECK(t.w.v(ship).location == at(t.b, 2, 6));

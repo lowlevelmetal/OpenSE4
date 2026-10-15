@@ -628,7 +628,9 @@ system is added each turn to every colony of the owner there. Negative values do
   round(cost × P %) per resource, P being the larger of `Scrap Facility Percent Returned` and
   the best `Resource Reclamation` in the sector (§6.6). Only when it is not carried out at
   the player's command (a simultaneous game's turn processing) does the Planet minister
-  report the abandonment in the log, with a sentence more when the facilities were scrapped.
+  report the abandonment in the log, titled "Planet Abandoned", category Misc, with a
+  sentence more when the facilities were scrapped (title and category confirmed: binary,
+  2026-10-14; the words are ours, and before then ours was titled "<planet> abandoned").
   Our engine follows this since 2026-10-13 (`cmd::AbandonPlanet` with `scrapFacilities`,
   `OrderKind::Abandon`, movement's `abandon`): it used to abandon at once in both turn
   styles after scrapping the facilities one command at a time, and always wrote the entry.
@@ -655,11 +657,19 @@ system is added each turn to every colony of the owner there. Negative values do
   and the colony is removed (§2).
 - A plagued colony does not grow, and each turn it adds `Planet Plagued` to its anger
   change (§4).
-- The `No Plagues` trait cures the plague the next time it would strike, with no loss.
+- The `No Plagues` trait cures the plague the next time it would strike, with no loss and no
+  log entry; this is the only test the plague step makes (confirmed: binary, 2026-10-15; ours
+  wrote a "cured" entry until then).
 - Each turn, the best `Plague Prevention - System` cures every colony of the owner in
   that system whose level is at most its Val1.
 - A Medical Bay cures plagues on your own planets and on allies' planets (Military
-  Alliance or better) [H].
+  Alliance or better): not in the plague step but in the depot check, after every step of
+  the ship or base and in its owner's end-of-turn supply step (spec 03 §3.3; confirmed:
+  binary, 2026-10-14). That cure writes "Plague Cured", category Events, to the curing
+  empire and also to the colony's owner when that is another empire; the original's other
+  cures (gifts, intelligence, events) go through it too (confirmed: binary, 2026-10-15).
+  Since 2026-10-14 ours follows (`movement_util.cpp` `depotCheck`, `economy::curePlague`,
+  whose entry is in our words; `Plague Prevention - System` writes it too, inferred).
 
 ---
 
@@ -1543,7 +1553,10 @@ counting, and a wrong one shows "Invalid Password" (spec 08 §13.4, confirmed: b
     survives, units stored on planets or carried by ships, mines outside a battle, ground
     combat, events and hazards;
   - each finished facility item adds its count;
-  - each ship built adds its hull's tonnage div 10; units add nothing.
+  - each ship built adds its hull's tonnage div 10; units add nothing;
+  - each colony founded by the Colonize order adds 100; no other way of gaining a colony
+    founds one this way (spec 03 §8) (confirmed: binary). Since 2026-10-14 ours follows
+    (`movement_upkeep.cpp` `colonize`); before, colonization gave nothing.
 - Race age is not stored; it is a label read off the experience: up to 5,000 Newborn,
   10,000 Infantile, 50,000 Young, 200,000 Moderate, 1,000,000 Old, 10,000,000 Ancient,
   100,000,000 God-like, 400,000,000 Stellar Ancients, and above that First Ones.
@@ -1678,8 +1691,9 @@ is on (confirmed: binary).
 
 **Minister options**
 - "Automatically use Individual Ministers for newly built vehicles" turns the flag on for
-  vehicles and launched units as they appear (confirmed: binary). The manual says it
-  also covers new colonies.
+  vehicles and launched units as they appear, and for colonies founded by the Colonize order,
+  as the manual says (confirmed: binary). Since 2026-10-14 ours follows for colonies too
+  (`movement_upkeep.cpp` `colonize`); before, a new colony's flag was always off.
 - The option that forbids AI changes in a simultaneous game: when the host covers this
   player's missed turn, the stand-in changes nothing (confirmed: binary).
 - Bulk buttons (confirmed: binary):

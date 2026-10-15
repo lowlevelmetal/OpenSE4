@@ -593,7 +593,7 @@ private:
             rec.leader = vehicleId(f.leader);
             x.fleets.push_back(std::move(rec));
         }
-        x.fleetsCreated = clampWord(static_cast<int64_t>(x.fleets.size()));
+        x.fleetsCreated = clampWord(static_cast<int64_t>(e.fleetsCreated));   // the fleets ever created (§3.6.12)
         // Strategies (§3.6.13).
         for (size_t k = 0; k < e.strategies.size(); ++k) x.strategies.push_back(strategyRecord(e.strategies[k], k, &replaced_));
         return x;

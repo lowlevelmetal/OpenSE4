@@ -348,6 +348,7 @@ private:
         }
         net::HostConfig cfg;
         cfg.gameName = gameName_;
+        cfg.explainFailedOrders = settings().explainFailedOrders;   // Options, OpenSE4: for the turns this computer hosts
         cfg.port = static_cast<uint16_t>(port_);
         cfg.humanSlots = humans_;
         cfg.localPlayer = net::LocalPlayer{name_, password_, mySetup(ctx)};

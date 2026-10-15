@@ -146,9 +146,12 @@ struct Effects {
 
 void noteEffects(Effects& fx, const GameState& s, EmpireId e, const Command& c) {
     if (const auto* t = std::get_if<cmd::OrderTagged>(&c)) {
-        // The tagged vehicles act at once as one group (spec 03 §8 "Tagged vehicles").
-        fx.move.tagged = taggedVehicles(s, e, t->vehicles);
+        // The tagged vehicles act at once as one group (spec 03 §8 "Tagged
+        // vehicles"), unless the orders are held for the list's next run.
+        if (!t->hold) fx.move.tagged = taggedVehicles(s, e, t->vehicles);
     } else if (const auto* o = std::get_if<cmd::SetOrders>(&c)) {
+        // Held orders run at the list's next run (Set Patrol's points, spec 03 §8).
+        if (o->hold) return;
         // A colony's list runs at once when the player gives it an order,
         // except Use Facility: the immediate run covers vehicle lists only,
         // so that order waits for the colony's next run (spec 03 §8).
@@ -608,22 +611,24 @@ TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& opti
     if (!turnBased(s) || s.gameOver) return {};
     return withBattles(s, battles, [&](TurnContext::Battles* b) {
         LiveContext lc(r, s, b, options.movementStep);
+        lc.ctx.explainFailedOrders = options.explainFailedOrders;
         resume(lc, options);
         return lc.result();
     });
 }
 
-TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e) {
+TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e, bool explainFailedOrders) {
     if (!turnBased(s) || s.gameOver) return refused(e, "No turn starts: the game is not turn-based, or it is over.");
     if (!living(s, e) || s.empire(e).kind != PlayerKind::Human) return refused(e, "Only a living human player's turn starts on its own.");
     if (s.playerTurn.empire.valid() && (s.playerTurn.empire != e || s.playerTurn.started)) return refused(e, "It is not the start of your turn.");
     LiveContext lc(r, s);
+    lc.ctx.explainFailedOrders = explainFailedOrders;
     startPlayerTurn(lc, e, Control::Player);
     return lc.result();
 }
 
 TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles,
-                     const MovementObserver& step) {
+                     const MovementObserver& step, bool explainFailedOrders) {
     if (!turnBased(s)) {
         const CommandResult res = apply(r, s, e, c);
         return res.ok ? TurnResult{} : refused(e, std::format("{}: {}", commandName(c), res.error));
@@ -632,6 +637,7 @@ TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c,
     if (s.playerTurn.empire != e || !s.playerTurn.started) return refused(e, "It is not your turn.");
     return withBattles(s, battles, [&](TurnContext::Battles* b) {
         LiveContext lc(r, s, b, step);
+        lc.ctx.explainFailedOrders = explainFailedOrders;
         applyEach(lc, e, std::span<const Command>(&c, 1), s.empire(e).kind == PlayerKind::Human);
         return lc.result();
     });
@@ -641,6 +647,7 @@ TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e, const LiveOpt
     if (!turnBased(s) || s.gameOver) return {};
     return withBattles(s, battles, [&](TurnContext::Battles* b) {
         LiveContext lc(r, s, b, options.movementStep);
+        lc.ctx.explainFailedOrders = options.explainFailedOrders;
         if (!s.playerTurn.started) resume(lc, options);  // the turn must have started before it can end
         if (s.gameOver) return lc.result();
         if (s.playerTurn.empire != e || !s.playerTurn.started) {
@@ -659,6 +666,7 @@ namespace detail {
 
 TurnResult playTurnBasedTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options) {
     LiveContext lc(r, s, nullptr, options.movementStep);
+    lc.ctx.explainFailedOrders = options.explainFailedOrders;
     std::vector<const EmpireOrders*> byEmpire(s.empires.size(), nullptr);
     for (const EmpireOrders& o : orders) {
         if (!o.empire.valid() || o.empire.index() >= s.empires.size()) continue;

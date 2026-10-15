@@ -10,6 +10,7 @@
 #include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
+#include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/players.hpp"
 #include "game/query.hpp"
@@ -17,6 +18,7 @@
 #include "game/sight.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <limits>
 #include <optional>
@@ -45,8 +47,13 @@ void grantRuins(TurnContext& ctx, EmpireId owner, ObjectId planet) {
         std::erase_if(obj.abilities, [&](const ruleset::Ability& a) { return parseAbilityKind(a.type) == k; });
     };
     auto announce = [&]() {
-        // Goto shows the planet, like the original's ruins entry (spec 06 §7 Q41).
-        logGoto(ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet), "Ruins"),
+        // "Ruins Discovered", Misc, written before the advances (spec 03
+        // §3.3, confirmed: binary; the words are ours). Goto shows the
+        // planet, like the original's ruins entry (spec 06 §7 Q41).
+        logGoto(ctx.log(owner, LogCategory::Misc, "Ruins Discovered",
+                        std::format("Our colonists on {} in the {} system have found the ruins of an ancient civilization.", obj.name,
+                                    s.galaxy.system(obj.system).name),
+                        locationOf(s.galaxy, planet), "Ruins"),
                 LogGoto::Location);
         addHistory(s, owner, owner, std::format("Found ancient ruins on {}", obj.name), locationOf(s.galaxy, planet));
     };
@@ -76,8 +83,59 @@ void grantRuins(TurnContext& ctx, EmpireId owner, ObjectId planet) {
     remove(AbilityKind::AncientRuinsUnique);
 }
 
+// The colony ship's population and units land on the new colony by the Drop
+// Cargo rules, kind by kind (spec 03 §8, §19 Q34, confirmed: binary): the
+// population, each race entry in the ship's order, up to the colony's free
+// population room (tried twice, as the original does: the second try only
+// matters if the first changed the room); then troops, fighters, mines,
+// satellites, drones and weapon platforms, in that kind order, each kind
+// stack by stack in the ship's cargo order, a unit at a time while its hull
+// tonnage fits the free cargo space, so that a unit too large is skipped and
+// a later, smaller one still goes. What is left is lost with the ship.
+// Returns true when something of a kind aboard found no room at all (the
+// Drop Cargo box of a turn-based player's turn, spec 03 §8).
+bool unloadColonyShip(const Rules& r, GameState& s, const Vehicle& ship, Colony& col) {
+    bool noRoom = false;
+    std::vector<PopulationGroup> people = ship.cargo.population;
+    const int64_t aboard = ship.cargo.totalPopulation();
+    int64_t landed = 0;
+    for (int attempt = 0; attempt < 2; ++attempt)
+        for (PopulationGroup& p : people) {
+            const int64_t room = std::max<int64_t>(0, maxPopulation(r, s, col) - col.totalPopulation());
+            const int64_t n = std::min(p.millions, room);
+            if (n <= 0) continue;
+            p.millions -= n;
+            landed += n;
+            auto it = std::find_if(col.population.begin(), col.population.end(), [&](const PopulationGroup& g) { return g.race == p.race; });
+            if (it == col.population.end()) col.population.push_back({p.race, n});
+            else it->millions += n;
+        }
+    if (aboard > 0 && landed == 0) noRoom = true;
+    static constexpr std::array<VehicleType, 6> kKinds{VehicleType::Troop,     VehicleType::Fighter, VehicleType::Mine,
+                                                       VehicleType::Satellite, VehicleType::Drone,   VehicleType::WeaponPlatform};
+    for (VehicleType kind : kKinds) {
+        bool any = false;
+        int64_t dropped = 0;
+        for (const UnitStack& st : ship.cargo.units) {
+            if (st.count <= 0 || r.hull(s.design(st.design).hull).type != kind) continue;
+            any = true;
+            const int64_t tons = std::max(1, r.hull(s.design(st.design).hull).tonnage);
+            const int64_t room = std::max<int64_t>(0, colonyCargoCapacity(r, s, col) - cargoSpaceUsed(r, s, col.cargo));
+            const int n = static_cast<int>(std::min<int64_t>(st.count, room / tons));
+            if (n <= 0) continue;
+            dropped += n;
+            auto it = std::find_if(col.cargo.units.begin(), col.cargo.units.end(), [&](const UnitStack& u) { return u.design == st.design; });
+            if (it == col.cargo.units.end()) col.cargo.units.push_back({st.design, n});
+            else it->count += n;
+        }
+        if (any && dropped == 0) noRoom = true;
+    }
+    return noRoom;
+}
+
 // The ship is broken up; its population and cargo land on the new colony.
-void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
+// Returns true when something aboard found no room (unloadColonyShip).
+bool colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle& v = *s.vehicle(id);
@@ -97,16 +155,17 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
                                      std::find(e.colonyTypeChoices.begin(), e.colonyTypeChoices.end(), planet) == e.colonyTypeChoices.end())
         e.colonyTypeChoices.push_back(planet);
     c.foundedTurn = s.turn;
-    c.population = v.cargo.population;
+    // With the empire's "Automatically use Individual Ministers for newly
+    // built vehicles" on, the new colony starts under minister control too
+    // (spec 02 "Minister options", spec 03 §8, confirmed: binary).
+    c.minister = s.empire(owner).ministersForNewVehicles;
+    // The colony starts with `Automatic Colonization Population` of the
+    // owner's race, even above the planet's maximum (confirmed: binary).
     const int64_t bonus = r.setting("Automatic Colonization Population", 0);
-    if (bonus > 0) {
-        auto it = std::find_if(c.population.begin(), c.population.end(), [&](const PopulationGroup& p) { return p.race == owner; });
-        if (it == c.population.end()) c.population.push_back({owner, bonus});
-        else it->millions += bonus;
-    }
-    c.cargo.units = v.cargo.units;
+    if (bonus > 0) c.population.push_back({owner, bonus});
     s.colonies[planet.index()] = std::move(c);
     Colony& col = *s.colonies[planet.index()];
+    const bool noRoom = unloadColonyShip(r, s, *s.vehicle(id), col);
     sight::recalculateColony(r, col);  // a new colony's cloak and sensor levels (spec 01 §6.9)
     // The Empire Options' "claim every system we colonize" (on for a new
     // empire): the colonizing empire claims the planet's system at once,
@@ -118,28 +177,28 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
         std::vector<SystemId>& claims = e.claimedSystems;   // kept sorted
         if (!std::binary_search(claims.begin(), claims.end(), sys)) claims.insert(std::upper_bound(claims.begin(), claims.end(), sys), sys);
     }
-    // More than the planet holds is lost (inferred).
-    int64_t over = col.totalPopulation() - maxPopulation(r, s, col);
-    for (auto it = col.population.rbegin(); over > 0 && it != col.population.rend(); ++it) {
-        const int64_t n = std::min(over, it->millions);
-        it->millions -= n;
-        over -= n;
-    }
-    std::erase_if(col.population, [](const PopulationGroup& p) { return p.millions <= 0; });
-    while (!col.cargo.units.empty() && cargoSpaceUsed(r, s, col.cargo) > colonyCargoCapacity(r, s, col)) {
-        UnitStack& u = col.cargo.units.back();
-        if (--u.count <= 0) col.cargo.units.pop_back();
-    }
     // An empire a script or external player plays: its player's choice, if
     // it gives one, for the colony as it now stands with the classic choice
     // as its type (docs/sdk/ai-protocol.md, colony_type).
     if (playedByController(ctx, owner))
         if (std::optional<std::string> chosen = ctx.players->colonyType(ctx, owner, planet, id)) col.colonyType = std::move(*chosen);
 
-    ctx.log(owner, LogCategory::Misc, std::format("{} colonized", s.galaxy.object(planet).name), std::format("{} founded the colony.", v.name),
-            locationOf(s.galaxy, planet), logpicture::colonyFounded(s.galaxy.object(planet)));
-    addHistory(s, owner, owner, std::format("Colonized {}", s.galaxy.object(planet).name), locationOf(s.galaxy, planet));
+    // "New Colony in <system>", Misc, from the Colonization Minister, with the
+    // planet's surface and atmosphere picture (spec 03 §8, spec 06 §4.1,
+    // confirmed: binary; the words are ours).
+    const SpaceObject& obj = s.galaxy.object(planet);
+    ctx.log(owner, LogCategory::Misc, std::format("New Colony in {}", s.galaxy.system(sys).name),
+            std::format("The Colonization Minister reports that we have founded a new colony on {} in the {} system.", obj.name,
+                        s.galaxy.system(sys).name),
+            locationOf(s.galaxy, planet), logpicture::colonyFounded(obj));
+    addHistory(s, owner, owner, std::format("Colonized {}", obj.name), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Colonized", sys, planet);
+    // Each colony founded gives the empire 100 experience (spec 02
+    // "Experience and race age", confirmed: binary), and the colony ship
+    // counts as scrapped in its design's statistics, leaving In Service
+    // (spec 04 §15, confirmed: binary).
+    economy::gainExperience(s.empire(owner), 100);
+    ++s.design(s.vehicle(id)->design).scrapped;
     s.vehicle(id)->count = 0;  // the colony ship is consumed
     grantRuins(ctx, owner, planet);
     if (ctx.hooks) {
@@ -151,6 +210,7 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
         a.where = locationOf(s.galaxy, planet);
         runHook(ctx, Hook::ColonyFounded, a);
     }
+    return noRoom;
 }
 
 bool colonizeAt(const GameState& s, const Order& o, Location where) {
@@ -311,8 +371,9 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     }
     for (Vehicle& v : s.vehicles)
         if (alive(v) && v.owner == e && v.status == VehicleStatus::Cloaked && !canCloak(r, s, v)) decloak(v);
-    for (Vehicle& v : s.vehicles)
-        if (alive(v) && v.owner == e && resupplyDepotAt(r, s, e, v.location)) refillSupply(r, s, v);
+    // The depot check, and a Medical Bay's cure, for every object of the empire (§3.3, §7).
+    for (VehicleId id : vehiclesInObjectOrder(s))
+        if (Vehicle* v = s.vehicle(id); v && alive(*v) && v->owner == e) depotCheck(ctx, *v);
     // Fleet pooling among the members at the fleet's location, at the end of the turn only.
     for (const Fleet& f : s.fleets)
         if (f.owner == e) poolSupply(r, s, fleetMembersAt(s, f));
@@ -508,7 +569,7 @@ void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
 
 } // namespace
 
-void detail::foundColony(TurnContext& ctx, VehicleId colonizer, ObjectId planet) { colonize(ctx, colonizer, planet); }
+bool detail::foundColony(TurnContext& ctx, VehicleId colonizer, ObjectId planet) { return colonize(ctx, colonizer, planet); }
 
 void runColonization(TurnContext& ctx) { colonizeWaiting(ctx, std::nullopt); }
 

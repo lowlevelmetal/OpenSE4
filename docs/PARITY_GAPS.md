@@ -285,6 +285,62 @@ maximum alone, for every vehicle and in either turn style (`movement::capMovemen
 Ship Report shows it as "3/6". What stays different: the report draws no gauge beside the
 figures.
 
+The accuracy pass of 2026-10-14 (spec 03 settled from the complete listing) closed these:
+
+- **Load Cargo** takes from own colonies and then own bases that are not cloaked, never from
+  ships, and ignores a plague (`loadCargo`); a group's **Drop Cargo** succeeds or fails on its
+  last member alone; a load or drop that finds no room gives the turn-based player the "Load
+  Cargo" or "Drop Cargo" box and nothing else (`movement.cpp` `cargo`, `roomBox`).
+- **Colonization** unloads the ship by the Drop Cargo rules, kind by kind, after the automatic
+  colonists; the new colony is under minister control when new vehicles are; it gives the
+  empire 100 experience and counts the colony ship as scrapped; its entry is "New Colony in
+  <system>", the ruins' "Ruins Discovered" (Misc) (`movement_upkeep.cpp` `colonize`,
+  `unloadColonyShip`, `grantRuins`).
+- **Failed orders** say nothing, as in the original, except those it reports (spec 03 §8
+  "Where the player reads why").
+- **Statistics**: the units a ship or base carries count as lost when it is destroyed by
+  damage (spec 04 §15).
+- **Movement**: a unit group's movement left is never cut when its maximum drops
+  (`capMovement`); one run of a Move To takes at most 51 steps (`moveTo`).
+- **Ruins** draw up to 1,001 times and grant only a find within the first 999
+  (`research::grantRandomAdvances`).
+- **Self-Destruct** destroys the group's first member only, each run (`selfDestruct`).
+- **Medical Bay** cures as the ship passes, in the depot check after each step and in the
+  supply step, not in the plague step (`depotCheck`).
+- **Fleet names** are the n-th of the original's, n counting every fleet ever created
+  (`defaultFleetName`, `Empire::fleetsCreated`, save format 11).
+- **Tagged vehicles**: an order is worked out once, for the first one tagged, and the same
+  orders go into every list; Repeat Orders and a patrol's end switch the first one's Repeat
+  alone; Sentry clears every tagged list when the first one's starts with a Sentry
+  (`cmd::OrderTagged`, `toggleRepeat` from save format 11).
+- **Set Patrol** runs nothing until the route is closed: each point is appended held
+  (`cmd::SetOrders::hold`, save format 11) and closing the route switches Repeat on and runs
+  the list (`MainWindow::finishPatrol`). Ours: Esc cancels the pick as another order or the
+  turn's end does, leaving the points as plain moves.
+- **Plague cures**: the plague step tests only `No Plagues`, silently; a Medical Bay's cure
+  writes "Plague Cured" to the curing empire and the owner (`economy::curePlague`).
+- **Population** moves race by race in the stored order, the owner's race no first
+  (`loadCargo`, `dropCargo`).
+- **The Scrap window's Order By Class** sorts by the design name with letter case counting,
+  unit groups first (`sortScrapList`).
+- **Windows**: Launch \ Recover Units lists the colonies and launchers with cargo space in
+  object order (`launchCarriers`); a missing design names file gives "Load Error"; the
+  Weapons Report writes each export file on its own and opens a weapon's report on a right
+  click only; Create Design's tiles are all drawn alike with a separator; "Prototype" shows on
+  every tab of Designs; the simulator's Fleet Transfer opens no Fleet Report; the Component
+  Report has the original's lines in its order.
+- **Log entries**: "Vehicle Self-Destructed" / "Group Self-Destructed" and "Vehicle Scrapped"
+  / "Group Scrapped" (Construction), "Cannot Mothball" and "Cannot Unmothball" (Misc), "Ship
+  Mothballed" (Misc), "Retrofit Problem" and "Vehicle Retrofit" (Construction), "Planet
+  Abandoned" (Misc), with our own words (`scrap.cpp`, `movement.cpp`).
+
+What stays different, as an option:
+
+| Item | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| More in item reports (client Options → OpenSE4, `ClassicSettings::reportExtras`) | Off by default, as the original. On: the Component Report adds OpenSE4's lines after the original's: the component's group, its limit per vehicle, the technology it requires and a mount's to-hit modifier | The original's lines only (spec 06 §1.2) | L |
+| Explain failed orders (`TurnContext::explainFailedOrders`; client Options → OpenSE4, server `--explain-failed-orders`) | Off by default, as the original. On: the failures the original passes over (no route, an unset waypoint, a warp point gone or closed to fighters or neutrals, a battle on entering a sector, a Drop with nothing to drop...) give a box in the player's turn of a turn-based game, else an "Unable to <order>" entry, and OpenSE4's notes come back (a Sentry ended, a pursuit's target gone, orders cleared after a warp, an Attack with no movement left, an Explore, Resupply or Repair with nowhere to go); it acts on the turns the computer with the setting carries out | Silent: the list is cleared and nothing is said (spec 03 §8) | L |
+
 ## Combat (spec 04)
 
 The combat engine follows the rules of spec 04 settled on 2026-09-30 (§2-§19.1): start

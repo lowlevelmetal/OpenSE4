@@ -446,6 +446,7 @@ void io(Ar& ar, Empire& e) {
     if (formatVersion(ar) >= 9) fields(ar, e.controller, e.script, e.modData);   // format 8 had no script players or mods' data
     if (formatVersion(ar) >= 10) fields(ar, e.statistics);   // format 9 had no statistics record
     if (formatVersion(ar) >= 10) fields(ar, e.queueTypes);   // format 9 had no queue types
+    if (formatVersion(ar) >= 11) fields(ar, e.fleetsCreated);   // format 10 counted no fleets (GameState's io fills it in)
     // The computer player's notes of the turn are not saved.
     unsaved(ar, e.aiNotes);
 }
@@ -631,6 +632,12 @@ void io(Ar& ar, GameState& s) {
     if (formatVersion(ar) >= 9) fields(ar, s.modData, s.modRules, s.scenario, s.endReason);   // nor mods' rules
     if (formatVersion(ar) >= 10) fields(ar, s.classicScenario);   // format 9 had no scenarios of the original
     if (formatVersion(ar) >= 10) fields(ar, s.lastTurn);   // format 9 had no last turn
+    // Format 10 kept no count of the fleets an empire created: a game saved in
+    // it counts the fleets it has, as OpenSE4 named them then (spec 03 §9).
+    if constexpr (Ar::kReading)
+        if (formatVersion(ar) < 11)
+            for (Empire& e : s.empires)
+                e.fleetsCreated = static_cast<uint32_t>(std::count_if(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == e.id; }));
     // The happiness events waiting for an empire's next update are not saved:
     // a loaded game starts with none (spec 02 §4, confirmed: binary). Nor is
     // the journal of the players' answers (docs/sdk/ai-protocol.md §8).
@@ -643,6 +650,7 @@ template <class Ar>
 void io(Ar& ar, cmd::SetOrders& c) {
     fields(ar, c.vehicle, c.fleet, c.orders, c.repeat, c.planet);
     if (formatVersion(ar) >= 10) fields(ar, c.ownList);   // format 9 had no own-list orders
+    if (formatVersion(ar) >= 11) fields(ar, c.hold);      // format 10 ran every list given at once
 }
 template <class Ar>
 void io(Ar& ar, cmd::CreateFleet& c) {
@@ -741,7 +749,11 @@ template <class Ar> void io(Ar& ar, cmd::CloakVehicles& c) { fields(ar, c.vehicl
 template <class Ar> void io(Ar& ar, cmd::Analyze& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::SelfDestruct& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::FireOn& c) { fields(ar, c.vehicle); }
-template <class Ar> void io(Ar& ar, cmd::OrderTagged& c) { fields(ar, c.vehicles, c.orders, c.repeat); }
+template <class Ar>
+void io(Ar& ar, cmd::OrderTagged& c) {
+    fields(ar, c.vehicles, c.orders, c.repeat);
+    if (formatVersion(ar) >= 11) fields(ar, c.toggleRepeat, c.hold);   // format 10 had no Repeat Orders for tagged vehicles, nor held orders
+}
 template <class Ar> void io(Ar& ar, cmd::SetFleetLeader& c) { fields(ar, c.fleet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::ModCommand& c) { fields(ar, c.mod, c.name, c.vehicle, c.fleet, c.planet, c.empire, c.args); }
 template <class Ar> void io(Ar& ar, cmd::LaunchUnitsNow& c) { fields(ar, c.vehicle, c.planet, c.design, c.amount); }

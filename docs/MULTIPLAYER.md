@@ -136,6 +136,7 @@ port forwarding.
 | `--save-dir=DIR`, `--autosave=N` | where and how often to save |
 | `--max-turns=N` | stop once the game reaches turn N (for tests) |
 | `--no-lan-discovery` | do not answer the LAN list's searches (see [Joining](#joining)) |
+| `--explain-failed-orders` | orders that the original fails without a word (no route, an unset waypoint, a battle on entering a sector...) get an "Unable to ..." log entry, or in a turn-based game a message to the player; the game's client offers the same as Options → OpenSE4 "Explain failed orders" for the games it hosts. Off by default, as in the original |
 | `--verbose` | also log lobby changes after the game started |
 | `--version` | print the version, the network protocol and the save format, and exit |
 

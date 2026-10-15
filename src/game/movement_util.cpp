@@ -7,6 +7,7 @@
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
@@ -99,6 +100,20 @@ void refillSupply(const Rules& r, const GameState& s, Vehicle& v) {
     capMovement(r, s, v);
 }
 
+void depotCheck(TurnContext& ctx, Vehicle& v) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    if (!alive(v)) return;
+    if (v.status != VehicleStatus::Mothballed && isShipOrBase(vehicleType(r, s, v))) {
+        const int64_t medical = bestValue1(vehicleAbilities(r, s, v), AbilityKind::MedicalBay);
+        if (medical > 0)
+            for (ObjectId o : planetsAt(s, v.location))
+                if (Colony* c = s.colony(o); c && c->plagueLevel > 0 && medical >= c->plagueLevel && allied(s, v.owner, c->owner))
+                    economy::curePlague(ctx, *c, v.owner);
+    }
+    if (resupplyDepotAt(r, s, v.owner, v.location)) refillSupply(r, s, v);
+}
+
 void poolSupply(const Rules& r, GameState& s, std::span<const VehicleId> members) {
     std::vector<Vehicle*> pool;
     for (VehicleId id : members)
@@ -167,6 +182,9 @@ bool hurt(TurnContext& ctx, VehicleId id, int amount, std::string_view cause) {
     const int count = v->count;
     if (!damageVehicle(ctx.rules, ctx.state, *v, amount)) return false;
     v->count = count;  // restored so vehicleLost records it
+    // A ship or base destroyed by damage loses the units it carries too: each
+    // stack's full count is lost for its design (spec 04 §15, confirmed: binary).
+    for (const UnitStack& st : v->cargo.units) ctx.state.design(st.design).lost += st.count;
     vehicleLost(ctx, *v, cause);
     return true;
 }
@@ -243,13 +261,12 @@ int64_t movePopulation(std::vector<PopulationGroup>& from, std::vector<Populatio
     return n;
 }
 
-// The owner's race first, then the others by empire id.
-std::vector<EmpireId> racesOf(const std::vector<PopulationGroup>& pop, EmpireId owner) {
+// The races of a population, in their stored order, first to last; the
+// owner's race has no priority (spec 03 §8, §11, confirmed: binary).
+std::vector<EmpireId> racesOf(const std::vector<PopulationGroup>& pop) {
     std::vector<EmpireId> out;
     for (const auto& p : pop)
-        if (p.millions > 0) out.push_back(p.race);
-    std::sort(out.begin(), out.end(), [&](EmpireId a, EmpireId b) { return (a == owner) != (b == owner) ? a == owner : a < b; });
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+        if (p.millions > 0 && std::find(out.begin(), out.end(), p.race) == out.end()) out.push_back(p.race);
     return out;
 }
 
@@ -314,10 +331,11 @@ std::vector<DesignId> designsIn(const Rules& r, const GameState& s, const Cargo&
     return out;
 }
 
-int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group) {
+int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, bool* noRoom) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
+    if (noRoom) *noRoom = false;
     if (!v || !alive(*v)) return 0;
     const EmpireId owner = v->owner;
     const Location where = v->location;
@@ -325,8 +343,10 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
     int64_t moved = 0;
     const int64_t mass = std::max<int64_t>(1, r.setting("Population Mass", 5));
 
+    bool offered = false;   // a source held something of the kind (for noRoom)
     auto fromCargo = [&](Cargo& src) {
         if (!what.population()) {
+            if (!designsIn(r, s, src, what).empty()) offered = true;
             // Every design it takes, stack by stack in the source's cargo order.
             for (DesignId unit : designsIn(r, s, src, what)) {
                 if (want <= 0) break;
@@ -337,7 +357,8 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             }
             return;
         }
-        for (EmpireId race : racesOf(src.population, owner)) {
+        if (src.totalPopulation() > 0) offered = true;
+        for (EmpireId race : racesOf(src.population)) {
             v = s.vehicle(id);
             const int64_t n = movePopulation(src.population, v->cargo.population, race, std::min(want, freeCargo(r, s, *v) / mass));
             want -= n;
@@ -345,16 +366,23 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         }
     };
 
-    // Own planets first (none quarantined by plague), then own vehicles (§8, §11).
+    // Each member loads for itself in two passes (spec 03 §8 Load Cargo,
+    // confirmed: binary): first from the own colonies in the sector, in the
+    // system's object order, a plague making no difference (only the Cargo
+    // Transfer window refuses a plagued planet, §11); then, while it still
+    // has room, from the cargo of the empire's own bases there that are not
+    // cloaked, in object order. Ships are never sources: moving cargo from
+    // ship to ship is what Cargo Transfer is for.
     for (ObjectId o : ownColoniesHere(s, owner, where)) {
         Colony* c = s.colony(o);
-        if (want <= 0 || c->plagueLevel > 0) continue;
+        if (want <= 0) break;
         if (!what.population()) {
             fromCargo(c->cargo);
             continue;
         }
         // A colony keeps at least 1M people (spec 03 §11).
-        for (EmpireId race : racesOf(c->population, owner)) {
+        if (c->totalPopulation() > 1) offered = true;
+        for (EmpireId race : racesOf(c->population)) {
             v = s.vehicle(id);
             const int64_t spare = std::max<int64_t>(0, c->totalPopulation() - 1);
             const int64_t n = movePopulation(c->population, v->cargo.population, race, std::min({want, spare, freeCargo(r, s, *v) / mass}));
@@ -362,19 +390,29 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             moved += n;
         }
     }
-    for (VehicleId b : ownHoldersHere(r, s, owner, where, id, group)) {
+    for (VehicleId b : vehiclesInObjectOrder(s)) {
         if (want <= 0) break;
+        const Vehicle* base = s.vehicle(b);
+        if (b == id || !alive(*base) || base->owner != owner || base->location != where || base->status == VehicleStatus::Cloaked ||
+            vehicleType(r, s, *base) != VehicleType::Base)
+            continue;
         fromCargo(s.vehicle(b)->cargo);
     }
+    // Nothing came aboard although a source held some: the hold had no room.
+    if (noRoom) *noRoom = moved == 0 && offered;
     return moved;
 }
 
 int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group, ObjectId colony,
-                  VehicleId into) {
+                  VehicleId into, bool* noRoom) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
+    if (noRoom) *noRoom = false;
     if (!v || !alive(*v)) return 0;
+    // Something of the kind aboard, and a place that could take it (for noRoom).
+    const bool aboard = what.population() ? v->cargo.totalPopulation() > 0 : !designsIn(r, s, v->cargo, what).empty();
+    bool place = false;
     const EmpireId owner = v->owner;
     const Location where = v->location;
     int64_t want = amount < 0 ? std::numeric_limits<int64_t>::max() : amount;
@@ -395,11 +433,12 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         if (want <= 0) break;
         if (named && o != colony) continue;
         Colony* c = s.colony(o);
+        place = true;
         v = s.vehicle(id);
         if (!what.population()) {
             unitsInto(c->cargo, [&] { return colonyFreeCargo(r, s, *c); });
         } else {
-            for (EmpireId race : racesOf(v->cargo.population, owner)) {
+            for (EmpireId race : racesOf(v->cargo.population)) {
                 const int64_t room = std::max<int64_t>(0, maxPopulation(r, s, *c) - c->totalPopulation());
                 const int64_t n = movePopulation(v->cargo.population, c->population, race, std::min(want, room));
                 want -= n;
@@ -414,6 +453,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             for (ObjectId o : planetsAt(s, where)) {
                 const Colony* c = s.colony(o);
                 if (want <= 0 || !c || c->owner == owner || !hostile(s, owner, c->owner)) continue;
+                place = true;
                 const int n = combat::landTroops(r, s, id, o, unit, static_cast<int>(std::min<int64_t>(want, s.vehicle(id)->cargo.unitCount(unit))));
                 want -= n;
                 moved += n;
@@ -423,17 +463,21 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         if (want <= 0) break;
         if (named && b != into) continue;
         Vehicle* holder = s.vehicle(b);
+        place = true;
         v = s.vehicle(id);
         if (!what.population()) {
             unitsInto(holder->cargo, [&] { return freeCargo(r, s, *holder); });
         } else {
-            for (EmpireId race : racesOf(v->cargo.population, owner)) {
+            for (EmpireId race : racesOf(v->cargo.population)) {
                 const int64_t n = movePopulation(v->cargo.population, holder->cargo.population, race, std::min(want, freeCargo(r, s, *holder) / mass));
                 want -= n;
                 moved += n;
             }
         }
     }
+    // Nothing left the ship although it held some and had a place to drop
+    // it: the place had no room.
+    if (noRoom) *noRoom = moved == 0 && aboard && place;
     return moved;
 }
 
@@ -1042,7 +1086,10 @@ void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v) {
 }
 
 void capMovement(const Rules& r, const GameState& s, Vehicle& v) {
-    if (alive(v)) v.movement = std::min(v.movement, std::max(0, detail::turnMovement(r, s, v)));
+    // Only ships and bases: a unit group's recompute sets its maximum (the
+    // slowest unit design's speed, or 1 at 0 supply) and leaves the movement
+    // left alone (spec 03 §6.1, §19 Q85, confirmed: binary).
+    if (alive(v) && detail::isShipOrBase(vehicleType(r, s, v))) v.movement = std::min(v.movement, std::max(0, detail::turnMovement(r, s, v)));
 }
 
 Vehicle& spawnVehicle(const Rules& r, GameState& s, EmpireId owner, DesignId design, Location where, int autoWaypoint) {

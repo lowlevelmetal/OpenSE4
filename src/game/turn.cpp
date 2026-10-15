@@ -263,6 +263,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     ctx.battles = battles;
     ctx.movementDay = options.movementDay;
     ctx.movementStep = options.movementStep;
+    ctx.explainFailedOrders = options.explainFailedOrders;
     // The Progress window's steps (TurnOptions::progress): four per empire
     // (its orders, its messages, its start of turn, its end-of-turn
     // processing) and the 30 movement days (inferred split).

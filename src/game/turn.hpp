@@ -271,6 +271,14 @@ struct TurnContext {
     // The rules hooks of the game's mods for this engine call (hooks.hpp);
     // null: the game has none, and the classic rules alone apply.
     RulesHooks* hooks = nullptr;
+    // OpenSE4's option "Explain failed orders" (off by default; the client's
+    // Options -> OpenSE4, per computer, for the turns that computer carries
+    // out): the failed orders the original passes over in silence (no route,
+    // an unset waypoint, a warp point that is gone, a battle on entering a
+    // sector, a Drop with nothing to drop...) get a message box or an "Unable
+    // to ..." entry (spec 03 §8 "Where the player reads why"). Off, they say
+    // nothing, as in the original. For this engine call; not saved.
+    bool explainFailedOrders = false;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});
@@ -302,6 +310,8 @@ struct TurnOptions {
     // turn starts it again from 0. Observes only; called on the thread that
     // processes the turn.
     std::function<void(int done, int total)> progress;
+    // TurnContext::explainFailedOrders for this turn.
+    bool explainFailedOrders = false;
 };
 
 struct TurnResult {
@@ -418,6 +428,8 @@ struct LiveOptions {
     // Sees each group's every step as movement makes it, in every player's
     // turn of the call (TurnContext::movementStep). Observes only.
     MovementObserver movementStep;
+    // TurnContext::explainFailedOrders for the orders carried out in the call.
+    bool explainFailedOrders = false;
 
     bool computerPlaysFor(EmpireId e) const;
 };
@@ -454,7 +466,7 @@ TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& opti
 // enemies stops before it with its orders kept and its question left open
 // (TurnResult::questions, GameState::playerTurn). Refused otherwise
 // (TurnResult::rejected, the game unchanged).
-TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e);
+TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e, bool explainFailedOrders = false);
 
 // Applies one command of the player whose turn it is and carries out at once
 // what it sets in motion: the vehicles, fleets or planets whose orders it
@@ -467,9 +479,10 @@ TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e);
 // (questions): new orders for a group, or an answer, drop its question, and
 // so does the group's end (destroyed, or no orders left). A call rolled back
 // for a missing battle answer leaves them as they were.
-// `step` sees each group's every step as it is made (TurnContext::movementStep).
+// `step` sees each group's every step as it is made (TurnContext::movementStep);
+// `explainFailedOrders` is TurnContext::explainFailedOrders for the call.
 TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles = nullptr,
-                     const MovementObserver& step = {});
+                     const MovementObserver& step = {}, bool explainFailedOrders = false);
 
 // The open Attack Sector questions a command settles (applyLive; a network
 // player's copy drops them the same way): an answer drops its own question,

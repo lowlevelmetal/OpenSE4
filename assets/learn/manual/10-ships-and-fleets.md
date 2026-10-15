@@ -15,7 +15,7 @@ as *Escort 0003*; `N` renames them.
 
 - New orders are **added to the end** of the list. If a ship seems to ignore you, it is probably still busy with older orders: press `V` to see them, or `Del` to clear them first.
 - The ship carries out its orders from the top. An order that is done is removed, and the next one starts at once.
-- An order that **fails** (for example, a destination that cannot be reached) clears the whole list.
+- An order that **fails** (for example, a destination that cannot be reached) clears the whole list. As in the original, most failures say nothing; Options → OpenSE4 "Explain failed orders" has them explained.
 - With **Repeat Orders** (`K`) on, finished orders go back to the end of the list instead, so the ship repeats its list forever. Switching Repeat on or off starts the list again from its first order.
 
 | Order | Key | What it does |
@@ -29,7 +29,7 @@ as *Escort 0003*; `N` renames them.
 | Resupply At Nearest | `S` | Go to the nearest resupply depot ([Supply, cargo and repair](logistics#supply)). |
 | Repair At Nearest | `R` | Go to the nearest place that can repair ships ([Supply, cargo and repair](logistics#repair)). |
 | Sentry | `Y` | Wait until an enemy is seen in the system or supplies run low. Pressed again while the list starts with a Sentry, it clears the list. |
-| Set Patrol | `P` | Click the sectors of the route one by one: each adds a Move To to the ship's orders. Click the ship's own sector to end the route, which adds that move too and switches Repeat on, so the ship patrols forever (a route of one order is cleared instead). `Enter` or a right-click also ends it. |
+| Set Patrol | `P` | Click the sectors of the route one by one: each becomes a Move To in the ship's orders. Click the ship's own sector to end the route, which adds that move too and switches Repeat on, so the ship patrols forever (a route of one order is cleared instead); only then does a turn-based game carry the orders out. `Enter` or a right-click also ends it. With ships tagged, every one gets the route, and Repeat goes on for the first one tagged. |
 | Repeat Orders | `K` | Switch repeating on or off. |
 | Clear Orders | `Del` | Remove every order. |
 | Fleet Transfer | `F` | Form fleets (below). |

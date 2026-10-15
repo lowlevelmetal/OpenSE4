@@ -122,20 +122,18 @@ std::vector<ExportTable> weaponAndComponentTables(const game::Rules& r) {
     return out;
 }
 
-std::expected<std::vector<std::filesystem::path>, std::string> writeExportTables(const std::filesystem::path& dir, std::string_view prefix,
-                                                                                const std::vector<ExportTable>& tables) {
+std::vector<ExportResult> writeExportTables(const std::filesystem::path& dir, std::string_view prefix, const std::vector<ExportTable>& tables) {
     std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    if (ec) return std::unexpected(std::format("Cannot create {}: {}", dir.string(), ec.message()));
-    std::vector<std::filesystem::path> written;
+    std::filesystem::create_directories(dir, ec);   // a failure shows as each file's
+    std::vector<ExportResult> out;
     for (const ExportTable& t : tables) {
         const std::filesystem::path file = dir / (std::string(prefix) + t.fileName);
-        std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << t.text;
-        if (!out) return std::unexpected(std::format("Cannot write {}", file.string()));
-        written.push_back(file);
+        std::ofstream stream(file, std::ios::binary | std::ios::trunc);
+        stream << t.text;
+        stream.flush();
+        out.push_back(ExportResult{file, static_cast<bool>(stream)});
     }
-    return written;
+    return out;
 }
 
 } // namespace opense4::client::classic

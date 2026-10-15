@@ -353,12 +353,13 @@ private:
     // ---- Days and actions --------------------------------------------------------------------------
 
     // Before anyone acts: a maximum lowered between actions (combat damage) caps
-    // the movement points; then every ship, base and unit group with movement
-    // left adds its speed / 30 (spec 03 §6.1, §6.3).
+    // the movement points of a ship or base (a unit group's are never cut,
+    // capMovement); then every ship, base and unit group with movement left
+    // adds its speed / 30 (spec 03 §6.1, §6.3).
     void newDay() {
         acted_.clear();
         for (Vehicle& v : s_.vehicles)
-            if (alive(v)) v.movement = std::min(v.movement, turnMovement(r_, s_, v));
+            if (alive(v)) capMovement(r_, s_, v);
         std::vector<std::pair<VehicleId, int>> gains;
         for (const Vehicle& v : s_.vehicles)
             if (alive(v) && v.movement > 0) gains.emplace_back(v.id, daySpeed(v));
@@ -384,14 +385,29 @@ private:
     // points come back (spec 03 §6.3 step 4).
     void action(ActorRef ref) {
         Group last;
+        moveRun_ = {};      // each action is a run of its own (moveTo)
+        moveRunSteps_ = 0;
+        // The acting vehicle's points before the action, which its fleet's
+        // members at the fleet's location get back too (spec 03 §6.3 step 4,
+        // confirmed: binary).
+        std::optional<int> actorBefore;
+        FleetId actorFleet;
+        if (const Vehicle* actor = ref.vehicle.valid() ? s_.vehicle(ref.vehicle) : nullptr) {
+            actorBefore = actor->movement;
+            actorFleet = actor->fleet;
+        }
         act(ref, last);
-        for (const auto& [id, before] : actionMovement_) {
+        const Fleet* fleet = actorFleet.valid() ? s_.fleet(actorFleet) : nullptr;
+        for (auto [id, before] : actionMovement_) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
-            // A maximum that fell below the points during the action keeps what
-            // the action left, which stops the vehicle for the turn (§6.3, §6.4).
+            if (fleet && actorBefore && v->fleet == fleet->id && v->location == fleet->location) before = *actorBefore;
+            // The points come back only when they are not above the current
+            // maximum; otherwise the vehicle keeps what the action left it,
+            // which stops it for the turn (§6.3, §6.4). The same for unit
+            // groups, whose movement left a recompute never cuts (confirmed: binary).
             const int max = turnMovement(r_, s_, *v);
-            v->movement = max < before ? std::min(v->movement, max) : before;
+            v->movement = max < before ? (isShipOrBase(vehicleType(r_, s_, *v)) ? std::min(v->movement, max) : v->movement) : before;
         }
         actionMovement_.clear();
     }
@@ -692,7 +708,7 @@ private:
         for (VehicleId id : participants_) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
-            if (resupplyDepotAt(r_, s_, v->owner, v->location)) refillSupply(r_, s_, *v);
+            depotCheck(ctx_, *v);   // a Medical Bay cures, a depot refills (§3.3, §7)
             if (v->status == VehicleStatus::Cloaked &&
                 ((v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) || !canCloak(r_, s_, *v))) {
                 v->status = VehicleStatus::Normal;
@@ -742,17 +758,37 @@ private:
         logIt();
     }
 
-    // A failed order clears the whole list (§8). The player reads why as
-    // `tell` says: the box is titled after the order, the log entry is
-    // "Unable to <order>" in the words of the minister in charge, with the
-    // acting object's picture (spec 06 §4.1).
+    // A failed order clears the whole list (§8). The original says nothing
+    // about most failures (spec 03 §8 "Where the player reads why",
+    // confirmed: binary): no route, an invalid destination, an unset
+    // waypoint, a warp point that is gone or that fighters or neutral
+    // empires cannot use, a battle on entering a sector, a Drop with nothing
+    // to drop or no valid target, and the others that are not
+    // failReported's. With OpenSE4's option "Explain failed orders" on
+    // (TurnContext::explainFailedOrders) the player reads why as `tell`
+    // says: the box is titled after the order, the log entry is "Unable to
+    // <order>" in the words of the minister in charge, with the acting
+    // object's picture (spec 06 §4.1).
     Exec fail(const Group& g, const Order& o, std::string_view why) {
+        if (ctx_.explainFailedOrders) tell(g.owner, failureBoxTitle(o), std::string(why), [&] { logFailure(g, o, why); });
+        return Exec::Fail;
+    }
+
+    // A failure the original reports whatever the option (spec 03 §8,
+    // confirmed: binary): a move refused while the vehicle's space yard is
+    // building ("Move") and a stellar manipulation refused ("Cannot
+    // <action>"), told as `tell` says. The other reported ones have their
+    // own words: Colonize (colonizeFailed), damage on the way (hazardHit),
+    // mines (afterBattle), Launch and Recover warnings and the Load and Drop
+    // boxes (cargo), Mothball, Unmothball and Retrofit (cannot).
+    Exec failReported(const Group& g, const Order& o, std::string_view why) {
         tell(g.owner, failureBoxTitle(o), std::string(why), [&] { logFailure(g, o, why); });
         return Exec::Fail;
     }
 
     // The log entry of a failed order (`fail`), also for a failure the
-    // player never gets a box for (combat on entering a sector).
+    // player never gets a box for (combat on entering a sector, explained
+    // only with the option on).
     void logFailure(const Group& g, const Order& o, std::string_view why) {
         const Location here = where(g);
         const std::string system = here.system.valid() && here.system.index() < s_.galaxy.systems.size() ? s_.galaxy.system(here.system).name : "?";
@@ -837,7 +873,7 @@ private:
             case Travel::Wait: return Exec::Wait;
             case Travel::Unreachable: return fail(g, o, "No known route to the destination.");
             case Travel::Immobile: return fail(g, o, "It cannot move.");
-            case Travel::Busy: return fail(g, o, "Its space yard is building; it cannot move.");
+            case Travel::Busy: return failReported(g, o, "Its space yard is building; it cannot move.");
             case Travel::Stopped: return fail(g, o, "Movement stopped by a hazard.");
             case Travel::Blocked: return fail(g, o, "The way is blocked.");
             case Travel::FighterWarp: return fail(g, o, "Fighters cannot use warp points.");
@@ -857,8 +893,10 @@ private:
     // (carried_), but nothing is left of it for a later turn; otherwise the
     // action ends there.
     Exec encounter(Group& g, const Order& o, bool arrived) {
-        ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
-                 "Another empire is in the system; the orders were cleared (empire options).", where(g), picture(g));
+        // The original clears silently; OpenSE4's "Explain failed orders" says so (spec 03 §6.4).
+        if (ctx_.explainFailedOrders)
+            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
+                     "Another empire is in the system; the orders were cleared (empire options).", where(g), picture(g));
         routes_.erase(routeKey(g));
         clearListsOf(g.members);
         clearListsOf(g.holders);
@@ -940,13 +978,31 @@ private:
         return where(g) == goal ? Travel::Reached : Travel::Moved;
     }
 
-    // A Move To is done on the step that arrives (§8).
+    // A Move To is done on the step that arrives (§8). One run of a Move To
+    // (of Move To Waypoint and a patrol's moves alike) takes at most 51 steps:
+    // the 51st ends it, and the order then counts as done even if the group
+    // has not arrived (spec 03 §6.3, §8, confirmed: binary). Only a turn-based
+    // run can take that many; a simultaneous action takes one step.
     Exec moveTo(Group& g, const Order& o, Location goal) {
+        const RunKey key{g.actor.valid() ? g.actor : g.lead, o};
+        if (!(moveRun_ == key)) {
+            moveRun_ = key;
+            moveRunSteps_ = 0;
+        }
         const Travel t = travel(g, goal);
         if (t == Travel::Reached) return Exec::MovedDone;
         if (t == Travel::Encounter) return encounter(g, o, where(g) == goal);
+        if (t == Travel::Moved && ++moveRunSteps_ >= kMoveRunSteps) return Exec::MovedDone;
         return afterTravel(g, o, t);
     }
+
+    // The Move To being run and the steps it has taken in this run (moveTo).
+    static constexpr int kMoveRunSteps = 51;
+    struct RunKey {
+        VehicleId actor;
+        Order order;
+        bool operator==(const RunKey&) const = default;
+    };
 
     // Asked: turn-based games, the player is asked before the group enters (spec 03 §6.2).
     enum class Step { Moved, Stale, Blocked, Asked, NoWarp };
@@ -1072,8 +1128,10 @@ private:
                 ctx_.hooks->run(ctx_, Hook::VehicleEnteredSector, a);
             }
             v->movement = std::max(0, v->movement - 1);
-            // The depot check runs before the step's cost is taken (§7).
-            if (resupplyDepotAt(r_, s_, v->owner, next)) refillSupply(r_, s_, *v);
+            // The depot check runs before the step's cost is taken (§7); a
+            // ship's Medical Bay cures the plague of the colonies there as it
+            // passes (§3.3, confirmed: binary).
+            depotCheck(ctx_, *v);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
         entered_.push_back(Entry{g.members, g.holders, g.owner, next, name(g), pursuing_});
@@ -1159,7 +1217,7 @@ private:
         if (here.system.index() < k.present.size()) k.present[here.system.index()] = 1;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
-            if (v && alive(*v) && resupplyDepotAt(r_, s_, v->owner, here)) refillSupply(r_, s_, *v);  // passing a depot refuels
+            if (v && alive(*v)) depotCheck(ctx_, *v);  // passing a depot refuels, a Medical Bay cures
         }
         touched_.push_back(here);
     }
@@ -1266,8 +1324,9 @@ private:
         c->anger = kNewColonyAnger;
         const bool gone = c->facilities.empty();
         if (gone) s_.colonies[g.planet.index()].reset();
+        // "Planet Abandoned", Misc (spec 02 §5, spec 03 §15, confirmed: binary); the words are ours.
         if (!live_)
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{} abandoned", planet),
+            ctx_.log(g.owner, LogCategory::Misc, "Planet Abandoned",
                      std::format("The Planet Minister reports that our people have left {} in the {} system.{}", planet,
                                  s_.galaxy.system(here.system).name, scrap ? " Its facilities were scrapped first." : ""),
                      here, logpicture::planet(g.planet));
@@ -1303,8 +1362,11 @@ private:
         });
         const bool enemy = hostilePresentInSystem(g.owner, where(g).system);
         if (!lowSupply && !enemy) return Exec::Wait;
-        ctx_.log(g.owner, LogCategory::Combat, std::format("{}: {}", name(g), enemy ? "enemy sighted" : "supplies low"), "Sentry duty ended.",
-                 where(g), picture(g));
+        // A Sentry ends silently in the original; OpenSE4's "Explain failed
+        // orders" says why (spec 03 §8, confirmed: binary).
+        if (ctx_.explainFailedOrders)
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: {}", name(g), enemy ? "enemy sighted" : "supplies low"), "Sentry duty ended.",
+                     where(g), picture(g));
         return Exec::Done;
     }
 
@@ -1347,7 +1409,8 @@ private:
         const bool stored = !o.vehicle.valid() && !o.object.valid() && !validLocation(s_, o.location);
         if ((live_ && !onlyDrones(g)) || stored) return placeAttack(g, o);
         if (pursuitOver(s_, g.owner, o)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g), picture(g));
+            // Silent in the original; OpenSE4's "Explain failed orders" says so (spec 03 §8).
+            if (ctx_.explainFailedOrders) ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g), picture(g));
             return Exec::Done;
         }
         // A drone sent at a warp point goes through it (an order given before
@@ -1501,8 +1564,10 @@ private:
             if (t != Travel::Arrived) return afterTravel(g, o, t);
         }
         if (remaining(g) <= 0 || immobile(g)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g),
-                     picture(g));
+            // Silent in the original; OpenSE4's "Explain failed orders" says so (spec 03 §8).
+            if (ctx_.explainFailedOrders)
+                ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.",
+                         where(g), picture(g));
             return Exec::Done;
         }
         bool lowered = false;
@@ -1566,7 +1631,9 @@ private:
             const char* why = o.kind == OrderKind::Explore    ? "nothing left to explore"
                               : o.kind == OrderKind::Resupply ? "no reachable resupply depot"
                                                               : "no reachable repair facility";
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g), picture(g));
+            // Nothing is added and nothing said in the original; OpenSE4's
+            // "Explain failed orders" says why (spec 03 §8).
+            if (ctx_.explainFailedOrders) ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g), picture(g));
             return Exec::Removed;
         }
         forEachList(g, [&](std::vector<Order>& list, bool, uint16_t&) {
@@ -1634,7 +1701,11 @@ private:
         for (VehicleId id : g.members)
             if (colonizerProblem(r_, s_, *s_.vehicle(id), planet).empty()) colonizer = id;
         if (!colonizer.valid()) return colonizeFailed(g, std::format("Unable to colonize {} planets.", planet.surface));
-        foundColony(ctx_, colonizer, o.object);
+        const std::string shipName = s_.vehicle(colonizer)->name;
+        // What the colony had no room for is lost; the human whose turn it is
+        // in a turn-based game gets the Drop Cargo box (spec 03 §8, confirmed: binary).
+        if (foundColony(ctx_, colonizer, o.object))
+            roomBox(g, "Drop Cargo", std::format("{} dropped no cargo: there is no room here for any more.", shipName));
         return Exec::Done;
     }
 
@@ -1660,11 +1731,16 @@ private:
 
     // Load, Launch and Recover are always done; Drop can fail (§8, confirmed:
     // binary). Each moves the order's kind of cargo, every design of it (one
-    // design for the orders of OpenSE4's computer players). A launch or
-    // recovery that cannot fully happen gives a human owner one warning,
-    // "Launch Warning" or "Recover Warning" (spec 03 §12 "Warnings",
-    // confirmed: binary), a log entry or a box as `tell` says; nothing else
-    // is logged.
+    // design for the orders of OpenSE4's computer players), each member for
+    // itself. A group's Drop succeeds or fails on its last living member
+    // alone: it fails when that member dropped nothing, whatever the others
+    // dropped, and is done when it dropped something (confirmed: binary). A
+    // launch or recovery that cannot fully happen gives a human owner one
+    // warning, "Launch Warning" or "Recover Warning" (spec 03 §12
+    // "Warnings", confirmed: binary), a log entry or a box as `tell` says.
+    // A member that loads or drops nothing for lack of room gives the human
+    // whose turn it is in a turn-based game a "Load Cargo" or "Drop Cargo"
+    // box (confirmed: binary; the words are ours); nothing else is logged.
     Exec cargo(Group& g, Order& o) {
         if (!g.planet.valid() && o.location.system.valid()) {
             const Travel t = travel(g, o.location);
@@ -1680,6 +1756,7 @@ private:
                 if (std::find(done.warnings.begin(), done.warnings.end(), w) == done.warnings.end()) done.warnings.push_back(w);
         };
         auto left = [&]() { return o.amount < 0 ? int64_t{-1} : std::max<int64_t>(0, o.amount - moved); };
+        bool lastDropped = true, lastNoRoom = false;  // the last living member's drop
         if (g.planet.valid()) {
             const Launcher from{{}, g.planet};
             add(o.kind == OrderKind::LaunchUnits ? launchUnits(ctx_, budget_, from, what, o.amount)
@@ -1688,16 +1765,34 @@ private:
             for (VehicleId id : std::vector<VehicleId>(g.members)) {
                 const int64_t amount = left();
                 if (amount == 0) break;
+                const Vehicle* member = s_.vehicle(id);
+                if (!member || !alive(*member)) continue;
+                const std::string memberName = member->name;
+                bool noRoom = false;
                 switch (o.kind) {
-                    case OrderKind::LoadCargo: moved += loadCargo(ctx_, id, what, amount, g.members); break;
-                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, what, amount, g.members, o.object, o.vehicle); break;
+                    case OrderKind::LoadCargo:
+                        moved += loadCargo(ctx_, id, what, amount, &noRoom);
+                        if (noRoom) roomBox(g, "Load Cargo", std::format("{} loaded no cargo: it has no room for any more.", memberName));
+                        break;
+                    case OrderKind::DropCargo: {
+                        const int64_t n = dropCargo(ctx_, id, what, amount, g.members, o.object, o.vehicle, &noRoom);
+                        moved += n;
+                        lastDropped = n > 0;
+                        lastNoRoom = noRoom;
+                        if (noRoom) roomBox(g, "Drop Cargo", std::format("{} dropped no cargo: there is no room here for any more.", memberName));
+                        break;
+                    }
                     case OrderKind::LaunchUnits: add(launchUnits(ctx_, budget_, Launcher{id, {}}, what, amount)); break;
                     case OrderKind::RecoverUnits: add(recoverUnits(ctx_, Launcher{id, {}}, what, amount, o.vehicle)); break;
                     default: break;
                 }
             }
         }
-        if (o.kind == OrderKind::DropCargo && moved <= 0) return fail(g, o, "Nothing could be dropped here.");
+        if (o.kind == OrderKind::DropCargo && !lastDropped) {
+            // The box already said why (the room ran out); otherwise the original says nothing.
+            if (lastNoRoom && live_ && live_->ask && g.owner == live_->empire) return Exec::Fail;
+            return fail(g, o, "Nothing could be dropped here.");
+        }
         // The reasons a launch or recovery could not fully happen reach a
         // human owner as `tell` says: a box titled "Launch Warning" or
         // "Recover Warning" while its turn-based turn is live, otherwise the
@@ -1709,6 +1804,13 @@ private:
             tell(g.owner, title, text, [&] { ctx_.log(g.owner, LogCategory::Misc, title, text, where(g), "AtMaxUnits"); });
         }
         return Exec::Acted;
+    }
+
+    // The box of a load or drop that found no room: only for the human whose
+    // turn it is in a turn-based game; a simultaneous game logs nothing
+    // (spec 03 §8, confirmed: binary).
+    void roomBox(const Group& g, std::string title, std::string text) {
+        if (live_ && live_->ask && g.owner == live_->empire) ctx_.messages.push_back(PlayerMessage{g.owner, std::move(title), std::move(text)});
     }
 
     // Cloaking needs a working part of level 2 or more and supply above 0; it
@@ -1810,19 +1912,25 @@ private:
         return Exec::Done;
     }
 
-    // Self-Destruct (spec 03 §8, §15): every member that can is destroyed,
-    // counting as scrapped, not lost (spec 04 §15). Like the Scrap window's
-    // other orders it counts as done when nobody can (confirmed: binary), and
-    // says nothing then (inferred).
+    // Self-Destruct (spec 03 §8, §15, confirmed: binary): each run destroys
+    // only the group's first member, when it can self-destruct, counting it
+    // as scrapped, not lost (spec 04 §15), and the order is done either way,
+    // saying nothing when nobody could. The first member is the acting
+    // vehicle, or for a fleet its member at the fleet's location that comes
+    // first in object order, as for Scrap and Use Component. Companions keep
+    // their own order and carry it out on their next action.
     Exec selfDestruct(Group& g, Order&) {
-        bool any = false;
-        for (VehicleId id : std::vector<VehicleId>(g.members)) {
-            Vehicle* v = s_.vehicle(id);
-            if (!v || !alive(*v) || !canSelfDestruct(r_, s_, *v)) continue;
-            carryOutScrapAction(ctx_, *v, ScrapAction::SelfDestruct);
-            any = true;
+        VehicleId first = g.actor;
+        if (const Fleet* f = !g.tagged && g.fleet.valid() ? s_.fleet(g.fleet) : nullptr) {
+            const std::vector<VehicleId> members = fleetGroup(s_, *f);
+            if (!members.empty())
+                first = *std::min_element(members.begin(), members.end(), [&](VehicleId a, VehicleId b) {
+                    return objectOrderKey(*s_.vehicle(a)) < objectOrderKey(*s_.vehicle(b));
+                });
         }
-        if (!any) return Exec::Done;
+        Vehicle* v = s_.vehicle(first);
+        if (!v || !alive(*v) || !canSelfDestruct(r_, s_, *v)) return Exec::Done;
+        carryOutScrapAction(ctx_, *v, ScrapAction::SelfDestruct);
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
@@ -1844,18 +1952,27 @@ private:
             return Exec::Done;
         }
         carryOutScrapAction(ctx_, *v, a, o.design);
+        // A Mothball order carried out during the turn (not live) is reported
+        // as "Ship Mothballed", Misc (spec 03 §15, confirmed: binary); the
+        // words are ours.
+        if (a == ScrapAction::Mothball && !live_)
+            if (const Vehicle* done = s_.vehicle(g.actor))
+                ctx_.log(done->owner, LogCategory::Misc, "Ship Mothballed",
+                         std::format("The Mothball Minister reports that {} in {} has been mothballed.", done->name, sectorName(done->location)),
+                         done->location, logpicture::vehicle(r_, s_, *done));
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
 
     // A Mothball, Unmothball or Retrofit order that could not be carried
-    // out: one entry from the minister in charge, "Cannot Unmothball" for an
-    // unmothballing (spec 03 §15, confirmed: binary); the other two titles,
-    // the category and the text are ours (inferred).
+    // out: one entry from the minister in charge (spec 03 §15, confirmed:
+    // binary): "Cannot Mothball" or "Cannot Unmothball", Misc, from the
+    // Mothball Minister; "Retrofit Problem", Construction, for a retrofit.
+    // The words are ours.
     void cannot(const Vehicle& v, ScrapAction a, const std::string& why) {
         const bool retrofit = a == ScrapAction::Retrofit;
-        const std::string_view title = a == ScrapAction::Mothball ? "Cannot Mothball" : retrofit ? "Cannot Retrofit" : "Cannot Unmothball";
-        ctx_.log(v.owner, LogCategory::Construction, std::string(title),
+        const std::string_view title = a == ScrapAction::Mothball ? "Cannot Mothball" : retrofit ? "Retrofit Problem" : "Cannot Unmothball";
+        ctx_.log(v.owner, retrofit ? LogCategory::Construction : LogCategory::Misc, std::string(title),
                  std::format("The {} Minister reports that {} in {} could not be {}: {}.", retrofit ? "Retrofit" : "Mothball", v.name,
                              sectorName(v.location), a == ScrapAction::Mothball ? "mothballed" : retrofit ? "retrofitted" : "unmothballed",
                              lowerFirst(why)),
@@ -1902,7 +2019,7 @@ private:
 
     Exec stellar(Group& g, Order& o) {
         const auto target = stellarTarget(s_, o, where(g));
-        if (!target) return fail(g, o, "The target no longer exists.");
+        if (!target) return failReported(g, o, "The target no longer exists.");
         const Travel t = travel(g, *target);
         if (t != Travel::Arrived) return afterTravel(g, o, t);
         // Movement is needed but not spent; a refusal for lack of it makes the
@@ -1921,7 +2038,7 @@ private:
         }
         bool consumed = false;
         const std::string why = stellarManipulation(ctx_, g.members, o, consumed);
-        if (!why.empty()) return fail(g, o, why);
+        if (!why.empty()) return failReported(g, o, why);
         routes_.clear();  // the map may have changed
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
@@ -2138,6 +2255,8 @@ private:
             ctx_.liveSteps.push_back(LiveStep{c->owner, {}, {}, ref.planet, locationOf(s_.galaxy, ref.planet), false});
         int completed = 0;  // orders that left the head of the list, chained ones included
         carried_.reset();
+        moveRun_ = {};      // a new run of the group's orders: a Move To's steps count afresh
+        moveRunSteps_ = 0;
         struct EndRun {
             std::optional<Order>& carried;
             ~EndRun() { carried.reset(); }  // a carried Move To lasts for this run only
@@ -2217,8 +2336,10 @@ private:
         if (!battleSince(here, records)) return g.stopped || pursuit;  // only mines struck
         if (!g.stopped && !pursuit)
             if (const std::vector<Order>* list = orders(g); list && !list->empty()) {
-                // The battle was the news: no message box for it (inferred).
-                logFailure(g, list->front(), "Combat on entering the sector.");
+                // The battle is the news: the original says nothing else
+                // (confirmed: binary); with the option on, an entry and no
+                // box (inferred).
+                if (ctx_.explainFailedOrders) logFailure(g, list->front(), "Combat on entering the sector.");
                 setLists(g, {});
             }
         g.stopped = true;
@@ -2338,6 +2459,8 @@ private:
     // Turn-based: a Move To whose lists the Ship Orders options emptied after
     // a warp transit; it goes on stepping in this run only (spec 03 §6.4, §19 Q77).
     std::optional<Order> carried_;
+    RunKey moveRun_;                                    // the Move To of the run (moveTo); reset with each run
+    int moveRunSteps_ = 0;                              // its steps so far in the run
     std::vector<VehicleId> recloak_;                    // turn-based: decloaked by the Ship Cloaking minister for an Attack
     bool pursuing_ = false;                             // the steps being made are an Attack pursuit's
     UnitBudget budget_;
