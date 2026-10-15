@@ -6200,6 +6200,13 @@ an imported turn-based game of the original.
      (d) *Research.* Which green are queued areas drawn in? Ours: #00FF00.
      (e) *Intelligence.* In which order do the "Select Empire" lists give the empires, and
      do the sorted lists ignore the letter case? Ours: empire order; the case ignored.
+     **Answer** (confirmed: binary; 2026-10-15, complete listing): the empire picker (the
+     intelligence project's target and its second "empire" list, and the other places that
+     use the same picker) lists the known empires sorted by empire name, the letter case
+     ignored; so do the "Select Player" lists, and the ship, planet and technology lists
+     sort by name ignoring case too. Since 2026-10-15 ours sorts the intelligence lists and
+     Communicate's third-empire list so (`intelTargetList`, `empiresByName`); OpenSE4 has no
+     "Select Player" list of its own.
      (f) *Weapons Report.* Does a mount change the figures of a weapon whose type it does
      not take (a direct-fire mount and a missile)? Ours: no, that weapon keeps its plain
      figures.
