@@ -954,6 +954,59 @@ TEST_CASE("setup model: Quick Start keeps a new game's random players, rolled fr
     CHECK(lesson.options.randomAiPlayers.empty());
 }
 
+TEST_CASE("setup model: Quick Start makes the player's empire as a random computer player's, then human (spec 01 §2.1)") {
+    const game::Rules& r = setupRules();
+    const std::string player = r.racePresets()[setup::quickStartStyles(r).front()].folder;
+    const game::GameSetup g = setup::quickStartGame(r, player, 11);
+    const game::EmpireSetup& me = g.empires.front();
+    // The style's Race Opt set for the game's racial points (2000: Race Opt 1).
+    REQUIRE(me.customRace.has_value());
+    CHECK(me.customRace->characteristics[static_cast<size_t>(game::Characteristic::Intelligence)] == 110);
+    CHECK(me.customRace->traits.empty());
+    CHECK(game::racialPointCost(r, *me.customRace) <= g.options.racialPoints);
+    // Human, all 25 minister switches off, both Ship Orders options on.
+    CHECK(me.kind == game::PlayerKind::Human);
+    REQUIRE(me.settings.has_value());
+    CHECK(me.settings->ministers == 0u);
+    CHECK(me.settings->clearOrdersOnEncounter == game::EncounterClear::Any);
+    auto made = game::createGame(r, g);
+    REQUIRE_MESSAGE(made.has_value(), (made ? std::string{} : made.error()));
+    const game::Empire& e = made->empires.front();
+    CHECK(e.kind == game::PlayerKind::Human);
+    CHECK(e.ministers == 0u);
+    CHECK(e.clearOrdersOnEncounter == game::EncounterClear::Any);
+    CHECK(e.race.characteristics[static_cast<size_t>(game::Characteristic::Intelligence)] == 110);
+    // The style's AI strategies (none in the test data: the data set's, as any empire).
+    CHECK(e.strategies.size() == r.data().combatStrategies.size());
+    // The same seed, the same player.
+    const auto again = setup::quickStartGame(r, player, 11).empires.front().customRace;
+    REQUIRE(again.has_value());
+    CHECK(setup::sameRace(*again, *me.customRace));
+}
+
+TEST_CASE("setup model: Quick Start makes at most 9 random computer players (spec 01 §2.1)") {
+    test::TempDir dir("quick_start_cap");
+    for (int i = 0; i < 14; ++i)
+        writePreset(dir.path(), false, std::format("Race{}", i), std::format("Racer{}", i), "Rock", "Oxygen", 1, "Race Opt 1 Num Characteristics := 0\n");
+    writePreset(dir.path(), true, "Calm", "Calmfolk", "Rock", "Oxygen", 0, "Race Opt 1 Num Characteristics := 0\n");
+    ruleset::Ruleset rs = test::buildEngineRuleset();
+    rs.settings.set("Number of Quick Start Styles", "1");
+    rs.settings.set("Quick Start Style 1", "Race0");
+    rs.settings.set("Minimum Computer Player Medium Setting", "12");
+    rs.settings.set("Maximum Computer Player Medium Setting", "12");
+    const game::Rules r(std::move(rs), dir.path());
+    const game::GameSetup g = setup::quickStartGame(r, "Race0", 4);
+    int computers = 0;
+    for (const game::EmpireSetup& e : g.empires) computers += e.kind == game::PlayerKind::Computer;
+    CHECK(computers == 9);
+    // Game Setup's Begin Game takes the whole roll.
+    game::GameSetup full;
+    full.seed = 4;
+    full.empires.push_back(g.empires.front());
+    setup::addRandomPlayers(r, full, setup::RandomPlayers{true, 1}, setup::RandomPlayers{false, 1});
+    CHECK(full.empires.size() == 13);
+}
+
 TEST_CASE("setup model: the Quick Start picker follows Settings' style list") {
     const game::Rules& r = setupRules();
     const auto styles = setup::quickStartStyles(r);

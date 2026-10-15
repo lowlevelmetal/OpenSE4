@@ -67,7 +67,20 @@ Conventions used throughout:
   have loaded.
 - **Quick Start.** The player picks one race portrait. The candidates come from the
   `Settings.txt` keys `Number of Quick Start Styles` and `Quick Start Style N`. All other
-  settings keep their defaults. Before the galaxy is made, the human player (player 1)
+  settings keep their defaults. The player's empire is made by the routine that makes a random
+  computer player of the chosen style (spec 05 §7.1 "Random race build"), then made human
+  (confirmed: binary; corrected 2026-10-14, complete listing). So, like a computer player's,
+  its planet type and atmosphere come from the style's AI file and are redrawn at random while
+  the pair is the one the game refuses (no atmosphere on a gas giant); its characteristics and
+  traits are the style's Race Opt set for the game's racial points, each taken only while it
+  fits the points; its combat strategies are read from the style's AI strategies file; its tech
+  start levels are any new empire's. Made human, it has all 25 minister switches off, both Ship
+  Orders options on (clear orders on meeting an enemy and on meeting any other empire, spec 03
+  §6.4), and the colonization area of its planet type at level 1. The random computer players
+  are rolled as Game Setup rolls them (§2.2), but their count is lowered to 9 when it is higher
+  (so 1 + 9 regular empires); the neutrals are limited only by the 20 empires of a game
+  (confirmed: binary). Since 2026-10-14 ours follows (`setup::quickStartPlayer`,
+  `addRandomPlayers`). Before the galaxy is made, the human player (player 1)
   gets one run of the Design minister of spec 05 §7.5 for its race: having no designs, it
   gets at most one design for each template of its race's `AI_DesignCreation` file that
   yields one. It gets no ships, and the computer opponents get nothing at creation
@@ -169,7 +182,10 @@ The choices and defaults below are confirmed: binary.
 - **Number of Computer Players** (Low, Medium or High; Medium is the default) rolls the
   count within `Minimum/Maximum Computer Player {L,M,H} Setting`. Neutrals use the
   parallel neutral keys with the same
-  choice (one list serves both, observed).
+  choice (one list serves both, observed). Begin Game caps the listed and random empires at
+  20 together; Quick Start also caps the computer players at 9 (§2.1). A game hosted over
+  TCP/IP rolls them at its first turn from fixed ranges instead (spec 05 §7.1, §9.4)
+  (confirmed: binary).
 - **Difficulty** (Low, Medium or High, default Medium) and **Bonus** (None, Low, Medium or
   High, default None) handicap the AI (confirmed: binary for the lists; the bonus effect
   is in spec 05 §8).

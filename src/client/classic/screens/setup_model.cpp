@@ -550,7 +550,8 @@ std::optional<std::string> setModOption(const game::Rules& r, NewGameSettings& s
     return std::nullopt;
 }
 
-void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlayers& computers, const RandomPlayers& neutrals) {
+void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlayers& computers, const RandomPlayers& neutrals,
+                      std::optional<int> maxComputers) {
     game::GameOptions& o = g.options;
     std::vector<std::string> names, styles;
     for (const game::EmpireSetup& e : g.empires) {
@@ -563,7 +564,8 @@ void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlay
         const RandomPlayers& rp = neutral ? neutrals : computers;
         if (!rp.enabled) continue;
         const auto [lo, hi] = randomPlayerRange(r, neutral, rp.level);
-        const int count = rng.rangeInt(lo, hi);
+        int count = rng.rangeInt(lo, hi);
+        if (!neutral && maxComputers) count = std::min(count, *maxComputers);
         for (int i = 0; i < count && static_cast<int>(g.empires.size()) < kMaxEmpires; ++i) {
             const ruleset::RacePreset* p = pickRandomPreset(r, rng, neutral, styles);
             if (!p) break;
@@ -585,19 +587,46 @@ void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlay
     }
 }
 
-game::GameSetup quickStartGame(const game::Rules& r, std::string_view preset, uint64_t seed, std::optional<int> opponents) {
-    game::GameSetup setup;
-    setup.seed = seed;
+game::EmpireSetup quickStartPlayer(const game::Rules& r, std::string_view preset, int racialPoints, uint64_t seed) {
     game::EmpireSetup me;
     me.preset = std::string(preset);
     me.kind = game::PlayerKind::Human;
-    setup.empires.push_back(me);
+    // Made as a random computer player of that style (spec 01 §2.1, spec 05
+    // §7.1, confirmed: binary): the style's Race Opt set for the racial
+    // points, each part taken only while it fits them; its planet type and
+    // atmosphere, redrawn while the pair is the one the game refuses; and the
+    // combat strategies of its AI strategies file (the data set's when it
+    // has none, as for any empire). Its tech start levels are any new
+    // empire's, its planet type's colonization area at level 1 among them.
+    if (const ruleset::RacePreset* p = game::findPreset(r, preset)) {
+        Rng rng(seed ^ 0x3c6ef372fe94f82bull);
+        me.customRace = game::ai::randomPlayerRace(r, *p, racialPoints, rng);
+        me.strategies = game::ai::profileFor(r, me.customRace->style).strategies;
+    }
+    // Then made human: all 25 minister switches off, and both Ship Orders
+    // options on, so meeting any other empire clears a group's orders (spec
+    // 03 §6.4, confirmed: binary).
+    game::EmpireSettings settings;
+    settings.ministers = 0;
+    settings.ministerAll = false;
+    settings.clearOrdersOnEncounter = game::EncounterClear::Any;
+    me.settings = settings;
+    return me;
+}
+
+game::GameSetup quickStartGame(const game::Rules& r, std::string_view preset, uint64_t seed, std::optional<int> opponents) {
+    game::GameSetup setup;
+    setup.seed = seed;
     if (!opponents) {
         const NewGameSettings fresh = defaultSettings(r, seed);
         setup.options = fresh.options;
-        addRandomPlayers(r, setup, fresh.computers, fresh.neutrals);
+        setup.empires.push_back(quickStartPlayer(r, preset, setup.options.racialPoints, seed));
+        // Rolled as Game Setup rolls them, but at most 9 computer players
+        // (spec 01 §2.1, confirmed: binary); the neutrals only to 20 empires.
+        addRandomPlayers(r, setup, fresh.computers, fresh.neutrals, 9);
         return setup;
     }
+    setup.empires.push_back(quickStartPlayer(r, preset, setup.options.racialPoints, seed));
     // Every other setting keeps its default (a rolled Medium quadrant).
     std::vector<std::string> pool;
     for (const auto& p : r.racePresets())

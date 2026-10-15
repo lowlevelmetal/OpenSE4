@@ -939,7 +939,8 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - Being in combat in a simultaneous game neither stops movement nor clears orders.
 - Each empire has two **Ship Orders** options: clear orders on encountering an enemy empire (on
   for a new empire) and on encountering any empire (off); computer players take them from their
-  AI settings. They are checked only at the end of a warp transit that met no other trouble
+  AI settings. Quick Start sets both on for the player (spec 01 §2.1, confirmed: binary;
+  since 2026-10-14 ours does too, `setup::quickStartPlayer`). They are checked only at the end of a warp transit that met no other trouble
   (turbulence damage, mines, turn-based combat), whether the jump belongs to a Warp order, a Move
   To or a pursuit; never on in-system steps, and not for groups made only of drones. They count
   the objects of other empires in the arrival system that the group's owner can see (colonies
