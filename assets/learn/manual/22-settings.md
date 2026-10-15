@@ -100,6 +100,8 @@ Use*. Its choices are kept on this computer, except the autosave choice, which b
 | Tactical Combat | Fast Tactical Combat | off |
 | System Display | Display Ship Movement Lines: the route of the ship, base or fleet whose report is open, a blue line marked with the turn each square is reached. `Ctrl+L` switches it too. Starting a new simultaneous game switches it on. | off |
 | OpenSE4 | Ship movement speed: how fast ships turn and slide in the system window when they move, and in the movement log replay, from 1/8x to 8x. | 1x, the original's pace |
+| OpenSE4 | Explain failed orders: the original clears a ship's orders without a word when most orders fail (no route, an unset waypoint, a warp point that is gone, a battle on entering a sector, a drop with nothing to drop). With this on, such a failure gives a message box in a turn-based game and an "Unable to ..." line in the log in a simultaneous one, for the turns your computer carries out. | off, as the original |
+| OpenSE4 | More in item reports: the Component Report also shows the component's group, its limit per vehicle, the technology it requires and a weapon mount's to-hit modifier. | off, as the original |
 | Autosave For This Game | None, or every 1, 2, 3, 5 or 10 turns (local and hotseat games only) | None, unless chosen at setup |
 
 `Settings` opens the Settings window, and `Close` closes this one.

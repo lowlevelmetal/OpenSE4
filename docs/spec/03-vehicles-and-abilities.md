@@ -1085,8 +1085,12 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   at once, titled after what failed, and nothing is logged. Otherwise the owner gets a log
   entry, in the words of the minister in charge. The Colonize gives a computer player's
   failure in a turn-based game no message; OpenSE4 logs a computer player's other reported
-  failures as in a simultaneous game (inferred). When the warnings for Launch and Recover
-  come, and the box titles other than Move and Colonize, are (inferred).
+  failures as in a simultaneous game (inferred). Launch and Recover warnings come as a box
+  while a turn-based human carries its orders out; otherwise a human owner gets a Misc log
+  entry, and a computer player nothing (confirmed: binary, 2026-10-14). No colony order can
+  fail: remote launch and recovery, Convert Resources, Use Facility and Abandon are always
+  done, so no "Unable to ..." comes from a colony (confirmed: binary, 2026-10-14). The box
+  titles other than Move, Colonize, the warnings, Load Cargo and Drop Cargo are (inferred).
   - **The Load and Drop boxes** (confirmed: binary). A member of the group that loads
     nothing because its hold has no room for what the sources offer, or drops nothing because
     the place it drops at has no room, gives the human whose turn it is in a turn-based game a
@@ -1686,7 +1690,8 @@ All rules in this section are (confirmed: binary).
 
 **The engine's cargo orders.** Since 2026-10-14 the orders a player gives name their kind
 of cargo (`Order::cargo`, save format 10) and move every design of it, stack by stack in
-each holder's cargo order (inferred within a holder), as described above; the original's
+each holder's cargo order, each unit while it fits, a stack too large skipped (confirmed:
+binary, 2026-10-14), as described above; the original's
 saved games carry the kind both ways (spec 08 §3.8.8). An order that names one design
 instead (`Order::design` with no kind: OpenSE4's computer players give them, and so did
 games saved before format 10) moves only that design, as it always did; population is
