@@ -1045,6 +1045,7 @@ private:
     }
 
     void moveMembers(Group& g, Location next, ObjectId via) {
+        if (ctx_.movementStep) reportStep(g, next, via);
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
@@ -1055,7 +1056,6 @@ private:
             // keeps its heading (spec 06 §2.4, §7 Q62).
             if (!via.valid() && v->location.system == next.system)
                 v->heading = static_cast<uint8_t>(headingFor(v->location.sector, next.sector));
-            if (ctx_.movementStep && !live_) ctx_.movementStep(MovementStep{day_, id, v->location, next});
             if (next.system != v->location.system) s_.arrived(*v);  // last on the new system's list
             v->location = next;
             fleetMemberMoved(s_, *v);  // the fleet's location goes with it (spec 03 §9)
@@ -1111,6 +1111,26 @@ private:
         // the passage, runs the first-contact check in the system it reached
         // (spec 05 §3.1, confirmed: binary); in-system steps never do.
         if (via.valid()) diplomacy::firstContactIn(ctx_, next.system);
+    }
+
+    // The step as it is made, for the observer (TurnContext::movementStep):
+    // the members that move, from where the group stands. It reads the game
+    // and changes nothing.
+    void reportStep(const Group& g, Location next, ObjectId via) const {
+        MovementStep st;
+        st.day = live_ ? 0 : day_;
+        st.owner = g.owner;
+        st.lead = g.lead;
+        st.fleet = g.fleet;
+        st.from = where(g);
+        st.to = next;
+        st.warp = via;
+        if (!via.valid() && st.from.system == next.system) st.heading = headingFor(st.from.sector, next.sector);
+        else if (const Vehicle* lead = s_.vehicle(g.lead)) st.heading = lead->heading % 8;
+        st.liveSteps = ctx_.liveSteps.size();
+        for (VehicleId id : g.members)
+            if (const Vehicle* v = s_.vehicle(id); v && alive(*v)) st.members.push_back(id);
+        if (!st.members.empty()) ctx_.movementStep(st);
     }
 
     void arrive(Group& g) {

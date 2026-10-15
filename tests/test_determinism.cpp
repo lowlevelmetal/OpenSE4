@@ -185,6 +185,49 @@ TEST_CASE("determinism: a turn-based game gives the golden checksums") {
     checkCoverage(playGolden("turn-based", 39, false, kGolden));
 }
 
+// ---- The movement observer -------------------------------------------------------------------------
+
+// Seeing each group's steps as movement makes them (TurnOptions::movementStep,
+// the client's movement animation, spec 06 §2.4) changes nothing in the game:
+// the same games, watched and not, come out the same turn after turn. Each
+// step is reported before the group moves, from where its members stand.
+TEST_CASE("determinism: the movement observer changes nothing in the game") {
+    const Rules& r = test::engineRules();
+    for (const bool simultaneous : {true, false}) {
+        CAPTURE(simultaneous);
+        auto created = createGame(r, goldenSetup(41, simultaneous));
+        REQUIRE_MESSAGE(created.has_value(), (created ? std::string{} : created.error()));
+        GameState plain = *created;
+        GameState watched = std::move(*created);
+        size_t steps = 0, jumps = 0, wrongFrom = 0, wrongDay = 0, wrongHeading = 0, empty = 0;
+        TurnOptions options;
+        options.movementStep = [&](const MovementStep& st) {
+            ++steps;
+            if (st.members.empty()) ++empty;
+            for (const VehicleId id : st.members)
+                if (const Vehicle* v = watched.vehicle(id); !v || v->location != st.from || v->owner != st.owner) ++wrongFrom;
+            if (simultaneous ? st.day < 1 || st.day > 30 : st.day != 0) ++wrongDay;
+            if (st.to.system != st.from.system) {
+                ++jumps;
+                if (!st.warp.valid()) ++wrongHeading;
+            } else if (st.warp.valid() || st.heading != movement::headingFor(st.from.sector, st.to.sector)) {
+                ++wrongHeading;
+            }
+        };
+        for (int t = 0; t < 15; ++t) {
+            processTurn(r, plain, {});
+            processTurn(r, watched, {}, options);
+            REQUIRE_MESSAGE(stateChecksum(plain) == stateChecksum(watched), std::format("after turn {}", t + 1));
+        }
+        CHECK(steps > 100);
+        CHECK(jumps > 0);
+        CHECK(empty == 0);
+        CHECK(wrongFrom == 0);
+        CHECK(wrongDay == 0);
+        CHECK(wrongHeading == 0);
+    }
+}
+
 // ---- Battles ---------------------------------------------------------------------------------------
 
 // The combat fixture's varied battles (fleets, fighters, drones, seekers and

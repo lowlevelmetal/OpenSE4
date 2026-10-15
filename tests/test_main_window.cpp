@@ -858,8 +858,8 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     // Day 1: both step one square east (one entry each, in the order movement made them).
     Location east = where;
     east.sector.x = static_cast<decltype(east.sector.x)>(east.sector.x + 1);
-    rec.step(MovementStep{1, ship, where, east});
-    rec.step(MovementStep{1, mate, where, east});
+    rec.step(MovementStep{.day = 1, .owner = kMe, .members = {ship}, .from = where, .to = east});
+    rec.step(MovementStep{.day = 1, .owner = kMe, .members = {mate}, .from = where, .to = east});
     GameState day = s;
     day.vehicle(ship)->location = east;
     day.vehicle(mate)->location = east;
@@ -922,7 +922,7 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     GameState s2 = s;
     s2.vehicle(ship)->heading = 0;
     MovementRecorder rec2(s2);
-    rec2.step(MovementStep{1, ship, where, east});
+    rec2.step(MovementStep{.day = 1, .owner = kMe, .members = {ship}, .from = where, .to = east});
     MovementReplay turning;
     turning.setLog(std::make_shared<MovementLog>(rec2.take(3)));
     turning.play();

@@ -50,11 +50,15 @@ MovementRecorder::MovementRecorder(const game::GameState& start) {
 void MovementRecorder::step(const game::MovementStep& st) {
     if (st.day < 1) return;
     if (int(log_.days.size()) < st.day) log_.days.resize(size_t(st.day));
-    // A vehicle that appeared during the day is added by day(); its steps
-    // before that are not shown (inferred).
-    if (!where_.contains(st.vehicle)) return;
-    log_.days[size_t(st.day - 1)].moves.push_back({st.vehicle, st.from, st.to});
-    where_[st.vehicle] = st.to;
+    // One entry per member, in the group's order (§7 Q62). A vehicle that
+    // appeared during the day is added by day(); its steps before that are
+    // not shown (inferred).
+    for (const game::VehicleId id : st.members) {
+        const auto at = where_.find(id);
+        if (at == where_.end()) continue;
+        log_.days[size_t(st.day - 1)].moves.push_back({id, st.from, st.to});
+        at->second = st.to;
+    }
 }
 
 void MovementRecorder::day(int day, const game::GameState& s) {

@@ -4560,6 +4560,34 @@ TEST_CASE("movement: headings turn to each step's bearing within a system and su
     CHECK(back->vehicle(ship)->heading == 1);
 }
 
+TEST_CASE("movement: a fleet's step is reported once, with its members in the group's order") {
+    // The client animates a group's step as one sprite (spec 06 §2.4); the
+    // movement log makes one entry per member from it (§7 Q62).
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId fast = w.spawn(w.ship(kA, "Fast", 5, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId slow = w.spawn(w.ship(kA, "Slow", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::CreateFleet{"Pack", {fast, slow}}).ok);
+    const FleetId fleet = w.s.fleets.back().id;
+    fleetGets(w, fleet, {moveTo(a, 2, 4)});
+    std::vector<MovementStep> steps;
+    TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+    ctx.movementStep = [&](const MovementStep& st) { steps.push_back(st); };
+    movement::startTurn(ctx);
+    movement::runMovementAndCombat(ctx, {});
+    REQUIRE(steps.size() == 2);
+    for (const MovementStep& st : steps) {
+        CHECK(st.members == fleetGroup(w.s, *w.s.fleet(fleet)));
+        CHECK(st.fleet == fleet);
+        CHECK(st.owner == kA);
+        CHECK(st.heading == 1);   // up and to the right
+        CHECK(st.lead == st.members.front());
+    }
+    CHECK(steps[0].from == at(a, 0, 6));
+    CHECK(steps[1].to == at(a, 2, 4));
+    CHECK(steps[0].day < steps[1].day);
+}
+
 TEST_CASE("movement: a turn-based Colonize at a planet the ship cannot settle fails on arrival with a message, not a log entry") {
     // Spec 03 §8 (confirmed: binary): nothing is checked when the order is
     // given; on arrival the human whose turn it is reads the reason in a

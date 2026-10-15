@@ -37,10 +37,12 @@ namespace {
 // of the game's mods (hooks.hpp) live as long as it.
 class LiveContext {
 public:
-    LiveContext(const Rules& r, GameState& s, TurnContext::Battles* battles = nullptr) : ctx{r, s, {}, {}, {}}, session_(ctx) {
+    LiveContext(const Rules& r, GameState& s, TurnContext::Battles* battles = nullptr, const MovementObserver& step = {})
+        : ctx{r, s, {}, {}, {}}, session_(ctx) {
         ctx.moodEvents = std::move(s.pendingMood);
         s.pendingMood.clear();
         ctx.battles = battles;
+        ctx.movementStep = step;
     }
     ~LiveContext() { ctx.state.pendingMood = std::move(ctx.moodEvents); }
     LiveContext(const LiveContext&) = delete;
@@ -591,7 +593,7 @@ EmpireId activePlayer(const GameState& s) {
 TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& options, const std::vector<BattleAnswer>* battles) {
     if (!turnBased(s) || s.gameOver) return {};
     return withBattles(s, battles, [&](TurnContext::Battles* b) {
-        LiveContext lc(r, s, b);
+        LiveContext lc(r, s, b, options.movementStep);
         resume(lc, options);
         return lc.result();
     });
@@ -606,7 +608,8 @@ TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e) {
     return lc.result();
 }
 
-TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles) {
+TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles,
+                     const MovementObserver& step) {
     if (!turnBased(s)) {
         const CommandResult res = apply(r, s, e, c);
         return res.ok ? TurnResult{} : refused(e, std::format("{}: {}", commandName(c), res.error));
@@ -614,7 +617,7 @@ TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c,
     if (s.gameOver) return refused(e, "The game is over.");
     if (s.playerTurn.empire != e || !s.playerTurn.started) return refused(e, "It is not your turn.");
     return withBattles(s, battles, [&](TurnContext::Battles* b) {
-        LiveContext lc(r, s, b);
+        LiveContext lc(r, s, b, step);
         applyEach(lc, e, std::span<const Command>(&c, 1), s.empire(e).kind == PlayerKind::Human);
         return lc.result();
     });
@@ -623,7 +626,7 @@ TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c,
 TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e, const LiveOptions& options, const std::vector<BattleAnswer>* battles) {
     if (!turnBased(s) || s.gameOver) return {};
     return withBattles(s, battles, [&](TurnContext::Battles* b) {
-        LiveContext lc(r, s, b);
+        LiveContext lc(r, s, b, options.movementStep);
         if (!s.playerTurn.started) resume(lc, options);  // the turn must have started before it can end
         if (s.gameOver) return lc.result();
         if (s.playerTurn.empire != e || !s.playerTurn.started) {
@@ -641,7 +644,7 @@ TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e, const LiveOpt
 namespace detail {
 
 TurnResult playTurnBasedTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options) {
-    LiveContext lc(r, s);
+    LiveContext lc(r, s, nullptr, options.movementStep);
     std::vector<const EmpireOrders*> byEmpire(s.empires.size(), nullptr);
     for (const EmpireOrders& o : orders) {
         if (!o.empire.valid() || o.empire.index() >= s.empires.size()) continue;

@@ -61,7 +61,7 @@ struct MovementLog {
 class MovementRecorder {
 public:
     explicit MovementRecorder(const game::GameState& start);
-    // A step of one vehicle (TurnContext::movementStep): the day's next entry.
+    // A step of one group (TurnContext::movementStep): the day's next entries, one per member.
     void step(const game::MovementStep& st);
     // The state after a day: vehicles that appeared or were removed, colonies
     // founded, taken or lost; a vehicle found elsewhere without a step gets a

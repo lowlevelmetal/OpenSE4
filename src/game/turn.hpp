@@ -124,13 +124,32 @@ bool simultaneousBattlesShown(const Rules& r);
 // move to GameState::pendingMood at the end of the turn and come back at the
 // start of the next, unless the game was saved and loaded in between (they
 // are not saved, spec 02 §4).
-// One step of one vehicle in the simultaneous movement phase: within a
-// system, or through a warp point to another (TurnContext::movementStep).
+// One step of one group as movement makes it, in a simultaneous game's
+// movement days or as a turn-based game's orders run (spec 03 §6.3, spec 06
+// §2.4 "Moves as they are made"): one sector within a system, or a jump
+// through a warp point to another (TurnContext::movementStep). The members
+// move together, in the group's order; the original's movement log has one
+// entry per member and step, in that order (spec 06 §7 Q62). Not saved.
 struct MovementStep {
-    int day = 0;
-    VehicleId vehicle;
-    Location from, to;
+    int day = 0;                     // simultaneous games: the movement day, 1..30; turn-based games: 0
+    EmpireId owner;
+    std::vector<VehicleId> members;  // the group's members still in the game, in the group's order
+    // The group's first vehicle, whose mini stands for the group while it
+    // turns and slides (spec 06 §2.4): the acting vehicle (a fleet's first
+    // member in object order with orders, the first one tagged), or the first member.
+    VehicleId lead;
+    FleetId fleet;                   // the fleet whose group it is, if any
+    Location from, to;               // `to` in another system: a warp jump
+    ObjectId warp;                   // the warp point of a jump; invalid within a system
+    // Within a system: the members' new heading, the bearing from `from` to
+    // `to` (0..7, spec 06 §2.4); a jump keeps each member's own heading.
+    int heading = 0;
+    // Turn-based games: how many of the call's LiveSteps (TurnResult::liveSteps)
+    // were made before this step, so that the two lists can be read in the
+    // order they were made.
+    size_t liveSteps = 0;
 };
+using MovementObserver = std::function<void(const MovementStep&)>;
 
 // Turn-based games: a message for the player whose turn it is, raised by one
 // of its own orders as it was carried out, shown at once in a message box and
@@ -205,11 +224,12 @@ struct TurnContext {
     // state as that day left it (TurnOptions::movementDay; the client's
     // movement log replay, docs/spec/06 §7 Q51). Observes only.
     std::function<void(int day, const GameState&)> movementDay;
-    // Simultaneous games: called for each vehicle's every step (within a
-    // system, or through a warp point) as movement makes it, members in their
-    // group's order (TurnOptions::movementStep; the replay's one entry per
-    // vehicle and step, docs/spec/06 §7 Q62). Observes only.
-    std::function<void(const MovementStep&)> movementStep;
+    // Called for each group's every step (within a system, or through a warp
+    // point) as movement makes it, in simultaneous and turn-based games
+    // (TurnOptions::movementStep, LiveOptions::movementStep: the client's
+    // movement animation and its movement log replay, docs/spec/06 §2.4, §7
+    // Q62). Observes only: the game comes out the same with or without it.
+    MovementObserver movementStep;
     // The script and external players of this engine call (players.hpp); null:
     // every empire is played by the built-in AI.
     Players* players = nullptr;
@@ -235,8 +255,10 @@ struct TurnOptions {
     const std::vector<BattleAnswer>* battles = nullptr;
     // Simultaneous games: an observer of each movement day (TurnContext::movementDay).
     std::function<void(int day, const GameState&)> movementDay;
-    // Simultaneous games: an observer of each step (TurnContext::movementStep).
-    std::function<void(const MovementStep&)> movementStep;
+    // An observer of each group's every step (TurnContext::movementStep), in
+    // simultaneous and turn-based games. Called on the thread that processes
+    // the turn.
+    MovementObserver movementStep;
     // Simultaneous games: how far the turn's processing has got, for the
     // client's Progress window (spec 06 §1.7, confirmed: binary): steps done
     // of a total of the number of empires × 4 + 30. Which steps count is ours
@@ -340,6 +362,9 @@ struct LiveOptions {
     // game turn before that turn's start (spec 06 §6.1, confirmed: binary).
     // Observes only.
     std::function<void(const GameState&)> beforeHumanTurn;
+    // Sees each group's every step as movement makes it, in every player's
+    // turn of the call (TurnContext::movementStep). Observes only.
+    MovementObserver movementStep;
 
     bool computerPlaysFor(EmpireId e) const;
 };
@@ -389,7 +414,9 @@ TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e);
 // (questions): new orders for a group, or an answer, drop its question, and
 // so does the group's end (destroyed, or no orders left). A call rolled back
 // for a missing battle answer leaves them as they were.
-TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles = nullptr);
+// `step` sees each group's every step as it is made (TurnContext::movementStep).
+TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles = nullptr,
+                     const MovementObserver& step = {});
 
 // The open Attack Sector questions a command settles (applyLive; a network
 // player's copy drops them the same way): an answer drops its own question,
