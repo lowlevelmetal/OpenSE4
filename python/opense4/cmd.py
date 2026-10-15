@@ -252,17 +252,21 @@ def fire_on(vehicle: Optional[Ref] = None) -> Dict[str, Any]:
     }
 
 
-def retrofit(vehicle: Optional[Ref] = None, design: Optional[Ref] = None) -> Dict[str, Any]:
+def retrofit(vehicle: Optional[Ref] = None, design: Optional[Ref] = None, move_first: Optional[LocationLike] = None) -> Dict[str, Any]:
     """Refits a vehicle to another of our designs at one of our space yards. A Scrap window action like
-    scrap.
+    scrap. With move_first (the computer player's way of retrofitting at a yard) a vehicle standing
+    in that sector is refitted at once in either turn style, and one elsewhere first moves there and
+    is refitted on arrival.
 
     vehicle: The vehicle.
     design: The design to refit it to.
+    move_first: The yard's sector (no system: the window's retrofit).
     """
     return {
         'kind': 'retrofit',
         'vehicle': _id(vehicle, 'vehicle', 'retrofit.vehicle'),
         'design': _id(design, 'design', 'retrofit.design'),
+        'move_first': {'system': None, 'x': 6, 'y': 6} if move_first is None else _struct(move_first, 'location', 'retrofit.move_first'),
     }
 
 

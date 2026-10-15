@@ -697,3 +697,33 @@ TEST_CASE("fleet transfer: the default names go Alpha to Kappa, then two letters
     CHECK(names[10] == "Alpha Alpha Fleet");
     CHECK(names[11] == "Alpha Beta Fleet");
 }
+
+TEST_CASE("scrap window: the Retrofit minister's retrofit is at once at its yard, else a Move To and the Retrofit") {
+    // Spec 05 §7.5 *Retrofit* (confirmed: binary, medium confidence on the details).
+    const Rules& r = engineRules();
+    GameState s = newGame(r, true);
+    const Location home = homeOf(s, kMe);
+    const Location away{home.system, Sector{home.sector.x == 0 ? 1 : home.sector.x - 1, home.sector.y}};   // one move away
+    const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod"});
+    const DesignId armored = design(s, r, kMe, "Armored", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod", "Test Armor Plate"});
+    const VehicleId here = addTestVehicle(s, r, plain, home).id;
+    const VehicleId there = addTestVehicle(s, r, plain, away).id;
+    // At the yard: retrofitted at once, even in a simultaneous game.
+    REQUIRE(apply(r, s, kMe, cmd::Retrofit{here, armored, home}).ok);
+    CHECK(s.vehicle(here)->design == armored);
+    CHECK(s.vehicle(here)->orders.empty());
+    // Elsewhere: the list becomes a Move To the yard and the Retrofit.
+    REQUIRE(apply(r, s, kMe, cmd::SetOrders{there, {}, {Order{OrderKind::MoveTo, away}}, true}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::Retrofit{there, armored, home}).ok);
+    const std::vector<Order>& orders = s.vehicle(there)->orders;
+    REQUIRE(orders.size() == 2);
+    CHECK(orders[0] == Order{OrderKind::MoveTo, home});
+    CHECK(orders[1].kind == OrderKind::Retrofit);
+    CHECK(orders[1].design == armored);
+    CHECK_FALSE(s.vehicle(there)->repeatOrders);
+    CHECK(s.vehicle(there)->design == plain);
+    // Movement takes it there and retrofits it on arrival.
+    movementPhase(r, s);
+    CHECK(s.vehicle(there)->location == home);
+    CHECK(s.vehicle(there)->design == armored);
+}

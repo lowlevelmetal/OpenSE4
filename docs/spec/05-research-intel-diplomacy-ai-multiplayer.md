@@ -2309,6 +2309,17 @@ binary).
       a design older than 20 turns.
     - Such a ship goes to a yard and retrofits to the newest valid design with the same
       hull and design type, up to 3 ships.
+    - *The orders* (confirmed: binary, medium confidence on the details; added 2026-10-14,
+      complete listing): the minister retrofits a ship at once where it stands, in either
+      turn style, when that is the yard it chose; otherwise it clears the ship's list and
+      gives a special "go there and retrofit" order, which moves the group and retrofits
+      every member on arrival. OpenSE4 follows this since 2026-10-14 (`planRetrofit`,
+      `ai_military.cpp`; `cmd::Retrofit` with `moveFirst`, `commands.cpp`): the yard is our
+      nearest colony with a working yard by jumps, as before; the order is a Move To and the
+      Retrofit order, which movement carries out on arrival with its own test (spec 03 §15).
+      It used to give the window's retrofit to a ship at any yard, which in a simultaneous
+      game became the ship's only order, and only a Move To to a ship elsewhere, which was
+      planned again once it stood at the yard.
   - *Scrap*: while over the soft cap, one ship per turn (confirmed: binary). The
     candidates are the empire's vehicles that are not of a colony-ship design type
     (Colony (Rock), (Ice) or (Gas)): every one that can move (maximum movement above 0, not

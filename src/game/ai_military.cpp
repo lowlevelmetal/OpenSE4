@@ -1883,15 +1883,17 @@ void planRetrofit(Planner& p) {
             if (!newer || std::pair(cand.createdTurn, d) > std::pair(p.st.design(*newer).createdTurn, *newer)) newer = d;
         }
         if (!newer) continue;
-        if (spaceYardAt(p.r, p.st, p.id, v->location)) {
-            if (p.emit(cmd::Retrofit{id, *newer})) {
-                p.busy.insert(id);
-                ++started;
-            }
-            continue;
-        }
+        // The yard (our nearest colony with a working yard, by jumps): standing
+        // there the ship is retrofitted at once, in either turn style;
+        // otherwise its list is cleared and it gets the "go there and
+        // retrofit" orders, which retrofit it on arrival (confirmed: binary,
+        // medium confidence on the details; cmd::Retrofit's moveFirst).
         const auto yard = nearestColony(p, v->location.system, [&](const Colony& c) { return colonyHasWorkingYard(p.r, c); });
-        if (yard && p.setOrders(id, {moveOrder(locationOf(p.st.galaxy, *yard))})) ++started;
+        if (!yard) continue;
+        if (p.emit(cmd::Retrofit{id, *newer, locationOf(p.st.galaxy, *yard)})) {
+            p.busy.insert(id);
+            ++started;
+        }
     }
 }
 

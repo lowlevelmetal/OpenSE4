@@ -835,6 +835,7 @@ template <class A>
 void fields(A& a, cmd::Retrofit& x) {
     a("vehicle", x.vehicle);
     a("design", x.design);
+    a("move_first", x.moveFirst);
 }
 template <class A>
 void fields(A& a, cmd::SetColonyType& x) {

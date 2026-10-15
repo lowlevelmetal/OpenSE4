@@ -186,13 +186,14 @@ The Scrap window's "Fire On And Destroy": our armed ships in the sector destroy 
 ## `retrofit`
 
 ```python
-retrofit(vehicle: Optional[Ref] = None, design: Optional[Ref] = None) -> Dict[str, Any]
+retrofit(vehicle: Optional[Ref] = None, design: Optional[Ref] = None, move_first: Optional[LocationLike] = None) -> Dict[str, Any]
 ```
 
-Refits a vehicle to another of our designs at one of our space yards. A Scrap window action like scrap.
+Refits a vehicle to another of our designs at one of our space yards. A Scrap window action like scrap. With move_first (the computer player's way of retrofitting at a yard) a vehicle standing in that sector is refitted at once in either turn style, and one elsewhere first moves there and is refitted on arrival.
 
 - `vehicle`: The vehicle.
 - `design`: The design to refit it to.
+- `move_first`: The yard's sector (no system: the window's retrofit).
 
 ## `set_minister`
 

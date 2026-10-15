@@ -311,12 +311,16 @@ destroy one of our own vehicles.
 ### `retrofit`
 
 Refits a vehicle to another of our designs at one of our space yards. A
-Scrap window action like `scrap`.
+Scrap window action like `scrap`. With `move_first` (the computer player's
+way of retrofitting at a yard) a vehicle standing in that sector is refitted
+at once in either turn style, and one elsewhere first moves there and is
+refitted on arrival.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `vehicle` | vehicle id, or null | The vehicle. |
 | `design` | design id, or null | The design to refit it to. |
+| `move_first` | location | The yard's sector (no system: the window's retrofit). |
 
 ```json
 {"kind": "retrofit", "vehicle": 31, "design": 18}

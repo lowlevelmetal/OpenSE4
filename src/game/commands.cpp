@@ -643,7 +643,33 @@ struct Applier {
 
     // Retrofit (spec 03 §14, §15, confirmed: binary): a Scrap window action;
     // retrofitProblem makes the checks in order, the first failure cancels it.
-    R operator()(const cmd::Retrofit& c) { return scrapWindow(c.vehicle, ScrapAction::Retrofit, c.design); }
+    R operator()(const cmd::Retrofit& c) {
+        if (c.moveFirst.system.valid()) return retrofitAtYard(c);
+        return scrapWindow(c.vehicle, ScrapAction::Retrofit, c.design);
+    }
+
+    // The Retrofit minister's retrofit (spec 05 §7.5 *Retrofit*, confirmed:
+    // binary): at the yard it chose the vehicle is retrofitted at once, in
+    // either turn style, when the order's test passes; elsewhere its list is
+    // cleared and it gets a Move To the yard and the Retrofit, which movement
+    // carries out on arrival with its own test (spec 03 §15).
+    R retrofitAtYard(const cmd::Retrofit& c) {
+        Vehicle* v = ownVehicle(s, e, c.vehicle);
+        if (!v || v->count <= 0) return R::fail("Not your vehicle");
+        if (!knownSystem(s, c.moveFirst.system) || !c.moveFirst.sector.valid()) return R::fail("Invalid destination");
+        if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
+        if (v->location == c.moveFirst) {
+            if (auto why = scrapActionProblem(r, s, e, *v, ScrapAction::Retrofit, c.design, ScrapTest::Order); !why.empty()) return R::fail(why);
+            TurnContext ctx{r, s, {}, {}, {}};
+            carryOutScrapAction(ctx, *v, ScrapAction::Retrofit, c.design);
+            return {};
+        }
+        Order retrofit{scrapOrderKind(ScrapAction::Retrofit), c.moveFirst};
+        retrofit.design = c.design;
+        v->orders = {Order{OrderKind::MoveTo, c.moveFirst}, retrofit};
+        v->repeatOrders = false;
+        return {};
+    }
 
     R operator()(const cmd::SetColonyType& c) {
         Colony* col = ownColony(s, e, c.planet);
