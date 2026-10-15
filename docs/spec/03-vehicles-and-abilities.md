@@ -1801,7 +1801,9 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   recover at all is ours (inferred): the kind and launcher tests warn whatever the hold
   holds, the caps only for units that would have gone.
 - **The window** Launch \ Recover Units (order U, turn-based games only, spec 06 §1.3;
-  confirmed: binary). A click acts at once on exactly the ship, base or colony clicked,
+  confirmed: binary). Its carrier list holds the empire's own objects in the sector that hold
+  cargo, have cargo space above 0, and are a colony or have a fighter, satellite, mine or drone
+  launch ability, in the system's object order (spec 06 §7 Q119). A click acts at once on exactly the ship, base or colony clicked,
   never on its fleet-mates: a unit under a carrier launches from that carrier, a group in
   space comes back aboard the carrier selected in the left list, by the amount the radios
   set. The order list is neither touched nor run, nothing is logged, and launches count
@@ -2010,12 +2012,16 @@ A button is lit only when every selected vehicle passes its test (the window is 
   - satellite groups, minefields, drone groups and planets never count, whatever they carry.
 
   The armed vehicle may be cloaked, in a fleet, out of supply or out of movement, and may itself
-  be selected. Nothing else is tested: no treaty, range, sight, supply or yard, and the target
-  may be any listed vehicle, unit groups and minefields included.
+  be selected. The target itself must not be cloaked (corrected 2026-10-14, complete listing;
+  the engine already refused it, `scrapActionProblem`). Nothing else is tested: no treaty,
+  range, sight, supply or yard, and the target may be any listed vehicle, unit groups and
+  minefields included.
 - **The last armed vehicle.** Because the test needs another armed vehicle, the last armed
   vehicle in a sector can never be fired on. When several armed vehicles are selected the
   button is lit (each sees the others), but the one carried out last finds no armed companion
-  left: in a turn-based game it stays, and in a simultaneous game its order fails.
+  left: in a turn-based game it stays, and in a simultaneous game its order is refused, which
+  counts as done and does not fail: the list goes on, nothing is said (corrected 2026-10-14,
+  complete listing; the engine already did this, `scrapWindowAction`).
 - **Effect.** The target is removed at once, as by scrapping. Nobody fires: there is no battle, no
   shot, no damage roll, no movement or supply spent, no experience and no kill statistic. Cargo
   aboard is lost. The system's sight is recalculated.

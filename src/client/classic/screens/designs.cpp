@@ -69,13 +69,19 @@ std::string_view mountCode(const game::Rules& r, int32_t mount) {
 }
 
 // The empire's design-name list (Dsgnname/<file> in the install), if any.
-std::vector<std::string> loadNameList(UiContext& ui) {
+// `missing` is set when the race names a file that cannot be opened.
+std::vector<std::string> loadNameList(UiContext& ui, bool* missing = nullptr) {
+    if (missing) *missing = false;
     const std::string& file = ui.me().race.designNameFile;
     if (file.empty()) return {};
     const ruleset::GameFiles* files = ui.rules().files();
     const auto path = files ? files->path("Dsgnname/" + file) : std::nullopt;
-    if (!path) return {};
-    std::ifstream in(*path, std::ios::binary);
+    std::ifstream in;
+    if (path) in.open(*path, std::ios::binary);
+    if (!in) {
+        if (missing) *missing = true;
+        return {};
+    }
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     return parseNameList(text);
 }
@@ -290,7 +296,11 @@ private:
                 dl->AddText({b.x + ui.px(61), b.y + ui.px(-2 + kTextLead)}, IM_COL32_WHITE, d.name.c_str());
                 ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
                 dl->AddText({b.x + ui.px(71), b.y + ui.px(12 + kSmallLead)}, IM_COL32_WHITE, hull.name.c_str());
-                if (!enemyTab(tab_) && game::designIsPrototype(d)) dl->AddText({b.x + ui.px(71), b.y + ui.px(23 + kSmallLead)}, IM_COL32_WHITE, "Prototype");
+                // On every tab, for any design never built (spec 06 §7 Q93,
+                // confirmed: binary). A player's view of another empire's
+                // design has no statistics, so there "built" is everBuilt.
+                const bool prototype = game::designIsPrototype(d) && (!enemyTab(tab_) || !d.everBuilt);
+                if (prototype) dl->AddText({b.x + ui.px(71), b.y + ui.px(23 + kSmallLead)}, IM_COL32_WHITE, "Prototype");
                 ImGui::PopFont();
                 dl->PopClipRect();
             }
@@ -687,7 +697,12 @@ private:
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
-        names_ = loadNameList(ui);
+        // A name file the race names that cannot be opened: a "Load Error" box
+        // naming it, and an empty list (spec 06 §7 Q94, confirmed: binary; the
+        // words are ours).
+        bool missing = false;
+        names_ = loadNameList(ui, &missing);
+        if (missing) notice_.open(std::format("Your design names file could not be opened: {}.", me.race.designNameFile), "Load Error");
 
         if (args_.design.valid() && args_.design.index() < s.designs.size()) {
             const game::Design& t = s.design(args_.design);
@@ -846,7 +861,7 @@ private:
         d.beginContent(576);
         topRow(ui, d, st);
         strip(ui, d);
-        grid(ui, d, st);
+        grid(ui, d);
         sideBoxes(ui, d, st);
         ImGui::SetCursorScreenPos(d.at({19, 40}));
         ImGui::Dummy(ImVec2(0, 0));
@@ -1124,7 +1139,7 @@ private:
     // name and kT, three to a row; a click adds the component (with the chosen
     // mount where it applies), and does nothing before a size is chosen
     // (confirmed: binary); a right-click opens its report.
-    void grid(UiContext& ui, const Dialog& d, const std::optional<game::DesignStats>& st) {
+    void grid(UiContext& ui, const Dialog& d) {
         const game::Rules& r = ui.rules();
         const uint32_t hull = probeHull(ui);
         label(ui, d, {19, 238}, std::format("Components Available ({})", group_.empty() ? std::string("All") : group_));
@@ -1150,8 +1165,6 @@ private:
             const ruleset::Component& c = r.component(ci);
             const game::DesignEntry entry{ci, hull_ ? mountFor(r, *hull_, ci, mount_) : -1};
             const game::MountedComponent m = game::mounted(r, entry);
-            const int onDesign = static_cast<int>(std::count_if(entries_.begin(), entries_.end(), [&](const auto& e) { return e.component == ci; }));
-            const bool fits = !st || (st->tonnageUsed + m.tonnage <= st->tonnageMax && (c.maxPerVehicle == 0 || onDesign < c.maxPerVehicle));
             const ImVec2 a(origin.x + tileW * float(i % 3), origin.y + tileH * float(i / 3));
             ImGui::SetCursorScreenPos(a);
             ImGui::PushID(static_cast<int>(i));
@@ -1160,11 +1173,14 @@ private:
             ImGui::PopID();
             const ImVec2 b(a.x + tileW, a.y + tileH);
             if (hovered) dl->AddRect(a, b, imColor(palette::kButtonHot));
-            if (const Sprite pic = ui.art.component(c.picture))
-                drawSprite(dl, pic, a + ui.size({1, 1}), a + ui.size({37, 37}), fits ? IM_COL32_WHITE : IM_COL32(120, 120, 120, 255));
+            // Every tile is drawn alike, whether the component fits or not,
+            // with a thin line between the picture and the text (spec 06 §7
+            // Q94, confirmed: binary; the line's colour is ours).
+            if (const Sprite pic = ui.art.component(c.picture)) drawSprite(dl, pic, a + ui.size({1, 1}), a + ui.size({37, 37}), IM_COL32_WHITE);
+            dl->AddLine(a + ui.size({38, 1}), a + ui.size({38, 37}), imColor(palette::kButton), std::max(1.0f, ui.px(1)));
             ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
             dl->PushClipRect(a + ui.size({39, 0}), b, true);
-            dl->AddText(a + ui.size({40, 3}), fits ? IM_COL32_WHITE : imColor(palette::kDim), c.name.c_str());
+            dl->AddText(a + ui.size({40, 3}), IM_COL32_WHITE, c.name.c_str());
             dl->AddText(a + ui.size({40, 21}), imColor(palette::kSecondary), std::format("{}kT", m.tonnage).c_str());
             dl->PopClipRect();
             if (const std::string_view code = mountCode(r, entry.mount); !code.empty())

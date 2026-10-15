@@ -1,5 +1,7 @@
 #include "client/classic/screens/item_reports.hpp"
 
+#include "client/classic/settings.hpp"
+
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/empire_logic.hpp"
 #include "client/script/items.hpp"
@@ -51,10 +53,11 @@ void wrapped(std::string_view text, ImVec4 color = kDimText) {
 float valueColumn(DetailStyle st) { return st == DetailStyle::Compact ? 80.0f : 100.0f; }
 float pictureSize(DetailStyle st) { return st == DetailStyle::Full ? 128.0f : st == DetailStyle::Report ? 96.0f : 40.0f; }
 
-// Label and value; inside a group (next to a picture) the value column is relative to the group.
+// Label and value; inside a group (next to a picture) the value column is
+// relative to the group. A label wider than the column pushes its value on.
 void row(UiContext& ui, const char* label, const std::string& value, DetailStyle st) {
     ImGui::TextColored(kBlueText, "%s", label);
-    ImGui::SameLine(ui.px(valueColumn(st)));
+    ImGui::SameLine(std::max(ui.px(valueColumn(st)), ImGui::GetItemRectSize().x + ui.px(8)));
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted(value.c_str());
     ImGui::PopTextWrapPos();
@@ -162,6 +165,14 @@ void damageTable(UiContext& ui, const game::DesignEntry& entry) {
     ImGui::PopTextWrapPos();
 }
 
+// The Component Report (spec 06 §1.2, confirmed: binary): beside the
+// picture the name and the component's description, then the labelled lines
+// in the original's order: Cost, Size, Damage Resistance, Supplies Used,
+// Vehicle Types; Mount Used when a mount applies; for a weapon Weapon Type
+// (with "(Speed N)" for a seeker), Can Target, Fire Rate, Damage Type,
+// Seeker Dmg Res and Damage At Range; then the abilities. OpenSE4's own lines
+// (Group, Limit, Requires and the mount's To Hit) follow with Options →
+// OpenSE4 "More in item reports" (settings().reportExtras).
 void componentDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     const game::Rules& r = ui.rules();
     const ruleset::Component& c = r.component(item.index);
@@ -171,40 +182,35 @@ void componentDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     if (!pic) pic = ui.art.component(c.picture);
     beginHeader(ui, pic, st);
     title(ui, c.name);
-    if (st != DetailStyle::Compact) {
-        row(ui, "Group", c.generalGroup.empty() ? std::string("-") : c.generalGroup, st);
-        if (item.mount >= 0) row(ui, "Mount", r.data().weaponMounts[static_cast<size_t>(item.mount)].longName, st);
-        row(ui, "Size", std::format("{} kT", m.tonnage), st);
-        row(ui, "Structure", std::to_string(m.structure), st);
-        if (m.supplyUsed > 0) row(ui, "Supply Use", std::to_string(m.supplyUsed), st);
-    }
+    if (st != DetailStyle::Compact) wrapped(c.description);
     ImGui::EndGroup();
-    if (st == DetailStyle::Compact) {
-        if (item.mount >= 0) row(ui, "Mount", r.data().weaponMounts[static_cast<size_t>(item.mount)].longName, st);
-        row(ui, "Size", std::format("{} kT", m.tonnage), st);
-        row(ui, "Structure", std::to_string(m.structure), st);
-        if (m.supplyUsed > 0) row(ui, "Supply Use", std::to_string(m.supplyUsed), st);
-    }
+    if (st == DetailStyle::Compact) wrapped(c.description);
     costRow(ui, m.cost, st);
-    row(ui, "Vehicles", vehicleTypesText(c), st);
-    if (c.maxPerVehicle > 0) row(ui, "Limit", std::format("{} per vehicle", c.maxPerVehicle), st);
-    if (st != DetailStyle::Compact) row(ui, "Requires", requirementsText(r, c.requirements), st);
+    row(ui, "Size", std::format("{} kT", m.tonnage), st);
+    row(ui, "Damage Resistance", std::to_string(m.structure), st);
+    row(ui, "Supplies Used", std::to_string(m.supplyUsed), st);
+    row(ui, "Vehicle Types", vehicleTypesText(c), st);
+    if (item.mount >= 0 && static_cast<size_t>(item.mount) < r.data().weaponMounts.size())
+        row(ui, "Mount Used", r.data().weaponMounts[static_cast<size_t>(item.mount)].longName, st);
     if (c.isWeapon()) {
-        section(ui, "Weapon");
-        row(ui, "Type", std::string(weaponKindName(c.weapon.kind)), st);
-        row(ui, "Targets", targetsText(c.weapon.targets), st);
-        if (!c.weapon.damageType.empty()) row(ui, "Damage", c.weapon.damageType, st);
-        row(ui, "Reload", std::format("{} turn{}", c.weapon.reloadRate, c.weapon.reloadRate == 1 ? "" : "s"), st);
-        if (m.toHitModifier != 0) row(ui, "To Hit", std::format("{:+}%", m.toHitModifier), st);
-        if (c.weapon.kind == ruleset::WeaponKind::Seeking && c.weapon.seekerSpeed > 0)
-            row(ui, "Seeker", std::format("speed {}, resists {}", c.weapon.seekerSpeed, c.weapon.seekerDamageResistance), st);
-        ImGui::TextColored(kBlueText, "Damage by range");
+        const bool seeker = c.weapon.kind == ruleset::WeaponKind::Seeking;
+        std::string type(weaponKindName(c.weapon.kind));
+        if (seeker && c.weapon.seekerSpeed > 0) type += std::format(" (Speed {})", c.weapon.seekerSpeed);
+        row(ui, "Weapon Type", type, st);
+        row(ui, "Can Target", targetsText(c.weapon.targets), st);
+        row(ui, "Fire Rate", std::to_string(c.weapon.reloadRate), st);
+        row(ui, "Damage Type", c.weapon.damageType.empty() ? std::string("Normal") : c.weapon.damageType, st);
+        if (seeker) row(ui, "Seeker Dmg Res", std::to_string(c.weapon.seekerDamageResistance), st);
+        ImGui::TextColored(kBlueText, "Damage At Range");
         damageTable(ui, entry);
     }
     abilityList(ui, c.abilities, m.shieldPercent);
-    if (st != DetailStyle::Compact && !c.description.empty()) {
-        ImGui::Spacing();
-        wrapped(c.description);
+    if (settings().reportExtras) {
+        section(ui, "OpenSE4");
+        row(ui, "Group", c.generalGroup.empty() ? std::string("-") : c.generalGroup, st);
+        if (c.maxPerVehicle > 0) row(ui, "Limit", std::format("{} per vehicle", c.maxPerVehicle), st);
+        row(ui, "Requires", requirementsText(r, c.requirements), st);
+        if (c.isWeapon() && m.toHitModifier != 0) row(ui, "To Hit", std::format("{:+}%", m.toHitModifier), st);
     }
 }
 

@@ -161,10 +161,23 @@ TEST_CASE("settings keys: the Weapons Report's export writes four tables") {
 
     const TempDir tmp("weapon_export");
     const auto written = writeExportTables(tmp.path() / "SaveGame", "", tables);
-    REQUIRE(written);
-    REQUIRE(written->size() == 4);
-    CHECK(written->front().filename() == "Weapons.txt");
-    for (size_t i = 0; i < tables.size(); ++i) CHECK(readFile((*written)[i]) == tables[i].text);
+    REQUIRE(written.size() == 4);
+    CHECK(written.front().file.filename() == "Weapons.txt");
+    for (size_t i = 0; i < tables.size(); ++i) {
+        CHECK(written[i].ok);
+        CHECK(readFile(written[i].file) == tables[i].text);
+    }
+    // Each file is written on its own: one that cannot be written (a folder
+    // stands in its place) does not stop the others (spec 06 §7 Q83).
+    const TempDir blocked("weapon_export_blocked");
+    std::filesystem::create_directories(blocked.path() / "Comps.txt");
+    const auto partly = writeExportTables(blocked.path(), "", tables);
+    REQUIRE(partly.size() == 4);
+    CHECK(partly[0].ok);
+    CHECK_FALSE(partly[1].ok);
+    CHECK(partly[2].ok);
+    CHECK(partly[3].ok);
+    CHECK(readFile(partly[3].file) == tables[3].text);
 }
 
 TEST_CASE("settings keys: the movement delay waits after each animated step") {

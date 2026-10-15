@@ -186,6 +186,17 @@ struct LaunchRates {
 LaunchRates launchRates(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
 // Whether the vehicle has a launcher for units of this design.
 bool canLaunch(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, game::DesignId unit);
+// The carriers the window Launch \ Recover Units lists on the map (spec 06
+// §1.3, spec 03 §12, confirmed: binary): the empire's own objects in the
+// sector that hold cargo, have cargo space above 0, and are a colony or have
+// a fighter, satellite, mine or drone launch ability, in the system's object
+// order (colonies and vehicles mixed). Each is a vehicle or a colony's planet.
+struct LaunchCarrier {
+    game::VehicleId vehicle;
+    game::ObjectId planet;
+    bool operator==(const LaunchCarrier&) const = default;
+};
+std::vector<LaunchCarrier> launchCarriers(const game::Rules& r, const game::GameState& s, game::EmpireId owner, game::Location where);
 
 // ---- Scrap window ---------------------------------------------------------------------------
 

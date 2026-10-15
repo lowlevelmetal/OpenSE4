@@ -315,6 +315,22 @@ bool isUnitDesign(const game::Rules& r, const game::GameState& s, game::DesignId
     return game::isUnitType(r.hull(s.design(d).hull).type);
 }
 
+std::vector<LaunchCarrier> launchCarriers(const game::Rules& r, const game::GameState& s, game::EmpireId owner, game::Location where) {
+    std::vector<LaunchCarrier> out;
+    for (const game::ObjectRef& ref : game::objectOrder(s)) {
+        if (ref.object.valid()) {
+            const game::Colony* c = s.colony(ref.object);
+            if (c && c->owner == owner && game::locationOf(s.galaxy, ref.object) == where && game::colonyCargoCapacity(r, s, *c) > 0)
+                out.push_back(LaunchCarrier{{}, ref.object});
+            continue;
+        }
+        const game::Vehicle* v = s.vehicle(ref.vehicle);
+        if (!v || v->count <= 0 || v->owner != owner || v->location != where || game::isUnitType(game::vehicleType(r, s, *v))) continue;
+        if (game::vehicleCargoCapacity(r, s, *v) > 0 && launchRates(r, s, *v).any()) out.push_back(LaunchCarrier{v->id, {}});
+    }
+    return out;
+}
+
 LaunchRates launchRates(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     const auto abilities = game::vehicleAbilities(r, s, v);
     LaunchRates out;

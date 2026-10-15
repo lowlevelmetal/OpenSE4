@@ -238,18 +238,14 @@ private:
         else launchui::pendingStep() = step;
     }
 
-    // The own colonies of the sector, whatever they hold, then the own ships
-    // and bases with a launcher, units aboard, or that the window opened with.
+    // The carriers: own colonies and own ships and bases with a launch
+    // ability, each with cargo space, in the system's object order
+    // (launchCarriers, spec 06 §1.3, confirmed: binary).
     std::vector<Holder> holdersHere(const UiContext& ui) const {
         std::vector<Holder> out;
         if (!where_) return out;
-        const game::GameState& s = ui.state();
-        const game::Rules& r = ui.rules();
-        for (const game::Colony* c : ownColoniesAt(ui, *where_)) out.push_back(Holder{{}, c->planet});
-        for (const game::Vehicle* v : ownVehiclesAt(ui, *where_)) {
-            if (isUnitVehicle(r, s, *v)) continue;
-            if (launchRates(r, s, *v).any() || !v->cargo.units.empty() || v->id == holder_.vehicle) out.push_back(Holder{v->id, {}});
-        }
+        for (const shipui::LaunchCarrier& c : launchCarriers(ui.rules(), ui.state(), ui.session.player(), *where_))
+            out.push_back(Holder{c.vehicle, c.planet});
         return out;
     }
 

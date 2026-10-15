@@ -657,3 +657,33 @@ TEST_CASE("ship windows: the Ship Report's damage bar, a cell per component up t
     CHECK(shipui::damageBar(1, 40) == B{15, 0});
     CHECK(shipui::damageBar(40, 40) == B{15, 15});
 }
+
+TEST_CASE("ship windows: Launch \\ Recover Units lists colonies and launchers with cargo space, in object order") {
+    // Spec 06 §1.3, §7 Q119 (confirmed: binary): own objects in the sector
+    // that hold cargo, have cargo space above 0, and are a colony or have a
+    // fighter, satellite, mine or drone launch ability, in object order.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(77, 2, 6);
+    const EmpireId me{0u};
+    const Location home{s.empire(me).homeSystem, s.empire(me).homeSector};
+    const DesignId carrierDesign = frigate(s, r, me, "Carrier", {"Test Fighter Bay"});
+    const DesignId hauler = frigate(s, r, me, "Hauler", {"Test Cargo Bay"});
+    const DesignId wasp = [&] {
+        Design d;
+        d.owner = me;
+        d.name = "Wasp";
+        d.hull = hullIndex(r, "Test Fighter Hull");
+        d.entries = {{componentIndex(r, "Test Fighter Engine"), -1}};
+        return addDesign(s, std::move(d));
+    }();
+    const VehicleId carrier = addTestVehicle(s, r, carrierDesign, home).id;
+    const VehicleId plain = addTestVehicle(s, r, hauler, home).id;
+    s.vehicle(plain)->cargo.units = {{wasp, 2}};   // units aboard, but no bay: not listed
+    const std::vector<shipui::LaunchCarrier> list = shipui::launchCarriers(r, s, me, home);
+    REQUIRE_FALSE(list.empty());
+    CHECK(std::none_of(list.begin(), list.end(), [&](const shipui::LaunchCarrier& c) { return c.vehicle == plain; }));
+    CHECK(std::any_of(list.begin(), list.end(), [&](const shipui::LaunchCarrier& c) { return c.vehicle == carrier; }));
+    // In the system's object order: each entry's slot after the one before.
+    auto slotOf = [&](const shipui::LaunchCarrier& c) { return c.vehicle.valid() ? s.vehicle(c.vehicle)->slot : s.galaxy.object(c.planet).slot; };
+    for (size_t i = 1; i < list.size(); ++i) CHECK(slotOf(list[i - 1]) < slotOf(list[i]));
+}

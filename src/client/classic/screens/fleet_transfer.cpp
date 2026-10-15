@@ -187,7 +187,9 @@ private:
             if (f->strategy < strategies.size()) detail += (detail.empty() ? "" : ", ") + strategies[f->strategy].name;
             const RowClick c = row(ui, 1000000 + static_cast<int>(f->id.value), fleetMini(ui), f->name, detail, st);
             if (c.left) selected_ = f->id;
-            if (c.right) report_.fleet(f->id);
+            // A right click opens the Fleet Report, except in the Combat
+            // Simulator, where it opens nothing (spec 06 §1.10.4, confirmed: binary).
+            if (c.right && !sandbox_) report_.fleet(f->id);
             // Its members at its location (spec 03 §9).
             for (game::VehicleId id : game::fleetMembersAt(s, *f)) {
                 const game::Vehicle* v = s.vehicle(id);
