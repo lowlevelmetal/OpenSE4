@@ -146,8 +146,12 @@ TEST_CASE("audio: when the music changes") {
 TEST_CASE("audio: stellar manipulation reports have their sounds") {
     CHECK(client::stellarSound("Planet Created: Rock") == "crteplnt");
     CHECK(client::stellarSound("Planet Destroyed: Rock") == "destplnt");
-    CHECK(client::stellarSound("Storm destroyed in Sol") == "deststrm");
-    CHECK(client::stellarSound("Black hole created in Sol") == "destsun");
+    CHECK(client::stellarSound("Black Hole Created: Sol") == "destsun");
+    CHECK(client::stellarSound("Nebulae Created: Sol") == "destsun");
+    // A storm has no report (spec 01 §9): the window plays its sound.
+    CHECK(client::stellarSound("Storm destroyed in Sol").empty());
+    CHECK(client::stormSound(true) == "crtestrm");
+    CHECK(client::stormSound(false) == "deststrm");
     CHECK(client::stellarSound("Research Center I completed").empty());
 }
 

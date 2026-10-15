@@ -54,6 +54,8 @@ void reportPlaylists(const ruleset::Settings& settings, const Playlists& lists, 
 // The sound of a stellar manipulation the player sees, from the title of the
 // engine's log entry about it (docs/spec/06 §5.5); empty for other entries.
 std::string_view stellarSound(std::string_view logTitle);
+// A storm made (or destroyed) has no log entry, only its sound (spec 01 §9).
+std::string_view stormSound(bool created);
 
 // Music volume (docs/spec/06 §5.5): Music Off, then 20, 40, 60, 80 and 100 %,
 // played at -30, -20, -10, -5 and 0 dB. A volume 0..1 maps to its step 0..5.

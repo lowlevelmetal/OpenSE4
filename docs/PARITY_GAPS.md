@@ -954,8 +954,7 @@ What remains:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Stellar Manipulation's targets and Construct's sizes (`shipui::stellarCandidates`, `constructSizes`) | Every object of the kind in the vehicle's sector, seen or not, as Colonize's pick lists them; the size picker always shown, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114) | L |
-| Stellar Construction in the original's saved games (`classic_save_*`) | The order's size is neither read nor written; an imported order builds the size its device names | The record carries the size, in a place not known (spec 08 §11.1 Q7) | L |
+| Construct's size picker (`shipui::constructSizes`) | Always shown, even for a single size, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114); the sizes it offers (those whose ID equals the device's best value) and the targets (every object of the kind in the sector, seen or not) match since 2026-10-14 | L |
 
 The REA parity audit of the main window (2026-10-14, spec 06 §2.3, §2.4, §2.8, §3, §7 Q99(d),
 Q115–Q118; spec 03 §8, §8.1) brought the client and engine in line with the executable:

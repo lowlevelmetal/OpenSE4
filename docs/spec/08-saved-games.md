@@ -1077,7 +1077,7 @@ written with the current order as 1.
 | 18, 20, 22, 24 | Close warp point, destroy storm, destroy planet, destroy star | target = the object | StellarManipulation |
 | 19, 21, 23, 61, 63 | Create storm, create planet, create star, destroy nebulae, destroy black hole | act where the ship is | StellarManipulation |
 | 60, 62 | Create nebulae, create black hole | target = an object (a star for nebulae) | StellarManipulation |
-| 66 | Stellar construction | target = object, a planet-size parameter: the size chosen in the window (spec 06 §1.3, confirmed: binary; inferred: in extra) | StellarManipulation (CreateConstructedPlanet); the size, `planetSize`, is neither read nor written while its place is open (§11.1 Q7) |
+| 66 | Stellar construction | target = object; extra = the world chosen in the window, as its position in PlanetSize.txt counted from 1 (spec 06 §1.3, confirmed: binary) | StellarManipulation (CreateConstructedPlanet) with `planetSize` = extra, read and written since 2026-10-14 |
 | 25 | Sentry | | Sentry |
 | 34, 35 | Launch, recover units | extra = unit kind in the cargo-kind numbering of Load: 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms; 0 every kind **(confirmed: binary)**. Not the closing list's vehicle types (§3.9), which number mines and satellites the other way round | LaunchUnits, RecoverUnits with `cargo` = that kind |
 | 42..46 | Analyze, mothball, unmothball, self-destruct, fire on | | Analyze, Mothball, Unmothball, SelfDestruct, FireOn |
@@ -1595,7 +1595,12 @@ carries out OpenSE4's start of that player's turn before writing (§12).
    processes a turn, and they are needed by every simultaneous game, hotseat included
    (observed).
 7. The exact parameters of the Stellar Construction order. It carries the size the player
-   chose (spec 06 §1.3, confirmed: binary); where in the record is not known.
+   chose (spec 06 §1.3, confirmed: binary); where in the record is not known. **Answer**
+   (confirmed: binary, 2026-10-14): in the extra byte, as the record's position in
+   PlanetSize.txt counted from 1; when the order is carried out that record must exist and its
+   `Special Ability ID` must equal the vehicle's best Create Constructed Planet value (spec 01
+   §9). Nothing but the window makes this order. Since 2026-10-14 ours reads and writes it
+   (`classic_save_import.cpp`, `classic_save_export.cpp`, `Order::planetSize`).
 8. The formats of the statistics and events companion files, for exporting OpenSE4's
    history (the statistics file is plain text, one line per turn).
 9. Whether militia units (design ids from 65000) can remain in a saved colony.

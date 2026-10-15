@@ -63,23 +63,25 @@ void reportPlaylists(const ruleset::Settings& settings, const Playlists& lists, 
 }
 
 std::string_view stellarSound(std::string_view title) {
-    // The titles game/movement_stellar.cpp gives its reports.
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 10> kSounds{{
+    // The titles game/movement_stellar.cpp gives its reports. A storm made or
+    // destroyed has no report (spec 01 §9): the Stellar Manipulation window
+    // plays its sound (stormSound).
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 8> kSounds{{
         {"Planet Created: ", "crteplnt"},
         {"Planet Destroyed: ", "destplnt"},
         {"Star Created: ", "crtesun"},
         {"Star Destroyed: ", "destsun"},
         {"Warp Point Opened to ", "openwp"},
         {"Warp Point Closed: ", "closewp"},
-        {"Storm created in ", "crtestrm"},
-        {"Storm destroyed in ", "deststrm"},
-        {"Nebula created in ", "destsun"},
-        {"Black hole created in ", "destsun"},
+        {"Nebulae Created: ", "destsun"},
+        {"Black Hole Created: ", "destsun"},
     }};
     for (const auto& [prefix, sound] : kSounds)
         if (title.starts_with(prefix)) return sound;
     return {};
 }
+
+std::string_view stormSound(bool created) { return created ? "crtestrm" : "deststrm"; }
 
 int musicStep(float volume) { return std::clamp(static_cast<int>(std::lround(volume * 5.0f)), 0, 5); }
 

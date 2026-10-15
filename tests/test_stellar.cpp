@@ -27,6 +27,13 @@ Order stellar(StellarAction a, ObjectId obj = {}) {
     return o;
 }
 
+// A Construct order for the fixture's Ringworld (its position in PlanetSize.txt).
+Order ringworld(const Rules& r, ObjectId star) {
+    Order o = stellar(StellarAction::CreateConstructedPlanet, star);
+    o.planetSize = planetSizePosition(r, "Ringworld");
+    return o;
+}
+
 bool hasMood(const std::vector<MoodEvent>& moods, EmpireId e, std::string_view trigger) {
     return std::any_of(moods.begin(), moods.end(), [&](const MoodEvent& m) { return m.empire == e && m.trigger == trigger; });
 }
@@ -173,7 +180,7 @@ TEST_CASE("stellar manipulation: the shockwave is one pass in slot order; a new 
     const ObjectId storm = w.object(a, ObjectKind::Storm, {1, 1});        // slot 0: removed first
     const ObjectId rock = w.planet(a, {3, 3});                           // slot 1
     const ObjectId field = w.object(a, ObjectKind::Asteroids, {5, 5});   // slot 2
-    const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});         // slot 3: removed after the pass
+    const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});         // slot 3: removed where the pass reaches it
     const auto [wp, far] = w.link(a, {12, 6}, w.system("B", 5, 0), {0, 6});
     REQUIRE(w.s.galaxy.object(storm).slot == 0);
     REQUIRE(w.s.galaxy.object(star).slot == 3);
@@ -274,7 +281,7 @@ TEST_CASE("stellar manipulation: Construct counts every component by design and 
     const VehicleId laidUp = w.spawn(girders, at(a, 6, 6));
     w.v(laidUp).status = VehicleStatus::Mothballed;
     // 20 kT are needed: the damaged girder counts, so the builder has them.
-    w.order(builder, stellar(StellarAction::CreateConstructedPlanet, star));
+    w.order(builder, ringworld(r, star));
     const size_t before = w.s.galaxy.objects.size();
     w.move();
     REQUIRE(w.s.galaxy.objects.size() == before + 1);
@@ -292,13 +299,13 @@ TEST_CASE("stellar manipulation: Construct counts every component by design and 
         m.spawn(m.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", "Mv World Builder", "Mv Girder"}), at(b, 6, 6));
     const VehicleId idle = m.spawn(m.ship(kA, "Girders", 1, {"Mv Girder"}), at(b, 6, 6));
     m.v(idle).status = VehicleStatus::Mothballed;
-    m.order(builder2, stellar(StellarAction::CreateConstructedPlanet, star2));
+    m.order(builder2, ringworld(r, star2));
     m.move();
     CHECK(m.logged(kA, "materials"));
     CHECK(m.s.vehicle(idle) != nullptr);
     // A base carries materials like a ship.
     m.spawn(m.design(kA, "Depot", "Test Station", {"Test Bridge", "Mv Girder"}), at(b, 6, 6));
-    m.order(builder2, stellar(StellarAction::CreateConstructedPlanet, star2));
+    m.order(builder2, ringworld(r, star2));
     m.move();
     CHECK(m.s.vehicle(builder2) == nullptr);
     CHECK(countKind(m.s, b, ObjectKind::Planet) == 1);
@@ -368,31 +375,41 @@ Order construct(ObjectId star, int size) {
 
 } // namespace
 
-TEST_CASE("stellar manipulation: Construct builds the world its order names, up to the device's value (spec 06 §1.3)") {
+TEST_CASE("stellar manipulation: Construct builds the record at the order's position whose ID equals the device's best value (spec 01 §9)") {
     const Rules r = sphereRules();
+    const uint8_t ring = planetSizePosition(r, "Ringworld"), sphere = planetSizePosition(r, "Sphereworld");
+    REQUIRE(ring > 0);
+    REQUIRE(sphere > 0);
+    // `device` empty: both devices on one ship.
     auto build = [&](std::string_view device, int size) {
         World w(r);
         const SystemId a = w.system("A");
         const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});
-        const VehicleId builder = w.spawn(w.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", device, "Mv Girder"}), at(a, 6, 6));
+        const DesignId d = device.empty() ? w.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", "Mv World Builder", "Mv Sphere Builder", "Mv Girder"})
+                                          : w.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", device, "Mv Girder"});
+        const VehicleId builder = w.spawn(d, at(a, 6, 6));
         w.spawn(w.ship(kA, "Girders", 1, {"Mv Girder"}), at(a, 6, 6));
         w.order(builder, construct(star, size));
         w.move();
         std::string made;
         for (ObjectId o : w.s.galaxy.system(a).objects)
             if (w.s.galaxy.object(o).kind == ObjectKind::Planet) made = w.s.galaxy.object(o).size;
-        return std::pair{made, w.logged(kA, "cannot build a world that large")};
+        return std::pair{made, w.logged(kA, "does not have the component")};
     };
-    // The size chosen, at most the device's value.
-    CHECK(build("Mv Sphere Builder", 1).first == "Ringworld");
-    CHECK(build("Mv Sphere Builder", 2).first == "Sphereworld");
-    // No size: the one the device's value names (the computer players' orders).
-    CHECK(build("Mv Sphere Builder", 0).first == "Sphereworld");
-    CHECK(build("Mv World Builder", 0).first == "Ringworld");
-    // A size above the device's value is refused.
-    const auto tooLarge = build("Mv World Builder", 2);
-    CHECK(tooLarge.first.empty());
-    CHECK(tooLarge.second);
+    // The record's Special Ability ID must equal the value: a device of value 2
+    // builds the world with ID 2, never the one with ID 1.
+    CHECK(build("Mv Sphere Builder", sphere).first == "Sphereworld");
+    const auto smaller = build("Mv Sphere Builder", ring);
+    CHECK(smaller.first.empty());
+    CHECK(smaller.second);
+    CHECK(build("Mv World Builder", ring).first == "Ringworld");
+    CHECK(build("Mv World Builder", sphere).second);
+    // The best value over all the vehicle's abilities counts.
+    CHECK(build("", sphere).first == "Sphereworld");
+    CHECK(build("", ring).second);
+    // No size, or a position past the file's last record: the component is missing.
+    CHECK(build("Mv World Builder", 0).second);
+    CHECK(build("Mv World Builder", 200).second);
 }
 
 TEST_CASE("stellar manipulation: the window lights a button by the vehicle's own ability and finds the target afterwards") {
@@ -429,14 +446,14 @@ TEST_CASE("stellar manipulation: the window lights a button by the vehicle's own
     CHECK(stars[1] == gone);
     CHECK(shipui::stellarCandidates(w.s, w.v(ship), StellarAction::DestroyStorm).empty());
 
-    // Construct's sizes: every constructed world up to the device's value, in file order.
+    // Construct's sizes: only the records whose ID equals the device's best
+    // value, by their position in PlanetSize.txt.
     const std::vector<shipui::ConstructSize> sizes = shipui::constructSizes(r, w.s, w.v(ship));
-    REQUIRE(sizes.size() == 2);
-    CHECK(sizes[0].name == "Ringworld");
-    CHECK(sizes[0].id == 1);
-    CHECK(sizes[1].name == "Sphereworld");
+    REQUIRE(sizes.size() == 1);
+    CHECK(sizes[0].name == "Sphereworld");
+    CHECK(sizes[0].id == planetSizePosition(r, "Sphereworld"));
     const Order o = shipui::stellarOrder(w.v(ship), StellarAction::CreateConstructedPlanet, first, sizes[0].id);
-    CHECK(o.planetSize == 1);
+    CHECK(o.planetSize == planetSizePosition(r, "Sphereworld"));
     CHECK(o.object == first);
     // Open Warp Point names the system picked on the Galaxy Map (its sector is not used).
     const SystemId b = w.system("B", 5, 5);
@@ -477,4 +494,224 @@ TEST_CASE("stellar manipulation: the window's order goes to a fleet member's own
     CHECK(countKind(w.s, a, ObjectKind::Storm) == 1);
     CHECK(w.v(maker).orders.empty());
     CHECK(w.v(mate).orders.empty());
+}
+
+// ---- Accuracy pass of 2026-10-14 (spec 01 §9, spec 03 §8, findings A1-A4, A8, B1) --------------------
+
+namespace {
+
+size_t entries(const World& w, EmpireId e, std::string_view titleStart) {
+    size_t n = 0;
+    for (const LogEntry& l : w.s.empire(e).log) n += l.title.starts_with(titleStart);
+    return n;
+}
+
+Order openTo(SystemId to) {
+    Order o = stellar(StellarAction::OpenWarpPoint);
+    o.location = {to, Sector{}};
+    return o;
+}
+
+} // namespace
+
+TEST_CASE("stellar manipulation: every member of the group with a device acts for itself, the last one deciding the order") {
+    // Two storm makers in a fleet make two storms.
+    {
+        World w;
+        const Rules& r = w.rules();
+        const SystemId a = w.system("A");
+        const VehicleId m1 = w.spawn(w.ship(kA, "Maker 1", 3, {"Mv Storm Maker"}), at(a, 4, 4));
+        const VehicleId m2 = w.spawn(w.ship(kA, "Maker 2", 3, {"Mv Storm Maker"}), at(a, 4, 4));
+        REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Storms", {m1, m2}}).ok);
+        w.give(m1, {stellar(StellarAction::CreateStorm)});
+        REQUIRE(w.v(m2).orders.size() == 1);
+        w.move();
+        CHECK(countKind(w.s, a, ObjectKind::Storm) == 2);
+        CHECK(w.v(m1).orders.empty());
+        CHECK(w.v(m2).orders.empty());
+    }
+    // Two warp openers: the first opens the link, the second is refused (already
+    // linked), which fails the order and clears the fleet's lists.
+    {
+        World w;
+        const Rules& r = w.rules();
+        const SystemId a = w.system("A"), b = w.system("B", 5, 0);
+        const VehicleId o1 = w.spawn(w.ship(kA, "Opener 1", 3, {"Mv Warp Opener"}), at(a, 4, 4));
+        const VehicleId o2 = w.spawn(w.ship(kA, "Opener 2", 3, {"Mv Warp Opener"}), at(a, 4, 4));
+        REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Openers", {o1, o2}}).ok);
+        w.give(o1, {openTo(b), stellar(StellarAction::CreateStorm)});
+        w.move();
+        CHECK(countKind(w.s, a, ObjectKind::WarpPoint) == 1);
+        CHECK(countKind(w.s, b, ObjectKind::WarpPoint) == 1);
+        CHECK(w.logged(kA, "already leads there"));
+        CHECK(w.v(o1).orders.empty());   // the Create Storm after it went with the failure
+        CHECK(w.v(o2).orders.empty());
+        CHECK(countKind(w.s, a, ObjectKind::Storm) == 0);
+    }
+    // A member with another device but not this one is refused; coming last, it
+    // fails the order. A member with no manipulation device at all is skipped.
+    {
+        World w;
+        const Rules& r = w.rules();
+        const SystemId a = w.system("A");
+        const VehicleId maker = w.spawn(w.ship(kA, "Maker", 3, {"Mv Storm Maker"}), at(a, 4, 4));
+        const VehicleId breaker = w.spawn(w.ship(kA, "Breaker", 3, {"Mv Storm Breaker"}), at(a, 4, 4));
+        REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Mixed", {maker, breaker}}).ok);
+        w.give(maker, {stellar(StellarAction::CreateStorm)}, true);
+        w.move();
+        CHECK(countKind(w.s, a, ObjectKind::Storm) == 1);
+        CHECK(w.logged(kA, "does not have the component"));
+        CHECK(w.v(maker).orders.empty());   // failed: the list is cleared, Repeat goes off
+        CHECK_FALSE(w.v(maker).repeatOrders);
+
+        World p;
+        const SystemId pa = p.system("A");
+        const VehicleId first = p.spawn(p.ship(kA, "Maker", 3, {"Mv Storm Maker"}), at(pa, 4, 4));
+        const VehicleId plain = p.spawn(p.ship(kA, "Plain", 3), at(pa, 4, 4));
+        REQUIRE(apply(p.rules(), p.s, kA, cmd::CreateFleet{"Escort", {first, plain}}).ok);
+        p.give(first, {stellar(StellarAction::CreateStorm)});
+        p.move();
+        CHECK(countKind(p.s, pa, ObjectKind::Storm) == 1);
+        CHECK_FALSE(p.logged(kA, "Unable to"));
+    }
+}
+
+TEST_CASE("stellar manipulation: lack of movement waits in a simultaneous game and fails in a turn-based one") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.spawn(w.ship(kB, "Keeper", 1), at(a, 12, 12));   // B stays alive
+    // No engines: no movement at all.
+    const VehicleId stuck = w.spawn(w.design(kA, "Stuck", "Test Frigate", {"Test Bridge", "Mv Storm Maker"}), at(a, 1, 1));
+    w.order(stuck, stellar(StellarAction::CreateStorm));
+    w.move();
+    CHECK(w.v(stuck).orders.size() == 1);
+    CHECK_FALSE(w.logged(kA, "no movement left"));
+
+    w.v(stuck).orders.clear();
+    w.s.options.simultaneous = false;
+    resumeTurnBased(r, w.s);
+    REQUIRE(w.s.playerTurn.empire == kA);
+    const TurnResult res = applyLive(r, w.s, kA, cmd::SetOrders{stuck, {}, {stellar(StellarAction::CreateStorm)}, false});
+    CHECK(w.v(stuck).orders.empty());
+    CHECK(countKind(w.s, a, ObjectKind::Storm) == 0);
+    // The human whose turn it is reads why in a message box, not in the log.
+    REQUIRE(res.messages.size() == 1);
+    CHECK(res.messages[0].title == "Cannot Create Storm");
+    CHECK(res.messages[0].text.find("no movement left") != std::string::npos);
+    CHECK_FALSE(w.logged(kA, "no movement left"));
+}
+
+TEST_CASE("stellar manipulation: the device's supply is paid without the racial Supply Cost modifier") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.object(a, ObjectKind::Star, {6, 6});
+    const ObjectId rocks = w.object(a, ObjectKind::Asteroids, {2, 2});
+    w.s.empire(kA).race.traits.push_back(traitIndex(r, "Mv Frugal"));   // Supply Cost -50
+    const VehicleId maker = w.spawn(w.ship(kA, "Maker", 3, {"Mv Planet Maker"}), at(a, 2, 2));
+    const int64_t supply = w.v(maker).supply;
+    w.order(maker, stellar(StellarAction::CreatePlanet, rocks));
+    w.move();
+    REQUIRE(w.objectAt(a, {2, 2}, ObjectKind::Planet).valid());
+    CHECK(supply - w.v(maker).supply == 50);   // the part's Supply Amount Used, whole
+}
+
+TEST_CASE("stellar manipulation: a black hole removes the planets and asteroid fields; nothing is left in their place") {
+    World w(opense4::mvtest::rules(), 3);
+    const EmpireId kC{2u};
+    const SystemId h = w.system("H"), b = w.system("B", 5, 0);
+    w.object(h, ObjectKind::Star, {6, 6});
+    const ObjectId planet = w.planet(h, {3, 3});
+    w.colony(planet, kB, 500).colonyType = "Homeworld";
+    const ObjectId field = w.object(h, ObjectKind::Asteroids, {9, 9});
+    const auto [wp, far] = w.link(h, {12, 6}, b, {0, 6});
+    w.spawn(w.ship(kC, "Far", 1), at(b, 2, 2));   // C loses nothing there
+    const VehicleId hole = w.spawn(w.ship(kA, "Hole", 3, {"Mv Hole Maker"}), at(h, 6, 6));
+    w.order(hole, stellar(StellarAction::CreateBlackHole));
+    w.move();
+    CHECK(w.s.galaxy.system(h).physicalType == "Black Hole");
+    CHECK_FALSE(inSystemList(w.s, planet));
+    CHECK_FALSE(inSystemList(w.s, field));
+    CHECK(countKind(w.s, h, ObjectKind::Planet) == 0);
+    CHECK(countKind(w.s, h, ObjectKind::Asteroids) == 0);
+    CHECK(countKind(w.s, h, ObjectKind::Star) == 0);
+    CHECK(w.s.colony(planet) == nullptr);
+    CHECK(hasMood(w.lastMoods, kB, "Homeworld Lost"));
+    CHECK(inSystemList(w.s, wp));
+    CHECK(w.s.vehicle(hole) == nullptr);
+    // One entry for each empire that lost something, titled after the result.
+    CHECK(entries(w, kA, "Black Hole Created: ") == 1);
+    CHECK(entries(w, kB, "Black Hole Created: ") == 1);
+    CHECK(entries(w, kC, "Black Hole Created: ") == 0);
+    CHECK(entries(w, kA, "Star Destroyed") == 0);
+    const LogEntry* told = destructiveReport(w, kB);
+    REQUIRE(told != nullptr);
+    CHECK(movement::stellarReportNames(w.s, *told, kA));
+    (void)far;
+}
+
+TEST_CASE("stellar manipulation: the shockwave removes a star where the pass reaches it, so a new field may take its slot") {
+    World w(opense4::mvtest::rules(), 2);
+    const SystemId a = w.system("A");
+    const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});   // slot 0
+    const ObjectId rock = w.planet(a, {3, 3});                    // slot 1
+    REQUIRE(w.s.galaxy.object(star).slot == 0);
+    w.spawn(w.ship(kB, "Witness", 1), at(a, 0, 0));
+    const VehicleId nova = w.spawn(w.ship(kA, "Nova", 3, {"Mv Star Breaker"}), at(a, 6, 6));
+    w.order(nova, stellar(StellarAction::DestroyStar, star));
+    w.move();
+    const ObjectId fromRock = w.objectAt(a, {3, 3}, ObjectKind::Asteroids);
+    REQUIRE(fromRock.valid());
+    CHECK(fromRock != rock);
+    CHECK(w.s.galaxy.object(fromRock).slot == 0);   // the star's, emptied earlier in the pass
+    CHECK_FALSE(inSystemList(w.s, star));
+    CHECK(entries(w, kB, "Star Destroyed: ") == 1);
+    CHECK(entries(w, kA, "Star Destroyed: ") == 1);
+}
+
+TEST_CASE("stellar manipulation: who is told of each result (findings B1)") {
+    World w(opense4::mvtest::rules(), 3);
+    const EmpireId kC{2u};
+    const SystemId a = w.system("A"), b = w.system("B", 5, 0), c = w.system("C", 0, 5);
+    w.object(a, ObjectKind::Star, {6, 6});
+    const ObjectId rocks = w.object(a, ObjectKind::Asteroids, {2, 2});
+    w.spawn(w.ship(kB, "Watcher", 1), at(a, 0, 0));   // B is present in A
+    w.spawn(w.ship(kC, "Away", 1), at(c, 0, 0));      // C is not
+    // Create Planet: every empire present in the system after the result.
+    const VehicleId maker = w.spawn(w.ship(kA, "Maker", 3, {"Mv Planet Maker"}), at(a, 2, 2));
+    w.order(maker, stellar(StellarAction::CreatePlanet, rocks));
+    w.move();
+    CHECK(entries(w, kA, "Planet Created: ") == 1);
+    CHECK(entries(w, kB, "Planet Created: ") == 1);
+    CHECK(entries(w, kC, "Planet Created: ") == 0);
+    // Storms: no report for anyone.
+    for (Empire& e : w.s.empires) e.log.clear();
+    const VehicleId storms = w.spawn(w.ship(kA, "Storms", 3, {"Mv Storm Maker"}), at(a, 4, 4));
+    w.order(storms, stellar(StellarAction::CreateStorm));
+    w.move();
+    CHECK(countKind(w.s, a, ObjectKind::Storm) == 1);
+    CHECK(w.s.empire(kA).log.empty());
+    CHECK(w.s.empire(kB).log.empty());
+    // Open Warp Point: every empire present in either system.
+    w.spawn(w.ship(kC, "There", 1), at(b, 1, 1));
+    const VehicleId opener = w.spawn(w.ship(kA, "Opener", 3, {"Mv Warp Opener"}), at(a, 4, 4));
+    w.order(opener, openTo(b));
+    w.move();
+    CHECK(entries(w, kA, "Warp Point Opened") == 1);
+    CHECK(entries(w, kB, "Warp Point Opened") == 1);
+    CHECK(entries(w, kC, "Warp Point Opened") == 1);
+    // A nebula: one entry for each empire that lost something, the culprit too.
+    for (Empire& e : w.s.empires) e.log.clear();
+    const VehicleId fog = w.spawn(w.ship(kA, "Fog", 3, {"Mv Nebula Maker"}), at(a, 6, 6));
+    w.order(fog, stellar(StellarAction::CreateNebulae));
+    w.move();
+    CHECK(w.s.galaxy.system(a).physicalType == "Nebulae");
+    CHECK(entries(w, kA, "Nebulae Created: ") == 1);
+    CHECK(entries(w, kB, "Nebulae Created: ") == 1);
+    CHECK(entries(w, kC, "Nebulae Created: ") == 0);
+    CHECK(entries(w, kA, "Star Destroyed") == 0);   // one entry, not two
+    CHECK(entries(w, kA, "Nebula") == 1);
+    REQUIRE(destructiveReport(w, kB) != nullptr);
+    CHECK(destructiveReport(w, kB)->title.starts_with("Nebulae Created: "));
 }

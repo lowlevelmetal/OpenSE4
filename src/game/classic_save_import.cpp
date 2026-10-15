@@ -1134,9 +1134,10 @@ private:
             case 60: stellar(StellarAction::CreateNebulae); o.object = target.object; return o;
             case 62: stellar(StellarAction::CreateBlackHole); o.object = target.object; return o;
             case 66:
+                // The extra byte: the world's position in PlanetSize.txt, from 1 (§3.8.8, confirmed: binary).
                 stellar(StellarAction::CreateConstructedPlanet);
                 o.object = target.object;
-                count("stellar construction orders (their size parameter is not known, §11.1 Q7)");
+                o.planetSize = rec.extra;
                 return o;
             case 25: o.kind = OrderKind::Sentry; return o;
             case 34:

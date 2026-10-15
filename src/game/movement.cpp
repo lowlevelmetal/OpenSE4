@@ -1881,51 +1881,83 @@ private:
         return g.stopped ? Exec::Gone : Exec::Done;
     }
 
+    // ---- Stellar manipulation (spec 01 §9, spec 03 §8; findings A2, A3, B1) ----
+    //
+    // Kept apart from the other orders on purpose: it is the only order that
+    // every member of the group carries out for itself.
+    //
+    // The group reaches the target, then goes through its members in group
+    // order (a fleet's members at its location, the vehicles moved together,
+    // a computer player's ad-hoc companions after them). Every member that has
+    // any stellar-manipulation ability on a working part performs the action
+    // for itself: its own checks (movement first), its own cost and device,
+    // its own result and report or refusal. A success does not end the loop,
+    // so two storm makers make two storms, and a second warp opener is
+    // refused ("already linked"). A member an earlier member's result removed
+    // is skipped. The order's outcome is the last member's: done when it
+    // succeeded; waiting when it lacked movement in a simultaneous game
+    // (without a message); failed otherwise, which clears the lists. In a
+    // turn-based game the lack of movement is a refusal like any other
+    // (confirmed: binary). A group with no such member fails (inferred).
     Exec stellar(Group& g, Order& o) {
         const auto target = stellarTarget(s_, o, where(g));
         if (!target) return fail(g, o, "The target no longer exists.");
         const Travel t = travel(g, *target);
         if (t != Travel::Arrived) return afterTravel(g, o, t);
-        // Movement is needed but not spent; a refusal for lack of it makes the
-        // order wait (spec 03 §8, simultaneous games). Construct needs none.
         const auto action = static_cast<StellarAction>(std::clamp(o.amount, 0, static_cast<int>(StellarAction::Count)));
-        if (action != StellarAction::CreateConstructedPlanet && action != StellarAction::Count) {
-            const AbilityKind k = stellarAbility(action);
-            bool capable = false, ready = false;
-            for (VehicleId id : g.members) {
-                const Vehicle* v = s_.vehicle(id);
-                if (!v || !hasAbility(vehicleAbilities(r_, s_, *v), k)) continue;
-                capable = true;
-                ready = ready || v->movement > 0;
+        const bool needsMovement = action != StellarAction::CreateConstructedPlanet;  // Construct needs none
+        std::optional<Exec> outcome;
+        bool acted = false;
+        const std::vector<VehicleId> members = g.members;
+        for (const VehicleId id : members) {
+            const Vehicle* v = s_.vehicle(id);
+            if (!v || !alive(*v) || v->owner != g.owner) continue;  // removed by an earlier member's result
+            if (!hasStellarAbility(vehicleAbilities(r_, s_, *v))) continue;
+            // Movement is needed but not spent.
+            if (needsMovement && v->movement <= 0) {
+                if (s_.options.simultaneous) {
+                    outcome = Exec::Wait;
+                    continue;
+                }
+                stellarRefusal(g, o, id, kNoMovement);
+                outcome = Exec::Fail;
+                continue;
             }
-            if (capable && !ready) return Exec::Wait;
+            bool consumed = false;
+            const std::array<VehicleId, 1> one{id};
+            if (const std::string why = stellarManipulation(ctx_, one, o, consumed); !why.empty()) {
+                stellarRefusal(g, o, id, why);
+                outcome = Exec::Fail;
+                continue;
+            }
+            acted = true;
+            outcome = Exec::Acted;
         }
-        bool consumed = false;
-        const std::string why = stellarManipulation(ctx_, g.members, o, consumed);
-        if (!why.empty()) return fail(g, o, why);
-        routes_.clear();  // the map may have changed
+        if (acted) routes_.clear();  // the map may have changed
         prune(g);
-        return g.stopped ? Exec::Gone : Exec::Acted;
+        if (!outcome) {
+            stellarRefusal(g, o, g.lead, kNoComponent);
+            return Exec::Fail;
+        }
+        if (g.stopped && *outcome != Exec::Fail) return Exec::Gone;
+        return *outcome;
     }
 
-    static AbilityKind stellarAbility(StellarAction a) {
-        switch (a) {
-            case StellarAction::CreatePlanet: return AbilityKind::CreatePlanetSize;
-            case StellarAction::DestroyPlanet: return AbilityKind::DestroyPlanetSize;
-            case StellarAction::CreateStar: return AbilityKind::CreateStar;
-            case StellarAction::DestroyStar: return AbilityKind::DestroyStar;
-            case StellarAction::OpenWarpPoint: return AbilityKind::OpenWarpPointDistance;
-            case StellarAction::CloseWarpPoint: return AbilityKind::CloseWarpPoint;
-            case StellarAction::CreateStorm: return AbilityKind::CreateStorm;
-            case StellarAction::DestroyStorm: return AbilityKind::DestroyStorm;
-            case StellarAction::CreateNebulae: return AbilityKind::CreateNebulae;
-            case StellarAction::DestroyNebulae: return AbilityKind::DestroyNebulae;
-            case StellarAction::CreateBlackHole: return AbilityKind::CreateBlackHole;
-            case StellarAction::DestroyBlackHole: return AbilityKind::DestroyBlackHole;
-            case StellarAction::CreateConstructedPlanet: return AbilityKind::CreateConstructedPlanet;
-            case StellarAction::Count: break;
+    // Where a member's refusal goes (spec 01 §9, findings B1, confirmed:
+    // binary): a message box when a human gives the order in a turn-based
+    // game (as `tell` decides), the owner's log in a simultaneous game, and
+    // nowhere otherwise (a computer player's turn in a turn-based game). The
+    // entry names the member.
+    void stellarRefusal(const Group& g, const Order& o, VehicleId member, std::string_view why) {
+        if (live_) {
+            if (live_->ask && g.owner == live_->empire) ctx_.messages.push_back(PlayerMessage{g.owner, failureBoxTitle(o), std::string(why)});
+            return;
         }
-        return AbilityKind::Unknown;
+        Group one = g;
+        one.members = {member};
+        one.lead = member;
+        one.fleet = {};
+        logFailure(one, o, why);
     }
 
     // After each day, pursuits whose target is gone are removed (spec 03 §6.3 step 7).

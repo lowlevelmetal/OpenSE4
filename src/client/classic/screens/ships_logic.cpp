@@ -601,9 +601,10 @@ std::vector<game::ObjectId> stellarCandidates(const game::GameState& s, const ga
 
 std::vector<ConstructSize> constructSizes(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     std::vector<ConstructSize> out;
-    const int64_t cap = game::bestValue1(game::vehicleAbilities(r, s, v), AbilityKind::CreateConstructedPlanet);
-    for (const ruleset::PlanetSize& ps : r.data().planetSizes)
-        if (ps.constructed && ps.specialAbilityId >= 1 && ps.specialAbilityId <= cap) out.push_back({ps.specialAbilityId, ps.name});
+    const int64_t best = game::bestValue1(game::vehicleAbilities(r, s, v), AbilityKind::CreateConstructedPlanet);
+    const auto& sizes = r.data().planetSizes;
+    for (size_t i = 0; i < sizes.size() && i < 255; ++i)
+        if (best >= 1 && sizes[i].specialAbilityId == best) out.push_back({static_cast<int>(i) + 1, sizes[i].name});
     return out;
 }
 

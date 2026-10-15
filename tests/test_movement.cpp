@@ -3340,14 +3340,17 @@ TEST_CASE("movement: stellar manipulation - storms and constructed worlds") {
 
     // A ringworld needs 20 kT of girders on ships in the star's sector, whoever owns them.
     const VehicleId builder = w.spawn(w.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", "Mv World Builder", "Mv Girder"}), at(a, 6, 6));
-    w.order(builder, stellar(StellarAction::CreateConstructedPlanet, star));
+    // The order names the world by its position in PlanetSize.txt.
+    Order ring = stellar(StellarAction::CreateConstructedPlanet, star);
+    ring.planetSize = planetSizePosition(w.rules(), "Ringworld");
+    w.order(builder, ring);
     w.move();
     CHECK(w.logged(kA, "materials"));
     w.s.empire(kA).relation(kB).contact = w.s.empire(kB).relation(kA).contact = true;
     w.setTreaty(kA, kB, Treaty::TradeAlliance);
     const VehicleId hauler = w.spawn(w.ship(kB, "Girders", 3, {"Mv Girder"}), at(a, 6, 6));
     const VehicleId bystander = w.spawn(w.ship(kA, "Bystander", 3), at(a, 6, 6));
-    w.order(builder, stellar(StellarAction::CreateConstructedPlanet, star));
+    w.order(builder, ring);
     const size_t count = w.s.galaxy.objects.size();
     w.move();  // no movement needed: the builder has no engines
     REQUIRE(w.s.galaxy.objects.size() == count + 1);

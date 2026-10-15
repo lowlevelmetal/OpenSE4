@@ -3920,7 +3920,12 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     The engine follows this since 2026-10-01: Destroy Planet takes the empires present after
     its result, mine fields aside; the three shockwave manipulations take every empire with a
     colony or an object of its own in the system as the shockwave begins, mine fields
-    included, which is every empire that loses one to it.
+    included, which is every empire that loses one to it. Since 2026-10-14 (complete listing,
+    spec 01 §9 "Who is told") each of them gets one entry titled after the result ("Star
+    Destroyed", "Nebulae Created", "Black Hole Created"), the culprit's included, and the
+    other results go to the empires present after them (both systems for a warp point); a
+    storm's go to nobody. The anger term counts the three shockwave titles and Destroy
+    Planet's (`movement::isDestructiveStellarReport`).
 51. **A "stop hostile actions against an empire" demand that names no empire** (§7.3
     term 8, question 47): the promise is about the empire the demand names. A message
     whose third empire is missing or invalid records no promise in OpenSE4 (inferred).

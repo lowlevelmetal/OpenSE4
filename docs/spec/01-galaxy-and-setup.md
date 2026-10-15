@@ -96,7 +96,9 @@ Conventions used throughout:
 
   Placement can end with fewer systems when it runs out of room (§3.3).
 - **Generate Map Now.** Builds and previews a quadrant. Pressing it again rerolls. The
-  previewed map is the one the game starts with.
+  previewed map is the one the game starts with. It reads the quadrant options, Finite
+  resources and No Ruins as they are when it is pressed, and generates with the random
+  generator as it stands (confirmed: binary).
 - **Load Map.** Uses a saved map (§12). **Save Map** writes the previewed map.
 - **General options** (a list of seven checkboxes, confirmed: binary):
   - *All Warp Points connected* (on by default): adds the connectivity pass of §3.5, and
@@ -125,7 +127,8 @@ Conventions used throughout:
 
 **Technology tab**
 
-- **Technology Cost** is a relative multiplier on research cost.
+- **Technology Cost** is a relative multiplier on research cost: Low, Medium or High, Medium
+  chosen in a new game (confirmed: binary).
 - **Technology Areas Allowed** holds one checkbox per tech group. A group that is
   unchecked is removed from research entirely.
 
@@ -151,6 +154,7 @@ The choices and defaults below are confirmed: binary.
 **Players tab**
 
 - The list of explicit empires, with Add New, Add Existing, Edit, Remove and Save To File
+  (confirmed: binary). Add New and Add Existing are unavailable while 20 empires are listed
   (confirmed: binary). Add New and Edit open Empire Setup (spec 02 §9: its pages, the
   characteristics' arrows and words, the culture comparison and Create Empire's checks).
   Add Existing reads an empire file and checks its technology and racial points against
@@ -1343,10 +1347,32 @@ at all (spec 03 §8) (confirmed: binary). Common rules:
 
 - The ship must be **at the target location** when the order executes. The history fixed
   execution after the ship had moved away.
-- Every action except Construct needs movement remaining; the movement is not spent
-  (confirmed: binary).
-- Every action needs a working component with the ability, enough supply for it (which is
-  then spent), and the ship **not cloaked** (confirmed: binary).
+- **Every member acts** (confirmed: binary; corrected 2026-10-14, complete listing). The order
+  is carried out by the acting group (the fleet's members at its location, the vehicles moved
+  together, and for a computer player its other objects in the sector whose first order is the
+  same one, spec 03 §8). The game goes through the group's members in order and, for **each**
+  member that has any stellar-manipulation ability, carries out the action for that member:
+  its own checks, cost, use-up, result and report or refusal. A success does not end the
+  round. The order's outcome is that of the **last** member tried: done if it succeeded,
+  waiting if it lacked movement in a simultaneous game, failed otherwise (a failed order clears
+  the lists as any failure does). A member removed by an earlier member's result is skipped.
+  So two storm makers in one fleet make two storms; a fleet with two warp openers opens one link
+  and then fails on the second ("already linked"), which fails the order and clears the fleet's
+  orders; a member with another manipulation device but not this one is refused for lack of the
+  component, and fails the order if it comes last. A computer player's ad-hoc companions act
+  too, and since their own lists keep the order they act again on their own turn. A group none
+  of whose members has such an ability fails the order (inferred).
+- Each member's checks, in this order (confirmed: binary): movement remaining (every action
+  except Construct; the movement is not spent), a working component with the ability (the
+  first such part is the device), enough supply for that device, and the ship **not cloaked**;
+  then the hostile objects, the target and the blockers below.
+- A refusal for lack of movement makes the order wait in a simultaneous game, without a
+  message; in a turn-based game it fails the order like any other refusal, and the player is
+  told the ship has no movement left (confirmed: binary; corrected 2026-10-14, complete
+  listing).
+- The supply needed and paid is the device's own `Supply Amount Used`, as its level gives it,
+  compared with the ship's supply and subtracted as it is: no racial Supply Cost percentage is
+  applied (confirmed: binary).
 - Every action except Destroy Planet also needs **no visible hostile object** in the target
   sector (confirmed: binary). A hostile object is a ship or base that is not mothballed, or
   a colonized planet or asteroid field, that the acting empire can see and whose owner
@@ -1363,21 +1389,36 @@ at all (spec 03 §8) (confirmed: binary). Common rules:
   ship's own abilities or a planet's colony abilities (facilities), whoever the owner, the
   acting empire included (confirmed: binary). For warp points, a blocker in either system
   prevents it. `Stop Planet Destroyer` only counts in the planet's own sector.
-- Each outcome raises the matching log event: Planet/Star Created or Destroyed, Warp Point
-  Opened or Closed.
+- **Who is told** (confirmed: binary; corrected 2026-10-14, complete listing). Create Planet,
+  Create Star, Destroy Nebulae, Destroy Black Hole and Construct report to every empire present
+  in the system after the result (a ship, base, colony, or fighter, satellite or drone group
+  there; mine fields do not count), and Open and Close Warp Point to every empire present in
+  either system. Destroy Planet reports to the empires present after its result (spec 05
+  Q50). The three shockwave actions send one entry to each empire that lost something there,
+  mine fields included, the culprit too: "Star Destroyed", "Nebulae Created" or "Black Hole
+  Created" (the nebula's with the destroyed-star picture, spec 06 §4.1). Create Storm and
+  Destroy Storm log no report at all; only their sound plays. A refusal goes to a message box
+  when a human gives the order in a turn-based game, to the empire's log in a simultaneous game,
+  and nowhere otherwise.
 
 The results below are confirmed: binary. "Shockwave" in the table means: every planet and
 asteroid field in the system is replaced by a new asteroid field (a random natural
 Asteroids record of any size) that keeps its name, values and conditions, and every
 colony on them is lost; every other object except warp points (stars, storms, ships and
-bases, unit groups, comets) is destroyed, the acting ship included.
+bases, unit groups, comets) is destroyed, the acting ship included. Create Black Hole runs
+a pass of its own (corrected 2026-10-14, complete listing): every planet and asteroid field
+is simply removed, its colony with it, and nothing is made in its place (no random number is
+drawn for them); every other object except warp points is removed as in the shockwave.
 
 "Replaced" always means that a new object is made and the old one removed, never a change in
 place. The new object is added first, while the old one still holds its slot, so it takes the
 lowest empty slot (or a new one at the end); then the old object is removed and its slot left
 empty. The shockwave is one pass over the system's objects in slot order, so a replacement made
-late in the pass can reuse a slot emptied earlier in it. Orders aimed at the old object find it
-gone (spec 03 §19 Q72) (confirmed: binary).
+late in the pass can reuse a slot emptied earlier in it. The stars are removed in the pass like
+the other objects, where it reaches them, so a later replacement can take a star's slot
+(corrected 2026-10-14, complete listing; Destroy Star and Create Black Hole remove the target
+star a second time after the pass, on its already empty slot, which changes nothing). Orders
+aimed at the old object find it gone (spec 03 §19 Q72) (confirmed: binary).
 
 | Action (ability) | Precondition | Result |
 |---|---|---|
@@ -1391,9 +1432,18 @@ gone (spec 03 §19 Q72) (confirmed: binary).
 | Destroy Storm (`Destroy Storm`) | A storm in the sector | The storm is removed. |
 | Create Nebulae (`Create Nebulae`) | A visible star in the sector. Blocked by `Stop Nebulae Creator` in the system. | Shockwave, then the system becomes physical type Nebulae with a random nebula backdrop, is no longer start-eligible, and its system abilities are replaced by `Sector - Sight Obscuration` with Val1 = 3. |
 | Destroy Nebulae (`Destroy Nebulae`) | The system is type Nebulae | The system becomes a Normal, start-eligible standard system with no system abilities. Its objects are untouched. |
-| Create Black Hole (`Create Black Hole`) | A visible star in the sector. Blocked by `Stop Black Hole Creator` in the system. | Shockwave, then the system becomes physical type Black Hole, with system abilities `System - Movement Towards Center` 2, `System - Destructive Center` 5000 and `Sector - Shield Disruption` 5000. Existing warp points keep their abilities. |
+| Create Black Hole (`Create Black Hole`) | A visible star in the sector. Blocked by `Stop Black Hole Creator` in the system. | Its own pass (above): every planet and asteroid field is removed with its colony and none is made in its place, every other object but warp points is destroyed. Then the system becomes physical type Black Hole, with system abilities `System - Movement Towards Center` 2, `System - Destructive Center` 5000 and `Sector - Shield Disruption` 5000. Existing warp points keep their abilities. |
 | Destroy Black Hole (`Destroy Black Hole`) | The system is type Black Hole | As Destroy Nebulae: a Normal, start-eligible system with no system abilities. |
-| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A visible star in the sector, and a PlanetSize record whose `Special Ability ID` is the size the order names: the one the player chose in the window, at most Val1 (spec 06 §1.3) (confirmed: binary). An order that names none, as the computer players give, builds the record whose ID equals Val1, and OpenSE4 refuses an order naming a size above Val1 when it is carried out (both inferred: the window never gives such an order). Every `Constructed Planet Requirements` entry must be met: the ships and bases in **this sector**, whoever owns them, must carry designs with at least Val2 kT of components whose `Custom Group` equals Val1. The requirements are read from the acting ship's abilities. The count goes by design: every such component of the design counts with its mounted size, damaged or destroyed or not; mothballed ships and unit groups do not count. No movement is needed. | A planet of that PlanetSize is created in the sector, using a Planet record of that size with the builder's planet type and atmosphere if one exists (the last such record), else a random one of that size; if no Planet record has that size, no planet is made but everything else still happens. Its three values are set to `Planet Value High Percent` (`... High Resources` in finite games), its conditions to 1.5 (Optimal), and it is named with the next numeral (§5.6). The **star is removed**. Every object of the builder in the sector that carries the construction ability or whose design has any component of a required group is destroyed, whole ship or base included, mothballed ones too. |
+| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A visible star in the sector, and the PlanetSize record the order names: the one the player chose in the window, stored as its position in PlanetSize.txt counted from 1 (spec 06 §1.3, spec 08 §3.8.8). That record must exist and its `Special Ability ID` must **equal** the vehicle's best `Create Constructed Planet` value (the largest Val1 over all its abilities), else the ship lacks the required component; so a device of value 2 builds only the world with ID 2, never the one with ID 1 (confirmed: binary; corrected 2026-10-14, complete listing). The computer players never give this order. Every `Constructed Planet Requirements` entry must be met: the ships and bases in **this sector**, whoever owns them, must carry designs with at least Val2 kT of components whose `Custom Group` equals Val1. The requirements are read from the acting ship's abilities. The count goes by design: every such component of the design counts with its mounted size, damaged or destroyed or not; mothballed ships and unit groups do not count. No movement is needed. | A planet of that PlanetSize is created in the sector, using a Planet record of that size with the builder's planet type and atmosphere if one exists (the last such record), else a random one of that size; if no Planet record has that size, no planet is made but everything else still happens. Its three values are set to `Planet Value High Percent` (`... High Resources` in finite games), its conditions to 1.5 (Optimal), and it is named with the next numeral (§5.6). The **star is removed**. Every object of the builder in the sector that carries the construction ability or whose design has any component of a required group is destroyed, whole ship or base included, mothballed ones too. |
+
+Since 2026-10-14 ours follows every rule above that the complete listing corrected: every
+member acts and the last decides (`movement.cpp` `stellar`), the movement refusal waits only in
+simultaneous games, the supply has no racial modifier and the checks come in the original's
+order (`movement_stellar.cpp` `Checks::chooseActor`), Create Black Hole removes the planets and
+fields and the stars leave in the pass (`shockwave`), the reports go where the original sends
+them (`Manipulation::report`, `presentIn`, `losers`; the window plays a storm's sound), and
+Construct names its world by its position in PlanetSize.txt (`constructConditions`,
+`Order::planetSize`, `shipui::constructSizes`).
 
 ---
 
@@ -1749,8 +1799,8 @@ highlighted, and an X marks each empire that has met one.
     none (no `Comet` records exist in stock data). Then nothing is made: no object, no
     ability roll, no values. The entry keeps an empty name and counts for the letters of
     later planets in its sector (§5.6). The engine does the same.
-44. **Colony cloaking: the engine's choices (§6.9).** OpenSE4 chose, marked (inferred) in the
-    code:
+44. **Colony cloaking: the engine's choices (§6.9).** *Answered* (below). OpenSE4 chose,
+    marked (inferred) in the code:
     - A colony Cloak or Decloak given during a simultaneous turn reaches the host in the
       player's orders and is carried out when the host applies them at the start of turn
       processing, in player and command order; a Decloak's first-contact check runs then. How
@@ -1828,8 +1878,9 @@ highlighted, and an X marks each empire that has met one.
     "is it reachable" (less than 999) are not affected. Two of the computer players' tests
     compare the count with a constant: below 4 (it looks like the fleet recruiting test that
     spec 05 gives as "within 3 jumps", which would then be at most one real jump) and below 5
-    (perhaps the "within 4 jumps" strength test, then at most two real jumps) (inferred: not
-    traced to their spec 05 rules).
+    (perhaps the "within 4 jumps" strength test, then at most two real jumps). **Answer**
+    (confirmed: binary, 2026-10-14): the count below 4 is the fleet-recruiting test and the
+    count below 5 the "within 4 jumps" strength test, as spec 05 §7 already gives them.
 
 46. **Ring 8 and Ring 9.** *Answered* (confirmed: binary): the original does not clamp the
     ring formula (side 2k − 1, offset 7 − k), so `Ring 8` and `Ring 9` can draw positions

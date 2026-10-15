@@ -196,6 +196,15 @@ inline uint32_t traitIndex(const Rules& r, std::string_view name) {
     return 0;
 }
 
+// A PlanetSize record's position in PlanetSize.txt, from 1: what a Construct
+// order names (Order::planetSize, spec 01 §9); 0 when there is none.
+inline uint8_t planetSizePosition(const Rules& r, std::string_view name) {
+    const auto& sizes = r.data().planetSizes;
+    for (size_t i = 0; i < sizes.size(); ++i)
+        if (sizes[i].name == name) return static_cast<uint8_t>(i + 1);
+    return 0;
+}
+
 inline uint32_t sectorTypeOf(const Rules& r, std::string_view physical) {
     for (uint32_t i = 0; i < r.data().sectorObjectTypes.size(); ++i)
         if (r.data().sectorObjectTypes[i].physicalType == physical) return i;
