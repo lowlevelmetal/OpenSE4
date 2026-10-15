@@ -29,6 +29,7 @@
 #include <format>
 #include <memory>
 #include <random>
+#include <utility>
 
 namespace opense4::client::classic {
 
@@ -824,8 +825,17 @@ private:
         MenuContext& ctx = a.ctx();
         const Painter p = ctx.painter();
         if (!pendingPopup_.empty()) {
-            ImGui::OpenPopup(pendingPopup_.c_str());
-            pendingPopup_.clear();
+            const std::string id = std::exchange(pendingPopup_, {});
+            // -nd (spec 05 §9.2): the messages are not shown, and Save Designs
+            // counts as No; the password and Save Empire windows still show.
+            if (noDialogs() && (id == "Invalid Empire" || id == "Invalid Password")) {
+                skippedBox(id, popupText_);
+            } else if (noDialogs() && id == "Save Designs") {
+                skippedBox(id, "No");
+                saveToFile(false);
+            } else {
+                ImGui::OpenPopup(id.c_str());
+            }
         }
         // A message with OK (Invalid Empire, Invalid Password).
         for (const char* id : {"Invalid Empire", "Invalid Password"}) {

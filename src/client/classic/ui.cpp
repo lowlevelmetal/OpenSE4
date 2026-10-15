@@ -17,6 +17,8 @@
 #include <cstring>
 #include <format>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -761,15 +763,56 @@ std::optional<bool> tacticalStrategicKey() {
     return std::nullopt;
 }
 
+namespace {
+bool gNoDialogs = false;
+} // namespace
+
+void setNoDialogs(bool on) { gNoDialogs = on; }
+bool noDialogs() { return gNoDialogs; }
+
+void skippedBox(std::string_view title, std::string_view text) {
+    log::info("No box (-nd): {}{}{}", title, title.empty() || text.empty() ? "" : ": ", text);
+}
+
+namespace {
+std::vector<ImGuiID>& skippedBoxes() {
+    static std::vector<ImGuiID> ids;
+    return ids;
+}
+} // namespace
+
+void openBox(const char* id) {
+    if (!noDialogs()) {
+        ImGui::OpenPopup(id);
+        return;
+    }
+    skippedBox(id, {});
+    skippedBoxes().push_back(ImGui::GetID(id));
+}
+
+bool boxSkipped(const char* id) {
+    auto& ids = skippedBoxes();
+    const auto it = std::find(ids.begin(), ids.end(), ImGui::GetID(id));
+    if (it == ids.end()) return false;
+    ids.erase(it);
+    return true;
+}
+
 void YesNoPrompt::open(std::string question, std::string title) {
     question_ = std::move(question);
     title_ = std::move(title);
+    if (noDialogs()) {
+        skippedBox(title_, question_ + " (No)");
+        skipped_ = true;
+        return;
+    }
     pending_ = true;
 }
 
 bool YesNoPrompt::draw(UiContext& ui) { return answer(ui) == true; }
 
 std::optional<bool> YesNoPrompt::answer(UiContext& ui) {
+    if (std::exchange(skipped_, false)) return false;
     const std::string id = title_ + "###yesno";
     if (pending_) {
         ImGui::OpenPopup(id.c_str());

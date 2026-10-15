@@ -141,7 +141,7 @@ public:
         if (reply) {
             // One message per empire per turn: a second one is refused (spec 05 §3).
             if (msg->from.index() < ui.me().relations.size() && ui.me().relation(msg->from).messageSentThisTurn) {
-                ImGui::OpenPopup("Cannot Reply");
+                openBox("Cannot Reply");
             } else {
                 ScreenArgs a;
                 a.empire = msg->from;
@@ -324,6 +324,7 @@ private:
 
     void cannotReplyPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({340, 0}));
+        if (boxSkipped("Cannot Reply")) return;   // -nd (spec 05 §9.2)
         if (!ImGui::BeginPopupModal("Cannot Reply", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
         ImGui::TextWrapped("A message has already gone to this empire this turn. Only one message per empire can be sent each turn.");
         ImGui::Spacing();

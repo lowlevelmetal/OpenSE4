@@ -542,6 +542,8 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
 void ConfirmPopup::open(std::string question, std::string title) {
     question_ = std::move(question);
     title_ = std::move(title);
+    // -nd: no box, and the question counts as No (spec 05 §9.2).
+    if (noDialogs()) return skippedBox(title_, question_ + " (No)");
     pending_ = true;
 }
 
@@ -571,6 +573,7 @@ bool ConfirmPopup::draw(UiContext& ui) {
 void NoticePopup::open(std::string text, std::string title) {
     text_ = std::move(text);
     title_ = std::move(title);
+    if (noDialogs()) return skippedBox(title_, text_);   // -nd (spec 05 §9.2)
     pending_ = true;
 }
 

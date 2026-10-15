@@ -248,11 +248,17 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(w, ui.px(26)))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
-        if (!resets_.empty()) ImGui::OpenPopup("Password Reset");
+        if (!resets_.empty()) openBox("Password Reset");
     }
 
     // One "Password Reset" message per empire, to the host only.
     void resetNotice(UiContext& ui) {
+        // -nd (spec 05 §9.2): the messages go to the log, and the resets are kept.
+        if (boxSkipped("Password Reset")) {
+            for (const std::string& r : resets_) skippedBox("Password Reset", r);
+            resets_.clear();
+            return;
+        }
         ImGui::SetNextWindowSize(ui.size({380, 0}));
         if (!ImGui::BeginPopupModal("Password Reset", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
         if (!resets_.empty()) ImGui::TextWrapped("%s", resets_.front().c_str());

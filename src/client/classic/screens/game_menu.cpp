@@ -46,7 +46,9 @@ std::string cleanName(std::string_view in) {
 }
 
 // Yes/No popup: true for Yes, false for No, nothing while it waits (or is closed).
+// Under -nd (openBox) it answers No at once, without showing (spec 05 §9.2).
 std::optional<bool> answerPopup(UiContext& ui, const char* id, const std::string& question) {
+    if (boxSkipped(id)) return false;
     std::optional<bool> answer;
     ImGui::SetNextWindowSize(ui.size({340, 0}));
     if (ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
@@ -100,7 +102,7 @@ public:
                 if (clicked) audio().play("button");
                 return clicked;
             };
-            if (button("New")) ImGui::OpenPopup("New Game");
+            if (button("New")) openBox("New Game");
             if (button("Load")) {
                 ui.open(ScreenId::LoadGame);
                 keep = false;
@@ -111,7 +113,7 @@ public:
                     auto saved = ui.session.savePbemDraft();
                     draftNote_ = saved ? "Your turn so far is saved. Open the game file again to finish it."
                                        : std::format("The turn was not saved: {}", saved.error());
-                    ImGui::OpenPopup("Turn Saved");
+                    openBox("Turn Saved");
                 } else {
                     ui.open(ScreenId::SaveGame);
                     keep = false;
@@ -124,7 +126,7 @@ public:
                 ImGui::OpenPopup("Save Map");
             }
             // Save Empire asks first whether the designs go with it (spec 06 §7 Q48).
-            if (button("Save Empire")) ImGui::OpenPopup("Save Designs");
+            if (button("Save Empire")) openBox("Save Designs");
             // Always enabled; a game with a master password asks for it first (spec 06 §1.2.1).
             if (button("Players")) {
                 if (ui.session.hasMasterPassword()) {
@@ -309,6 +311,7 @@ private:
     }
 
     void notePopup(UiContext& ui, const char* id, const std::string& note) {
+        if (boxSkipped(id)) return skippedBox(id, note);   // -nd (spec 05 §9.2)
         ImGui::SetNextWindowSize(ui.size({380, 0}));
         if (!ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
         ImGui::TextWrapped("%s", note.c_str());
@@ -330,6 +333,7 @@ private:
     bool classicEmpireSaved_ = false;
 
     void draftPopup(UiContext& ui) {
+        if (boxSkipped("Turn Saved")) return skippedBox("Turn Saved", draftNote_);   // -nd (spec 05 §9.2)
         ImGui::SetNextWindowSize(ui.size({380, 0}));
         if (!ImGui::BeginPopupModal("Turn Saved", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
         ImGui::TextWrapped("%s", draftNote_.c_str());
@@ -365,7 +369,7 @@ private:
         }
         ImGui::EndPopup();
         if (open) openPlayers(ui);
-        if (invalid) ImGui::OpenPopup("Invalid Password");
+        if (invalid) openBox("Invalid Password");
     }
 
     void openPlayers(UiContext& ui) {
@@ -490,11 +494,11 @@ public:
         const std::string typed = trimmedSaveName(name_);
         if (d.button("Save", !typed.empty()) || (enter && !typed.empty())) {
             if (!validSaveName(typed)) {
-                ImGui::OpenPopup("Error");
+                openBox("Error");
             } else {
                 // A save whose name differs only in case is the same game, as on Windows.
                 const std::filesystem::path file = ruleset::childIgnoringCase(folder_, typed + ".gam");
-                if (std::filesystem::exists(file)) ImGui::OpenPopup("Overwrite");
+                if (std::filesystem::exists(file)) openBox("Overwrite");
                 else save(ui, file, typed);
             }
         }
@@ -592,6 +596,7 @@ private:
     }
 
     void notePopup(UiContext& ui, const char* id, const std::string& note) {
+        if (boxSkipped(id)) return skippedBox(id, note);   // -nd (spec 05 §9.2)
         ImGui::SetNextWindowSize(ui.size({300, 0}));
         if (!ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
         ImGui::TextWrapped("%s", note.c_str());
@@ -688,7 +693,7 @@ public:
             }
         }
         if (ask_) {
-            ImGui::OpenPopup("Delete");
+            openBox("Delete");
             ask_ = false;
         }
         if (pending_ && confirmPopup(ui, "Delete", std::format("Delete the saved game \"{}\"?", pending_->name))) {

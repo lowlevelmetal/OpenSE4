@@ -815,10 +815,15 @@ additions:
   no question for a missing orders file (the computer plays that empire), and no hosting of
   a local game, a turn file or the original's saved game, whose `.plr` files OpenSE4 does
   not read. Signing in takes a turn file, an OpenSE4 saved game or the original's saved
-  game; for OpenSE4's files the data check is the data set's identity and the mods, and the
-  original's Quick Start files, whose checksums are 0, are not compared. A password set
-  with capitals must be typed with them (OpenSE4 keeps only a hash). The not-found case,
-  the boxes `-nd` suppresses and turn-based games are our choices (spec 05 question 84).
+  game; for OpenSE4's files the data check is the data set's identity and the mods. A
+  password set with capitals must be typed with them (OpenSE4 keeps only a hash). Since
+  2026-10-14 the not-found case (exit code 0, no box), `-nd` (every box of the run, a
+  question counting as No, and one of the four arguments), the original's all-zero checksums
+  (refused) and the missing eligibility checks (a destroyed or computer-played empire signs
+  in) follow the original (spec 05 Q84). What OpenSE4 cannot hand over is still refused
+  with exit code 2: another empire's turn file, a turn-based game in which it is another
+  empire's turn, an empire number the game does not have; and under `-nd` the questions
+  before quitting still show, so that the program can be left.
   The original's TCP/IP sounds
   play in OpenSE4's network games and lobby (spec 06 §5.5); its host generates the turn by
   itself once every order is in, so it has no alert for being ready to generate one.

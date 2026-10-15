@@ -3074,6 +3074,9 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
        differs from the host's and is None, "no contact" or War, and the player's log comes
        from the file. Then sight is recalculated in every system; no first-contact check
        runs.
+     - (confirmed: binary, 2026-10-14) An orders file of version 1.87 or later also brings the
+       player's design sightings: each design's last-seen date for that player is applied.
+       OpenSE4 does not read the original's orders files, so this is information only.
   5. The host sends out the new files.
 - **Password reset**: the host may reset players' passwords between turns (Reset Passwords,
   spec 06 §1.9). The new password is shown to the host in a message and takes effect at the
@@ -3091,23 +3094,39 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
   program reads its arguments as `<game file> <password> [<player number> [<mod folder>]]`:
   - The fourth names the mod folder, in place of the one `Path.txt` names (§1 "Mods").
   - The game file is looked up, in the mod folder too, and loaded. When it is not found,
-    the program quits.
+    the program quits at once, without a box, with exit code 0; an empty name takes the same
+    path (confirmed: binary; corrected 2026-10-14, complete listing).
   - **Hosting.** Without a player number, with 0, or with text that is not a number, the
     program acts as the host. When the password is the game's host (game master)
     password, it runs the host's turn processing of the simultaneous game from the
     players' `.plr` files (step 4 above), saves the game without the notice that it was
-    saved, and quits. A missing `.plr` still brings up the usual question whether to go on
-    without it. With a wrong password the program quits at once, with exit code 1.
+    saved, and quits. It runs quietly: no progress window held open and no "Player File
+    Error" question, so the computer plays an empire whose `.plr` is missing (confirmed:
+    binary; corrected 2026-10-14, complete listing: an earlier text said the question still
+    came). The turn style is never checked. With a wrong password the program quits at once,
+    with exit code 1.
   - **Signing in as a player.** With a player number N of 1 or more and the password of
     empire N, the data files are checked: the seven data-set checksums of the game file
-    against the data set (spec 08 §3.2). On a mismatch the "Invalid Data Files" box shows
-    and the program quits with exit code 2. Otherwise the game opens directly on player N's
-    turn, without Login To Game. With a wrong password the program quits with exit code 2.
+    against the data set (spec 08 §3.2). The test is skipped only for a file older than
+    1.42, so a newer file whose seven checksums are all 0, such as a Quick Start game's,
+    never matches (Login To Game makes the same test). On a mismatch the "Invalid Data
+    Files" box shows and the program quits with exit code 2. Otherwise the game opens
+    directly on player N's turn, without Login To Game. With a wrong password the program
+    quits with exit code 2. Nothing else is checked (confirmed: binary; corrected 2026-10-14,
+    complete listing): N's turn opens for a destroyed or computer-played empire, in either
+    turn style, and in a turn-based game when it is not N's turn; N is not checked against
+    the number of empires (a number past the last probably crashes: inferred).
   - Both passwords are compared without the spaces around them and without regard to
     letter case.
-  - A switch `nd`, written after a dash or a slash, suppresses some message boxes, among
-    them the demo's time-out notice and some boxes about files that do not load. Which ones
-    exactly is (inferred).
+  - A switch `nd`, written after a dash or a slash, holds for the whole run: every message
+    box the game raises is skipped (the general information and error box, the other box
+    helpers, the Yes/No questions, the picture-loading errors, the demo's time-out box), and
+    a skipped Yes/No question counts as No, except the question about an orders file for
+    another date, turn or game, which counts as "go on". So under `nd` a missing orders file
+    stops a host's processing started from the window; hosting from the command line asks
+    nothing anyway. The switch also takes its place among the positional arguments: first,
+    it is taken as the game file's name; third, as "not a number", so the program hosts; any
+    number below 1 hosts too (confirmed: binary; corrected 2026-10-14, complete listing).
 
   So the original hosts a simultaneous turn from its command line, as the hint [H] had it.
   Until 2026-10-14 this spec said that the first three arguments are never read: the
@@ -3119,8 +3138,10 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
   in the game folder (or a path), which OpenSE4 plays as a classic mod for that run (as
   `--mod` would, after any `--mod`) and reads for fonts and pointers in `Path.txt`'s place.
   The game file is looked for as given, then in the mod folder, OpenSE4's saves folder and
-  its `pbem` folder; one that is not found shows a box (none with `-nd`) and quits with
-  exit code 1 (inferred, question 84). Our client differs where the files differ:
+  its `pbem` folder; one that is not found (or no name) quits at once without a box, with
+  exit code 0, as the original. A mod folder that does not exist changes nothing, as in the
+  original, which then finds every file in the game's folders (so a `-nd` in fourth place is
+  harmless). Our client differs where the files differ:
   - *Hosting* takes an OpenSE4 game file that has a host: the `.gam` of a play-by-e-mail
     game (or of a network game, which goes on by e-mail from there). It runs the e-mail
     host's processing, as `opense4-server pbem process` does (`net::pbem::processGameFile`):
@@ -3138,20 +3159,25 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
     `--pbem`); an OpenSE4 saved game, a host's file opened as a local game included; or a
     saved game of the original, which is imported. N is the empire's number in the game.
     The password is checked first, then the data files: the seven checksums for the
-    original's saved game when the file holds them (a Quick Start game's are all 0, spec 08
-    §4, and are not compared: inferred, question 84), and for OpenSE4's files the data
-    set's identity and the game's mods, as Login To Game checks them (spec 06 §1.1). An
-    empire without a password takes only an empty one. A turn file of another empire, an
-    empire that is destroyed or played by the computer, and a turn-based game in which it
-    is another empire's turn sign nobody in, with exit code 2 (inferred).
+    original's saved game from 1.42 on, so one whose checksums are all 0 is refused as the
+    original refuses it, and for OpenSE4's files the data set's identity and the game's mods,
+    as Login To Game checks them (spec 06 §1.1). An empire without a password takes only an
+    empty one. As in the original, a destroyed empire and one the computer plays sign in (the
+    computer still plays it). OpenSE4 cannot hand over the rest, and refuses it with exit code
+    2: a turn file of another empire (OpenSE4's turn file is one empire's), a turn-based game
+    in which it is another empire's turn (the engine has no way to give that turn to N), and
+    a number past the last empire (where the original probably crashes).
   - OpenSE4 keeps only a hash or verifier of each password, so letter case is ignored only
     as far as Login To Game ignores it: the password typed is tried trimmed in small
     letters, then trimmed as typed, so one set with capitals must be typed with them. The
     original's saved game keeps its passwords in the clear and is compared as the original
     compares them.
   - A wrong password quits without a box, as the original does, but the reason, like every
-    refusal, also goes to standard error and the log file. `-nd` suppresses every box of
-    the command line (inferred).
+    refusal, also goes to standard error and the log file. `-nd` suppresses every message box
+    of the run, a question counting as No, and is counted among the positional arguments, as
+    in the original. Our client differs: under `-nd` the questions before quitting (the Game
+    Menu's Quit and closing the window) still show, since otherwise the program could not be
+    left; windows that ask for something to be typed or picked are not boxes and show.
   - `--load`, `--pbem`, `--tutorial` and `--training` cannot go with a game file on the
     command line. The original's exit codes are kept; OpenSE4's other failures use 1 for
     hosting and 2 for signing in.
@@ -3204,10 +3230,30 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 8. Taking the turn.
 9. Sending the order file.
 
+The host's and the player's states (the first-turn ones apart from the later ones, and the
+player's extra "Unknown Player Name" refusal), Process Turn lit when ready for the first turn,
+waiting for orders and ready for the next turn, and Play Turn only in the last two are
+confirmed: binary (2026-10-14). The host waits for orders files only from connected players;
+each connected player is sent the combat replay, the movement replay, its own events and
+statistics files and the game file last, each only when it exists and is not empty; players
+reconnect by name (trimmed, any letter case), and an unknown name is refused once the game has
+started (confirmed: binary).
+
 **What the host can do**:
 
 - Process a turn with order files missing; the AI plays those empires.
-- Add its own empires, one at a time.
+- Add its own empires. The Add Empire button is lit only in "Ready to generate first turn"; it
+  first loads the players' empire files if that was not done ("Empire Load Error" for one that
+  fails), then opens Game Setup with the game's settings, and every empire added there gets a
+  row ("[Host]" or "[Computer]"), so several can be added at once (confirmed: binary; that the
+  window allows several is inferred from the loop that adds the rows; corrected 2026-10-14,
+  complete listing: not one at a time). OpenSE4's network lobby is its own design: the host
+  adds computer empires there before the game starts.
+- The random computer and neutral players of a game hosted over TCP/IP are added when the
+  host generates the first turn, not at Begin Game, and their counts do not come from
+  Settings.txt: Low draws 1 to 3, Medium 3 to 7, High 6 to 10 (1 if the setting is none of
+  these), for both kinds; the neutrals are then capped at 5, and both kinds so that the game
+  has at most 20 empires (confirmed: binary; §7.1).
 - One button whose meaning follows the host state (confirmed: binary):
   - while waiting for connections or for empire files, it removes the selected connected
     player;
@@ -3222,13 +3268,20 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 
   The host waits for orders files only from connected players. An empire handed to the
   computer is played each turn by the stand-in rule (§7.1: all ministers on for the turn,
-  restored afterwards). Open: needs observation (or a resource lookup): the button's caption
-  in the earlier states.
+  restored afterwards). The button reads "Remove Empire" from the window's creation and
+  becomes "Toggle Empire AI On/Off" when the host first reaches "Ready to generate turn" (all
+  connected players' orders in, or after a failed generation), keeping that caption until the
+  window is reopened; its action follows the state whatever it reads (confirmed: binary,
+  2026-10-14). The toggle works on any row: the random computer players' rows (added at the
+  first turn) and every empire of a resumed game included; the row then shows "[Host]" and
+  only the computer-controlled mark changes (confirmed: binary, 2026-10-14).
   OpenSE4 follows this since 2026-10-01: `HostSession::setAiControl` (`src/net/host.cpp`)
   flips the empire's kind (`ai::setComputerMark`), and the in-game host's Empires list
   (network status strip) asks "Change Empire Control" and calls it. A kicked player's empire
-  is still played by a stand-in with the mark unchanged (`Slot::aiControl`), and an empire
-  that was a computer player from the start cannot be handed to a human (inferred).
+  is still played by a stand-in with the mark unchanged (`Slot::aiControl`), and any empire,
+  one that was a computer player from the start included, can be handed to the host
+  (corrected 2026-10-14, complete listing: an earlier text said such an empire could not be,
+  inferred); `setAiControl` already allows it.
   Turn-based TCP/IP is an OpenSE4 extension, so its behaviour there is our choice.
 - Play any empire's turn.
 
@@ -4836,3 +4889,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     (d) a turn-based e-mail game is hosted as `pbem process` hosts it, and signing in needs
     a living human empire whose turn it is; (e) `-nd` and `/nd` are not counted, and an
     empty name is a file that is not found.
+    **Answer** (confirmed: binary, 2026-10-14, complete listing; §9.2 "The command line"):
+    (a) no box, exit code 0, an empty name the same; (b) `nd` holds for the whole run and
+    skips every message box, a skipped question counting as No (the question about another
+    date's orders file as "go on"); (c) the checksums are compared for every file from 1.42
+    on, so an all-zero set never matches and the sign-in ends with "Invalid Data Files" and
+    exit code 2; (d) signing in needs only N's password and the checksums, for a destroyed
+    or computer-played empire too, in either turn style and whoever's turn it is, and N is
+    not checked against the number of empires; hosting never checks the turn style; (e) the
+    switch counts among the positional arguments. Since 2026-10-14 ours follows (a), (b),
+    (c), (e) and, as far as the engine can, (d) (`client/classic/command_line.cpp`,
+    `client/app.cpp`, `classic_mode.cpp`, `ui.hpp` `noDialogs`); the differences left are in
+    §9.2 "Our client differs".

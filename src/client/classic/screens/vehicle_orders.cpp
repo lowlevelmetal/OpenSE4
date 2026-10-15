@@ -278,6 +278,11 @@ private:
     // The box over the prompt; OK, Enter or Esc closes it and the prompt takes the keys again.
     void invalidNameBox(UiContext& ui) {
         if (!invalid_) return;
+        if (noDialogs()) {   // -nd (spec 05 §9.2): no box, the prompt again
+            skippedBox("Invalid Name", buffer_);
+            invalid_ = false;
+            return;
+        }
         if (!ImGui::IsPopupOpen("Invalid Name")) ImGui::OpenPopup("Invalid Name");
         ImGui::SetNextWindowSize(ui.size({300, 0}));
         ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));

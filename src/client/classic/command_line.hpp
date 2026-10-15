@@ -12,7 +12,10 @@
 //   Data Files") or a wrong password quits with exit code 2.
 // - Passwords are compared without the spaces around them and without regard
 //   to letter case. The fourth argument names a mod folder; `-nd` or `/nd`
-//   suppresses the boxes.
+//   suppresses every message box of the run (a question counts as No) and
+//   also takes its place among the arguments.
+// - A game file that is not found, or no name, quits at once with exit code
+//   0 and no box.
 //
 // OpenSE4's files differ from the original's (spec 05 §9.2 "Our client
 // differs"): the host's file is a play-by-e-mail game file, processed as
@@ -41,15 +44,20 @@
 
 namespace opense4::client::classic {
 
-// The original's exit codes (spec 05 §9.2): a refused host (a wrong host
-// password; OpenSE4 also uses it for a game file it cannot find or host) and
-// a refused sign-in (a wrong password or other data files; OpenSE4 also uses
-// it for the other reasons a player cannot sign in).
+// The original's exit codes (spec 05 §9.2): a game file not found (the
+// program quits without a word), a refused host (a wrong host password;
+// OpenSE4 also uses it for a game file it cannot host) and a refused sign-in
+// (a wrong password or other data files; OpenSE4 also uses it for the empires
+// it cannot hand over: another empire's turn file, a turn-based game in which
+// it is not that empire's turn, a number past the last empire).
+inline constexpr int kGameFileNotFound = 0;
 inline constexpr int kHostRefused = 1;
 inline constexpr int kSignInRefused = 2;
 
-// The `nd` switch: "-nd" or "/nd", in any letter case (inferred: not one of
-// the four arguments).
+// The `nd` switch: "-nd" or "/nd", in any letter case. It is also one of the
+// positional arguments where it stands (spec 05 §9.2, confirmed: binary):
+// first, it is the game file's name; third, "not a number", so the program
+// hosts.
 bool isNoDialogsSwitch(std::string_view argument);
 
 // The third argument as the original reads it: a whole number of 1 or more is
@@ -75,6 +83,10 @@ bool samePassword(std::string_view a, std::string_view b);
 // the game folder `gameRoot` when there is one by that name, else the name as
 // given (a path).
 std::filesystem::path modFolderPath(const std::string& folder, const std::filesystem::path& gameRoot);
+// The same when that folder exists; none for no name or a folder that does not
+// exist, which changes nothing: the original then finds every file in the
+// game's own folders (spec 01 §1 "Mods").
+std::optional<std::filesystem::path> commandLineModFolder(const std::string& folder, const std::filesystem::path& gameRoot);
 
 // What a game file is, from its contents.
 enum class GameFileKind {
@@ -100,7 +112,7 @@ enum class SignInVerdict {
     SignedIn,
     WrongPassword,     // the original quits without a word
     InvalidDataFiles,  // the original's "Invalid Data Files" box
-    NotPlayable,       // OpenSE4: the empire cannot play now (another's turn file, destroyed, the computer's, not its turn)
+    NotPlayable,       // OpenSE4: the empire cannot play now (another's turn file, not its turn in a turn-based game, no such empire)
     Unreadable,        // the file does not load
 };
 struct SignInCheck {
@@ -113,10 +125,14 @@ struct SignInCheck {
 // empire `player` (1-based) with `password`: the password first, then the
 // data files (for OpenSE4's files the data set's identity in the header and
 // the game's mods, as Login To Game checks them; for the original's the seven
-// data-set checksums when the file holds them, spec 08 §3.2), then whether
-// the empire plays now (living, human, and in a turn-based game the one whose
-// turn it is). Signed in, the session is that empire's and asks nothing more
-// (no Login To Game, no Next Player window for this turn).
+// data-set checksums, spec 08 §3.2, unless the file is older than 1.42, so a
+// file whose checksums are all 0 never matches). Nothing else is checked, as
+// in the original (spec 05 §9.2, confirmed: binary): a destroyed empire, or
+// one the computer plays, opens too. OpenSE4 still refuses a turn-based game
+// in which it is another empire's turn (it cannot hand that turn over) and a
+// number past the last empire (the original's result is not known). Signed
+// in, the session is that empire's and asks nothing more (no Login To Game,
+// no Next Player window for this turn).
 struct SavedGameSignIn {
     SignInCheck check;
     std::unique_ptr<ClassicSession> session;

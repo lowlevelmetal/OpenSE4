@@ -199,8 +199,10 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     // The command line's fourth argument (spec 05 §9.2): a mod folder of the
     // game folder (or anywhere), played as a classic mod for this run, after
     // any --mod, in place of the settings' mods.
-    if (!options.commandLineModFolder.empty()) {
-        const std::filesystem::path folder = modFolderPath(options.commandLineModFolder, dataDir->parent_path());
+    // A folder that does not exist changes nothing (the original then finds
+    // every file in the game's own folders), so `-nd` there is harmless.
+    if (const auto given = classic::commandLineModFolder(options.commandLineModFolder, dataDir->parent_path())) {
+        const std::filesystem::path folder = *given;
         log::info("Mod folder from the command line: {}", folder.string());
         mode->options_.mods.push_back(folder.string());
         mode->options_.modsGiven = true;
@@ -403,8 +405,10 @@ std::optional<std::string> ClassicMode::playPbemTurn(PbemGame game, PbemTurn tur
 bool ClassicMode::signInFromCommandLine(const CommandLineGame& line, std::string& error, int& exitCode) {
     const auto file = findGameFile(line.gameFile, gameFileFolders(line, dataDir_.parent_path()));
     if (!file) {
-        exitCode = kHostRefused;
-        error = std::format("The game file {} was not found.", line.gameFile);
+        // The original quits at once, without a word, with exit code 0 (spec 05 §9.2).
+        log::error("The game file {} was not found: the program quits (spec 05 §9.2).", line.gameFile);
+        exitCode = kGameFileNotFound;
+        error.clear();
         return false;
     }
     log::info("Command line: signing in to {} as empire {}", file->string(), line.player);
@@ -1381,8 +1385,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         // Only the main window asks, and it takes no input while a window or a
         // question is open; never during a battle (endTurn()).
         if (!modalOpen) {
-            // The Empire Options' "confirm ending the turn" (spec 06 §1.9).
-            if (ui.options().confirmEndTurn) confirmEndTurn_ = true;
+            // The Empire Options' "confirm ending the turn" (spec 06 §1.9);
+            // under -nd the question counts as No (spec 05 §9.2).
+            if (ui.options().confirmEndTurn && noDialogs()) skippedBox("End Turn", "No");
+            else if (ui.options().confirmEndTurn) confirmEndTurn_ = true;
             else endTurn();
         }
     }
@@ -1515,6 +1521,11 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
 // errors listed, Close; then the next file's. The original goes on afterwards
 // (inferred), and so does OpenSE4, with what loaded.
 void ClassicMode::drawDataErrors(const MenuContext& ctx) {
+    if (noDialogs()) {   // -nd (spec 05 §9.2): the log has them already
+        for (const DataFileErrors& e : dataErrors_) skippedBox(std::format("{} Errors", e.file), e.path.string());
+        dataErrors_.clear();
+        return;
+    }
     const DataFileErrors& f = dataErrors_.front();
     const Vec2 size{560, 400};
     ImGui::SetNextWindowPos(ctx.at({std::floor((frameW() - size.x) * 0.5f), std::floor((frameH() - size.y) * 0.5f)}));
@@ -1670,7 +1681,8 @@ void ClassicMode::drawHostEmpires(UiContext& ui) {
             ImGui::SameLine(ui.px(280));
             if (ImGui::SmallButton(computer ? "AI Off" : "AI On")) {
                 toggleAsked_ = st.empire;
-                ImGui::OpenPopup("Change Empire Control");
+                if (noDialogs()) skippedBox("Change Empire Control", "No");   // -nd (spec 05 §9.2): No
+                else ImGui::OpenPopup("Change Empire Control");
             }
             ImGui::PopID();
         }
@@ -1740,6 +1752,11 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     std::string where = "an adjacent sector";
     if (q.where.system.valid() && q.where.system.index() < s.galaxy.systems.size())
         where = std::format("{} ({}, {})", s.galaxy.system(q.where.system).name, q.where.sector.x, q.where.sector.y);
+    if (noDialogs()) {   // -nd (spec 05 §9.2): the question counts as No
+        skippedBox("Attack Sector", std::format("{} does not enter {}", who.empty() ? "the ship" : who, where));
+        session_->answer(false);
+        return;
+    }
     ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 290 * frameH() / kFrameH}));
     ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(400), ui.textPx(400)), 0));
     ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
@@ -1766,6 +1783,11 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
 // over the view; the next one comes when it is answered (spec 03 §8: a failed
 // Colonize in a turn-based game, "Colonize" and the reason).
 void ClassicMode::drawMessageBox(UiContext& ui) {
+    if (noDialogs()) {   // -nd (spec 05 §9.2): to the log
+        for (const game::PlayerMessage& m : messageBoxes_) skippedBox(m.title, m.text);
+        messageBoxes_.clear();
+        return;
+    }
     const game::PlayerMessage& m = messageBoxes_.front();
     const std::string id = m.title + "###messagebox";
     if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
@@ -1932,6 +1954,11 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
     }
     // The 253x150 notice: the system, and each empire's flag and name; Begin, Esc or Enter go on.
     const std::string system = q.where.system.index() < s.galaxy.systems.size() ? s.galaxy.system(q.where.system).name : std::string("?");
+    if (noDialogs()) {   // -nd (spec 05 §9.2): as if Begin were pressed
+        skippedBox("Combat", system);
+        battleNotice_ = false;
+        return;
+    }
     constexpr const char* kPopup = "Combat##battlenotice";
     if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
     const Vec2 size{253, 150};
@@ -2216,6 +2243,11 @@ bool ClassicMode::gameCompleted() const {
 // check was met (spec 05 §6, confirmed: binary). The original then exits;
 // OpenSE4 returns to the intro.
 void ClassicMode::drawGameCompleted(UiContext& ui) {
+    if (noDialogs()) {   // -nd (spec 05 §9.2): as if OK were pressed
+        skippedBox("Game Completed", "Every player has played the last turn.");
+        ui.requests.quitToIntro = true;
+        return;
+    }
     constexpr const char* kId = "Game Completed###gamecompleted";
     if (!ImGui::IsPopupOpen(kId)) ImGui::OpenPopup(kId);
     ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));

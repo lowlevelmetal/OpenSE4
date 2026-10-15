@@ -140,16 +140,18 @@ The original's command line (see docs/MULTIPLAYER.md "From the command line"):
                                   turn files and quit, with no window; a wrong password quits with exit code 1
   GAMEFILE PASSWORD PLAYER        Sign in as empire number PLAYER (1 or more) with its password and play its
                                   turn: a turn file (.turn, as --pbem plays it), an OpenSE4 saved game or a
-                                  saved game of the original. A wrong password, or a game made with other
-                                  data files ("Invalid Data Files"), quits with exit code 2
+                                  saved game of the original, even a destroyed empire or one the computer
+                                  plays. A wrong password, or a game made with other data files ("Invalid
+                                  Data Files"), quits with exit code 2
   GAMEFILE PASSWORD PLAYER MODFOLDER
                                   The fourth names a mod folder (in the game folder, or a path) to play as
                                   a classic mod, in place of the one Path.txt names
                                   Passwords count without the spaces around them and, as far as OpenSE4's
                                   password hashes allow, without regard to letter case. GAMEFILE is looked
                                   for as given, then in the mod folder, the saves folder and the pbem
-                                  folder; one that is not found quits with exit code 1
-  -nd, /nd                        No message boxes (the log and standard error say why)
+                                  folder; one that is not found quits at once with exit code 0
+  -nd, /nd                        No message box for the whole run, and a question counts as No (the log
+                                  says what was skipped); it also counts as one of the four arguments
 
 Paths:
   --assets=DIR                    OpenSE4's own assets directory (default: auto-detect, else built in)
@@ -245,9 +247,12 @@ int main(int argc, char** argv) {
         const std::string_view arg = argument;
         // The original's switch that suppresses message boxes, and the
         // arguments that are not options, as the original reads them: game
-        // file, password, player number, mod folder (docs/spec/05 §9.2).
+        // file, password, player number, mod folder (docs/spec/05 §9.2). The
+        // switch also takes its place among those arguments, as in the
+        // original (confirmed: binary).
         if (client::classic::isNoDialogsSwitch(arg)) {
             options.noDialogs = true;
+            options.positional.push_back(argument);
             continue;
         }
         if (arg.empty() || arg.front() != '-') {

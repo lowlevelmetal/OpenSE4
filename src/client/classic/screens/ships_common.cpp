@@ -576,6 +576,8 @@ std::optional<TypeAmountPicker::Result> TypeAmountPicker::draw(UiContext& ui) {
 void Confirm::open(std::string title, std::string text) {
     title_ = std::move(title);
     text_ = std::move(text);
+    // -nd: no box, and the question counts as No (spec 05 §9.2).
+    if (noDialogs()) return skippedBox(title_, text_ + " (No)");
     request_ = true;
 }
 
