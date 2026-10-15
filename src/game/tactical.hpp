@@ -136,7 +136,7 @@ struct TacticalWeapon {
 struct TacticalPiece {
     CombatPiece::Kind kind = CombatPiece::Kind::Vehicle;
     EmpireId owner, startOwner;
-    VehicleId vehicle;            // the vehicle it stands for (invalid for launched units)
+    VehicleId vehicle;            // the vehicle it stands for (a launched group's object since its launch)
     ObjectId planet;
     DesignId design;
     std::string name;

@@ -1167,10 +1167,7 @@ int64_t Battle::minesPresent(EmpireId e) const {
     int64_t present = 0;
     for (const Vehicle& v : s_.vehicles)
         if (v.count > 0 && v.owner == e && v.location == where_ && vehicleType(r_, s_, v) == VehicleType::Mine) present += v.count;
-    for (const MinesLaid& m : minesLaid_)
-        if (m.owner == e)
-            for (const UnitStack& st : m.stacks) present += st.count;
-    return present;
+    return present;   // the minefields laid in this battle are objects already (launchOrder)
 }
 
 int Battle::dist(int a, int b) const {
@@ -2834,6 +2831,21 @@ int Battle::spawnUnit(int carrier, DesignId design, int count) {
     u.hpStart = groupHitPoints(u);
     u.tonnageHad = designTonnage(r_, d) * count;
     buildWeapons(u);
+    // The group is an object of the game from the moment it is launched: it
+    // takes the lowest free object slot now, so launches take their slots in
+    // launch order (spec 04 §10.4, confirmed: binary; since 2026-10-15). What
+    // it holds when the battle ends is written back then (finish).
+    {
+        Vehicle v;
+        v.owner = u.owner;
+        v.design = design;
+        v.name = d.name;
+        v.location = where_;
+        setGroupStacks(s_, v, u.stacks);
+        v.supply = u.unit.supply;
+        v.builtTurn = s_.turn;
+        u.source = s_.addVehicle(std::move(v)).id;
+    }
     const int idx = addPiece(std::move(u));
     occupy(idx);
     rateOnEntry(idx);
@@ -2865,6 +2877,10 @@ void Battle::joinUnit(int group, DesignId design, int count) {
     g.startCount += count;
     g.hpStart = groupHitPoints(g);
     g.tonnageHad += designTonnage(r_, s_.design(design)) * count;
+    if (Vehicle* v = s_.vehicle(g.source)) {   // its object holds them at once
+        setGroupStacks(s_, *v, g.stacks);
+        v->supply = g.unit.supply;
+    }
     rec_.pieces[static_cast<size_t>(group)].count += count;
     // The group is rated again with its new units, as its hit points at the
     // start are (inferred, spec 04 §19.8 Q99).
@@ -3940,7 +3956,8 @@ void Battle::finish() {
     // Write vehicles back: damage, losses, capture, supply, cargo, experience.
     // Combat does not clear orders (spec 03 §6.3); a ship that changed owner loses them (spec 04 §12).
     for (Piece& p : pieces_) {
-        if ((p.kind != Kind::Vehicle && p.kind != Kind::UnitGroup) || !p.source.valid()) continue;
+        // Groups launched in the battle are written back with the recoveries below.
+        if ((p.kind != Kind::Vehicle && p.kind != Kind::UnitGroup) || !p.source.valid() || p.launched) continue;
         Vehicle* v = s_.vehicle(p.source);
         if (!v) continue;
         if (!p.alive) {
@@ -4042,12 +4059,6 @@ void Battle::finish() {
     // Carriers recover the fighter and satellite groups they launched in this
     // battle, ships first, then planets; the rest stay in space as the separate
     // groups they are (confirmed: binary).
-    struct Spawn {
-        EmpireId owner;
-        std::vector<UnitStack> stacks;
-        int64_t supply = 0;
-    };
-    std::vector<Spawn> spawns;
     std::vector<std::vector<UnitStack>> left(pieces_.size());   // launched groups: units not recovered yet
     for (size_t k = 0; k < pieces_.size(); ++k)
         if (pieces_[k].kind == Kind::UnitGroup && pieces_[k].alive)
@@ -4094,10 +4105,22 @@ void Battle::finish() {
         const Piece& u = pieces_[k];
         if (u.kind != Kind::UnitGroup) continue;
         if (u.launched) {
+            // Its object, made at the launch (spawnUnit): what is left of the
+            // group stays in space as the separate group it is; a group
+            // destroyed, or taken back aboard whole, is gone (count 0, removed
+            // with the battle's losses). A drone's battle target is not kept:
+            // with no orders, it is chosen anew in its next battle (spec 03 §19 Q68).
+            Vehicle* v = s_.vehicle(u.source);
+            if (!v) continue;   // taken back aboard in the Launch Units window: gone already
             std::erase_if(left[k], [](const UnitStack& st) { return st.count <= 0; });
-            // A drone's battle target is not kept: with no orders, it is chosen
-            // anew in its next battle (spec 03 §19 Q68).
-            if (u.alive && !left[k].empty()) spawns.push_back({u.owner, left[k], u.unit.supply});
+            if (!u.alive || left[k].empty()) {
+                v->count = 0;
+                v->mixed.clear();
+                continue;
+            }
+            setGroupStacks(s_, *v, left[k]);
+            // It keeps its one pool, at most what its units hold (spec 04 §19.1 Q56).
+            v->supply = std::min(u.unit.supply, initialSupply(r_, s_, *v));
         } else if (Vehicle* v = s_.vehicle(u.source); v && u.alive) {
             setGroupStacks(s_, *v, u.stacks);   // the units of each design that are left
             v->damage.assign(s_.design(v->design).entries.size(), 0);
@@ -4188,45 +4211,6 @@ void Battle::finish() {
     if (!cs_.createReplay) rec_.events.clear();
     s_.combats.push_back(std::move(rec_));
     if (std::find(ctx_.battleSites.begin(), ctx_.battleSites.end(), where_) == ctx_.battleSites.end()) ctx_.battleSites.push_back(where_);
-
-    // Last: launched units left in space (invalidates vehicle references), each
-    // group as the separate group it is, with every design it holds (confirmed: binary).
-    for (const Spawn& sp : spawns) {
-        const Design& d = s_.design(sp.stacks.front().design);
-        Vehicle v;
-        v.owner = sp.owner;
-        v.design = sp.stacks.front().design;
-        v.name = d.name;
-        v.location = where_;
-        setGroupStacks(s_, v, sp.stacks);
-        // It keeps its one pool, at most what its units hold (spec 04 §19.1 Q56).
-        v.supply = std::min(sp.supply, initialSupply(r_, s_, v));
-        v.builtTurn = s_.turn;
-        s_.addVehicle(std::move(v));
-    }
-
-    // Mines laid in the battle (spec 04 §10.6, confirmed: binary; corrected
-    // 2026-10-14, complete listing): each opening of the Launch Units window
-    // that laid mines made a minefield of its own, whatever minefield the owner
-    // already has there. The original makes it at once; ours when the battle
-    // ends, in the order the openings first laid them, after the launched
-    // groups left in space (inferred: their place in the object order).
-    for (const MinesLaid& m : minesLaid_) {
-        std::vector<UnitStack> stacks;
-        for (const UnitStack& st : m.stacks)
-            if (st.count > 0) stacks.push_back(st);
-        if (stacks.empty()) continue;
-        const Design& d = s_.design(stacks.front().design);
-        Vehicle v;
-        v.owner = m.owner;
-        v.design = stacks.front().design;
-        v.name = d.name;
-        v.location = where_;
-        setGroupStacks(s_, v, stacks);
-        v.builtTurn = s_.turn;
-        Vehicle& added = s_.addVehicle(std::move(v));
-        added.supply = initialSupply(r_, s_, added);
-    }
 }
 
 } // namespace detail

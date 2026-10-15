@@ -545,15 +545,10 @@ private:
     std::map<std::tuple<int, int, int>, int> launchGroups_;
     // Mines laid in the battle (spec 04 §10.6, confirmed: binary): each opening
     // of the Launch Units window that lays mines from a piece makes a minefield
-    // of its own, which the later mines of that opening join, whatever their
-    // design; never the minefield already there. In the order first laid.
-    struct MinesLaid {
-        EmpireId owner;
-        int piece = -1;
-        int window = 0;                  // the window's session (TacticalOrder::group)
-        std::vector<UnitStack> stacks;
-    };
-    std::vector<MinesLaid> minesLaid_;
+    // of its own at once, an object of the game, which the later mines of that
+    // opening join, whatever their design; never the minefield already there.
+    // (piece, window session) -> that minefield.
+    std::map<std::pair<int, int>, VehicleId> minesLaid_;
     int round_ = 1;
     int satelliteCap_ = 100;
     int64_t mineCap_ = 100;

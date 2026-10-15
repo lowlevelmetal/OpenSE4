@@ -1274,6 +1274,10 @@ TEST_CASE("combat: fighters launch from carriers, combine their hits and land ag
     CHECK(hitsOn(rec, tp) > 0);
     // Survivors land on their carrier after the battle.
     CHECK(s.vehicle(carrier)->cargo.unitCount(fighter) == 5);
+    // The group was an object of the game from its launch; taken back aboard, it
+    // goes with the battle's losses (spec 04 §10.4).
+    CHECK(std::any_of(rec.pieces.begin(), rec.pieces.end(), [&](const CombatPiece& p) { return p.design == fighter && p.vehicle.valid(); }));
+    s.removeDeadVehicles();
     CHECK(std::none_of(s.vehicles.begin(), s.vehicles.end(), [&](const Vehicle& v) { return v.design == fighter; }));
 }
 

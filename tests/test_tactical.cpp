@@ -1506,6 +1506,15 @@ TEST_CASE("tactical: mines are laid in combat, up to the rate and the sector's c
     const size_t pieces = b.pieces().size();
     CHECK(b.submit(lay(2, 1)).empty());
     CHECK(b.pieces().size() == pieces);   // mines are no pieces
+    // ... but the new minefield is an object of the game at once (confirmed: binary, 2026-10-15).
+    auto fieldsNow = [&] {
+        std::vector<int> out;
+        for (VehicleId id : vehiclesInObjectOrder(b.state()))
+            if (const Vehicle* v = b.state().vehicle(id); v && v->count > 0 && v->owner == a && v->location == k.ar.loc && v->design == mine)
+                out.push_back(v->count);
+        return out;
+    };
+    CHECK(fieldsNow() == std::vector<int>{96, 2});
     CHECK(b.submit(lay(1, 1)).empty());   // the same opening of the window
     CHECK(b.submit(lay(10, 2)).empty());  // another: cut to the one the cap and the rate leave
     CHECK(b.pieces()[static_cast<size_t>(piece)].cargo == std::vector<UnitStack>{{mine, 2}});
@@ -1525,6 +1534,14 @@ TEST_CASE("tactical: mines are laid in combat, up to the rate and the sector's c
 TEST_CASE("tactical: the Launch Units window takes back the groups it launched") {
     Skirmish k;
     k.ar.s.vehicle(k.carrier)->cargo.units = {{k.fighter, 5}};   // 100 kT of the bays' 120
+    // A free object slot below the last one: a launched group takes it at once.
+    const Location elsewhere{k.ar.loc.system, Sector{k.ar.loc.sector.x == 0 ? 1 : 0, k.ar.loc.sector.y}};
+    const VehicleId gone = spawn(k.ar.s, frigate(k.ar.s, k.ar.a, "Gone", 1, {}), elsewhere);
+    spawn(k.ar.s, frigate(k.ar.s, k.ar.a, "Kept", 1, {}), elsewhere);
+    const uint32_t freed = k.ar.s.vehicle(gone)->slot;
+    k.ar.s.vehicle(gone)->count = 0;
+    k.ar.s.removeDeadVehicles();
+    REQUIRE(k.ar.s.freeSlot() == freed);
     TacticalBattle b = startSkirmish(k);
     const EmpireId a = k.ar.a;
     const int carrier = pieceIndex(b, k.carrier);
@@ -1537,6 +1554,12 @@ TEST_CASE("tactical: the Launch Units window takes back the groups it launched")
     REQUIRE(b.pieces().size() == before + 1);
     const int group = static_cast<int>(before);
     CHECK(b.pieces()[before].launchWindow == 4);
+    // The group is an object of the game from its launch, in the lowest free slot (confirmed: binary, 2026-10-15).
+    const VehicleId object = b.pieces()[before].vehicle;
+    REQUIRE(b.state().vehicle(object));
+    CHECK(b.state().vehicle(object)->count == 3);
+    CHECK(b.state().vehicle(object)->location == k.ar.loc);
+    CHECK(b.state().vehicle(object)->slot == freed);
     CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 5);
     // Only from the same window session, and only by its carrier.
     TacticalOrder back = order(OK::Recover, a, carrier, group);
@@ -1548,6 +1571,7 @@ TEST_CASE("tactical: the Launch Units window takes back the groups it launched")
     CHECK(b.check(other) == "Only a group it launched in this window comes back.");
     CHECK(b.submit(back).empty());
     CHECK_FALSE(b.pieces()[before].alive);
+    CHECK_FALSE(b.state().vehicle(object));   // taken back aboard: its object is removed at once
     CHECK(b.pieces()[static_cast<size_t>(carrier)].cargo == std::vector<UnitStack>{{k.fighter, 5}});
     // What was launched this combat turn stays counted (spec 04 §19.7 Q97, confirmed: binary).
     CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 5);

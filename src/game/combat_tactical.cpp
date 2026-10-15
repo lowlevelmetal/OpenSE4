@@ -426,9 +426,10 @@ void Battle::execute(const TacticalOrder& o) {
 // their design; drones are one per group. "Launch Fighters in Groups": fighters
 // in single-design groups of the chosen size. Every launch stays within the
 // per-turn rate (and the satellite and mine caps). Drones a player launches
-// first act at the side's next phase. Mines are no pieces: they leave the
-// cargo at once, and the first mines one opening of the window lays make a
-// minefield of their own, which its later mines join (spec 04 §10.6).
+// first act at the side's next phase. Every launched group is an object of
+// the game at once (spawnUnit). Mines are no pieces: they leave the cargo at
+// once, and the first mines one opening of the window lays make a minefield
+// of their own at once, which its later mines join (spec 04 §10.6).
 void Battle::launchOrder(const TacticalOrder& o) {
     const int i = o.piece;
     const int kind = launchKindOf(o.design);
@@ -452,12 +453,25 @@ void Battle::launchOrder(const TacticalOrder& o) {
         return true;
     };
     if (kind == kLaunchMines) {
-        auto field = std::find_if(minesLaid_.begin(), minesLaid_.end(),
-                                  [&](const MinesLaid& m) { return m.owner == owner && m.piece == i && m.window == o.group; });
-        if (field == minesLaid_.end()) field = minesLaid_.insert(minesLaid_.end(), MinesLaid{owner, i, o.group, {}});
-        auto st = std::find_if(field->stacks.begin(), field->stacks.end(), [&](const UnitStack& x) { return x.design == o.design; });
-        if (st == field->stacks.end()) field->stacks.push_back({o.design, left});
-        else st->count += left;
+        // The minefield is an object at once and takes the lowest free object
+        // slot now (spec 04 §10.6, confirmed: binary; since 2026-10-15).
+        const auto made = minesLaid_.find({i, o.group});
+        Vehicle* field = made != minesLaid_.end() ? s_.vehicle(made->second) : nullptr;
+        if (field && field->count > 0) {
+            addGroupUnits(s_, *field, o.design, left);
+        } else {
+            const Design& d = s_.design(o.design);
+            Vehicle v;
+            v.owner = owner;
+            v.design = o.design;
+            v.name = d.name;
+            v.location = where_;
+            setGroupStacks(s_, v, {{o.design, left}});
+            v.builtTurn = s_.turn;
+            Vehicle& added = s_.addVehicle(std::move(v));
+            added.supply = initialSupply(r_, s_, added);
+            minesLaid_[{i, o.group}] = added.id;
+        }
         launched = left;
     } else if (kind == kLaunchDrones) {
         for (int n = 0; n < left; ++n)
@@ -509,7 +523,11 @@ void Battle::recoverOrder(const TacticalOrder& o) {
         g.alive = false;   // back aboard: no loss (unitsLost is not counted)
         vacate(t);
         dropSeekersAimedAt(t);
+        // Its object is removed at once, freeing its slot (spec 04 §10.4, confirmed: binary).
+        std::erase_if(s_.vehicles, [&](const Vehicle& v) { return v.id == g.source; });
+        g.source = {};
     } else {
+        if (Vehicle* v = s_.vehicle(g.source)) setGroupStacks(s_, *v, g.stacks);
         afterDamage(t);
     }
     refreshStats(i);

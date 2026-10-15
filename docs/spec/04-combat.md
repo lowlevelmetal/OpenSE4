@@ -907,6 +907,17 @@ same (§10.6).
   and room for them. Groups nobody recovers, and all drones, stay in space as the
   separate groups they are; they are not merged into other groups in the sector
   (confirmed: binary).
+- **Launched groups are objects at once** (confirmed: binary; added 2026-10-15). Every
+  fighter, satellite or drone group launched in a battle, by a player or the computer,
+  becomes an object of the game the moment it is launched, in launch order, taking the
+  first free object slot then or a new slot at the end; a group taken back aboard in the
+  Launch \ Recover Units window is removed at once. The slot shows in later battles'
+  piece order, lists and the saved game. Whether a vehicle destroyed earlier in the same
+  battle frees its slot at once was not traced; ours frees it when the battle's losses
+  are removed, after the battle. Since 2026-10-15 ours follows (`Battle::spawnUnit`,
+  `Battle::recoverOrder`); it used to make the groups left in space when the battle
+  ended. A group destroyed in the battle, or taken back aboard whole by its carrier at
+  the end, is removed with the battle's losses.
 
 ### 10.5 Satellites and weapon platforms
 
@@ -967,11 +978,14 @@ same (§10.6).
   the window again starts another. They are never merged into the minefield that was
   there. Whether separate minefields in one sector are merged later, outside combat, was
   not checked. They strike only groups that enter later. Since 2026-10-14 ours follows
-  (`Battle::launchOrder`, `Battle::finish`): it makes one new minefield for each opening
-  that laid mines, in the order they were first laid, when the battle ends, after the
-  launched groups left in space (inferred: the original makes them at once, so their
-  place in the object order among other objects made during the battle may differ). It
-  used to add them to the owner's last minefield in the sector.
+  (`Battle::launchOrder`). It used to add them to the owner's last minefield in the
+  sector. **Made at once** (confirmed: binary; 2026-10-15): the new minefield is an object
+  of the game from the moment it is laid, and takes the first free object slot then, or
+  a new slot at the end, as every launched group does (§10.4). The slot shows in what
+  goes by object order afterwards (the piece order of later battles, the order in which
+  a sector's minefields strike, which mine group a later launch on the map joins, lists
+  and the saved game), not inside the same battle. Since 2026-10-15 ours makes it at the
+  launch too; it used to make it when the battle ended.
 
 ### 10.7 Drones
 

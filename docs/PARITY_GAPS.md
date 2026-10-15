@@ -252,9 +252,8 @@ The REA parity audit of 2026-10-11 found these about cargo and units, implemente
 - **Mines in a battle** (`Battle::launchOrder`, `minesLaid_`): laid with that window at
   the layers' combat rate and within the sector's cap; each opening of the window that
   lays mines makes a minefield of its own, never joining the one already there (spec 04
-  §10.6, since 2026-10-14). Ours makes them when the battle ends rather than at once, so
-  their place in the object order among the objects made in the battle may differ
-  (inferred).
+  §10.6, since 2026-10-14), an object of the game at once, as every group launched in a
+  battle is (since 2026-10-15).
 - **Transfer Cargo**: every holder's cargo lines shown, holders without cargo space left
   out, the plague refusal in a message box. **Jettison Cargo**: a right-click on a line
   opens the design's or the race's report. **Races On Planet**: from the Planet Report's
