@@ -16,7 +16,6 @@ outcomes, **L** is an edge case.
 |---|---|---|---|
 | Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played locally, hotseat, over the network and by e-mail. On different machines a host is in charge: over the network (an OpenSE4 extension) it carries out the commands of the player whose turn it is; by e-mail each player plays their turn on their own view (a turn file) and sends its commands (`.plr`), and the host carries them out on the whole game and sends the next player their turn file. A player who is away, out of time or without a `.plr` is played by the computer for that turn (spec 05 open question 33). The game client opens a PBEM turn file (Multiplayer, Play by E-mail, or `--pbem`), plays the player's turn in either style and writes the `.plr` at End Turn (spec 05 open question 36). A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. As in the original, nobody is asked Tactical or Strategic in a game played on different machines: the host resolves the battle (local and hotseat games stop at each battle they show). The host never stops, so a client shows those battles afterwards, where the original shows the player whose turn it is the Strategic Combat window before the battle (spec 06 §7 Q74) | Spec 05 §9.1: on different machines the save file passes from player to player, and TCP/IP is for simultaneous games only; spec 04 §2, §3 step 1; spec 06 §2.7 | M |
 | Random generator after a load | A saved game keeps the generator's state, so a loaded game continues the same random sequence | Every load reseeds the generator from the game's stored seed, which never changes in play (spec 08 §3.4, §11.2, confirmed: binary) | L |
-| Timed events (`events.cpp`) | Any number of scheduled events wait in `GameState::pendingEvents` | The list keeps fired events as free slots, and nothing is scheduled once it has five slots, free or not, so after five events were pending together no timed event is scheduled again (spec 08 §3.4, §11.2, confirmed: binary) | L |
 | Minister switches of a new empire (`Empire::ministers`) | A new human empire starts with the 14 individual minister areas on | A new human empire, from Quick Start or Game Setup, starts with all 25 switches off (spec 08 §3.6.9, §11.2, observed) | L |
 
 Since 2026-10-04 the original's saved games (spec 08) are read and written, closing the row
@@ -557,7 +556,16 @@ creation and after a surrender), by the current positions and sensors
 (`diplomacy::firstContactIn`, `firstContactEverywhere`); the galaxy-wide passes after moves,
 turns and events are gone. A pair where only one side has met the other (a simultaneous
 Decloak, above) is completed by the next check in a system where both detect each other.
-Whether a timed event's start message also counts is spec 05 question 57.
+A timed event's start message counts too, as every event message does, `Message To` None
+included (spec 05 question 57, settled 2026-10-14).
+
+Since 2026-10-14 random events follow spec 05 §4 as corrected on the complete listing: the
+timed-event list keeps its free slots and schedules nothing once it holds five
+(`PendingEvent::kFree`), a strike acts for the empire recorded at scheduling and sends its
+message whenever the one picked has a title, a record without start messages still logs its
+start, and the event step makes the original's draws (the new-event roll before 2402.0,
+every luck and bad-chance roll of a candidate). What the recorded empire changes inside each
+effect is spec 05 question 85.
 
 On 2026-10-03 the original's generated galaxies were read through a debugger and compared
 with ours (spec 01 §3.8; 544 quadrants of every type and size, 41 placements): every

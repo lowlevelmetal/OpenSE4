@@ -342,6 +342,10 @@ private:
         // Timed events (§3.4).
         for (const PendingEvent& pe : s_.pendingEvents) {
             TimedEvent t;
+            if (pe.isFree()) {   // a free slot: event 0 (§3.4)
+                out_.events.push_back(t);
+                continue;
+            }
             t.event = clampWord(int64_t{pe.eventType} + 1);
             t.date = date(pe.fireTurn);
             t.player = player(pe.empire);

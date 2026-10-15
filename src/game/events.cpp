@@ -625,8 +625,10 @@ int64_t unownedChanceValue(const GameState& s, SystemId sys, AbilityKind k) {
 
 bool chanceRejects(int64_t v, Rng& rng) {
     if (v <= 0 || v == 100) return false;
-    return rng.range(1, 100) <= v;
+    return chanceRejectsRoll(v, rng.range(1, 100));
 }
+
+bool chanceRejectsRoll(int64_t v, int64_t roll) { return v > 0 && v != 100 && roll <= v; }
 
 EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     const Rules& r = ctx.rules;
@@ -1466,9 +1468,11 @@ std::vector<EmpireId> recipients(const GameState& s, const ruleset::EventType& e
     return out;
 }
 
-void sendMessages(TurnContext& ctx, const ruleset::EventType& ev, std::span<const ruleset::Message> messages, const Target& t,
-                  const effects::Tokens& tokens, std::optional<Location> where, Rng& rng) {
-    const ruleset::Message* m = effects::pickMessage(messages, rng);
+// Logs message `m` (none: an entry without its own title and text) to the
+// recipients the record's `Message To` names, then updates sight and runs
+// the first-contact check in the event's system.
+void sendMessage(TurnContext& ctx, const ruleset::EventType& ev, const ruleset::Message* m, const Target& t, const effects::Tokens& tokens,
+                 std::optional<Location> where) {
     std::string title = m ? effects::substitute(m->title, tokens) : std::string{};
     std::string text = m ? effects::substitute(m->text, tokens) : std::string{};
     if (title.empty()) {
@@ -1488,13 +1492,19 @@ void sendMessages(TurnContext& ctx, const ruleset::EventType& ev, std::span<cons
         ctx.log(e, LogCategory::Events, title, text, where, ev.picture);
         addHistory(ctx.state, e, {}, line, where);
     }
-    // Once the event is logged, sight is updated and the first-contact check
-    // runs in its system (spec 05 §3.1, confirmed: binary). A timed event's
-    // start message counts as such a log too (inferred, spec 05 question 57).
+    // Every sending of an event's message, a timed event's start message
+    // and its strike included, ends with the sight update and the
+    // first-contact check in its system, whoever the message reaches,
+    // `Message To` None included (spec 05 §3.1, question 57, confirmed: binary).
     if (where) {
         sight::updateKnowledge(ctx.rules, ctx.state);
         diplomacy::firstContactIn(ctx, where->system);
     }
+}
+
+void sendMessages(TurnContext& ctx, const ruleset::EventType& ev, std::span<const ruleset::Message> messages, const Target& t,
+                  const effects::Tokens& tokens, std::optional<Location> where, Rng& rng) {
+    sendMessage(ctx, ev, effects::pickMessage(messages, rng), t, tokens, where);
 }
 
 effects::Tokens baseTokens(const GameState& s, const Target& t, const effects::Tokens& fromEffect) {
@@ -1504,16 +1514,25 @@ effects::Tokens baseTokens(const GameState& s, const Target& t, const effects::T
     return tokens;
 }
 
-void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng) {
+// An immediate event (`strike` false) sends its message only when the effect
+// took; a timed event's strike sends it whenever the message picked has a
+// title, whether or not the effect took (spec 05 §4, confirmed: binary).
+void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng, bool strike = false) {
     const ruleset::EventType& ev = ctx.rules.data().eventTypes[record];
     const auto effect = effects::parseEffect(ev.type);
     if (!effect) return;
     const std::optional<Location> where = effects::targetLocation(ctx.state, t);
     const effects::Outcome out = effects::apply(ctx, *effect, t, ev.effectAmount, rng);
-    if (!out.applied) return;
+    if (!out.applied && !strike) return;
     effects::Tokens tokens = baseTokens(ctx.state, t, out.tokens);
     tokens.actualAmount = out.actual < 0 ? -out.actual : out.actual;
-    sendMessages(ctx, ev, ev.messages, t, tokens, where, rng);
+    if (strike) {
+        const ruleset::Message* m = effects::pickMessage(ev.messages, rng);
+        if (m && !m->title.empty()) sendMessage(ctx, ev, m, t, tokens, where);
+    } else {
+        sendMessages(ctx, ev, ev.messages, t, tokens, where, rng);
+    }
+    if (!out.applied) return;
     if (ctx.hooks) {
         // A mod's event (hooks.hpp): a classic event took effect.
         HookArgs a;
@@ -1538,18 +1557,20 @@ bool luckHolds(const Rules& r, const GameState& s, EmpireId owner, Rng& rng) {
 }
 
 // For star events every empire with a colony in the system rolls (vehicles
-// do not count); a total of exactly 100 skips the roll (confirmed: binary).
+// do not count), each one whatever the others rolled; a total of exactly 100
+// skips the roll (confirmed: binary).
 bool starLuckHolds(const Rules& r, const GameState& s, SystemId sys, Rng& rng) {
     std::vector<uint8_t> present(s.empires.size(), 0);
     for (const auto& c : s.colonies)
         if (c && validEmpire(s, c->owner) && s.galaxy.object(c->planet).system == sys) present[c->owner.index()] = 1;
+    bool holds = true;
     for (size_t i = 0; i < present.size(); ++i) {
         if (!present[i]) continue;
         const int64_t total = 100 + r.traitValue(s.empires[i].race, "Luck");
         if (total == 100) continue;
-        if (rng.range(1, 100) >= total) return false;
+        if (rng.range(1, 100) >= total) holds = false;
     }
-    return true;
+    return holds;
 }
 
 // The target of an event, rebuilt from its object (the owner may have changed).
@@ -1690,21 +1711,28 @@ std::optional<Target> pickEventTarget(const Rules& r, const GameState& s, uint32
         case TargetKind::None: return std::nullopt;
     }
 
-    // Up to 1,000 draws; a candidate that fails a check is removed.
+    // Up to 1,000 draws; a candidate that fails a check is removed. Every
+    // roll is made for a candidate that exists, whatever the checks before it
+    // found: the luck roll after a failed home-location test too, and the
+    // bad-chance roll for every candidate with a system, with or without such
+    // an ability (spec 05 §4, confirmed: binary).
     for (int draw = 0; draw < effects::kTargetDraws && !candidates.empty(); ++draw) {
         const size_t i = rng.index(candidates.size());
         const Target t = eventTarget(s, kind, candidates[i]);
         bool ok = targetExists(r, s, t);
-        std::optional<Location> where;
         if (ok) {
-            where = effects::targetLocation(s, t);
+            const std::optional<Location> where = effects::targetLocation(s, t);
             // High and Catastrophic planet and star events spare the exact
             // home planet locations: homeworlds, but practically never stars.
-            if (spareHomes && where) ok = !atHomeLocation(s, *where);
+            if (spareHomes && where && atHomeLocation(s, *where)) ok = false;
+            // Luck, good events and bad alike.
+            const bool lucky = kind == TargetKind::Star && where ? starLuckHolds(r, s, where->system, rng) : luckHolds(r, s, t.empire, rng);
+            if (!lucky) ok = false;
+            if (where) {
+                const int64_t roll = rng.range(1, 100);
+                if (effects::chanceRejectsRoll(effects::unownedChanceValue(s, where->system, AbilityKind::ChangeBadEventChanceSystem), roll)) ok = false;
+            }
         }
-        // Luck, good events and bad alike.
-        if (ok) ok = kind == TargetKind::Star ? starLuckHolds(r, s, where->system, rng) : luckHolds(r, s, t.empire, rng);
-        if (ok && where) ok = !effects::chanceRejects(effects::unownedChanceValue(s, where->system, AbilityKind::ChangeBadEventChanceSystem), rng);
         if (ok) return t;
         candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(i));
     }
@@ -1720,7 +1748,10 @@ bool trigger(TurnContext& ctx, uint32_t record, const Target& target, Rng& rng) 
         fire(ctx, record, target, rng);
         return true;
     }
-    // Timed: the start message now, the strike later (its amount is unknown yet).
+    // Timed: with five or more slots, free ones included, nothing is
+    // scheduled, no message is sent and nothing strikes (confirmed: binary).
+    if (s.pendingEvents.size() >= kMaxTimedEventSlots) return false;
+    // The start message now, the strike later (its amount is unknown yet).
     const std::optional<Location> where = effects::targetLocation(s, target);
     effects::Tokens tokens;
     if (target.vehicle.valid())
@@ -1738,7 +1769,10 @@ bool trigger(TurnContext& ctx, uint32_t record, const Target& target, Rng& rng) 
         tokens.sectorName = std::format("({}, {})", where->sector.x, where->sector.y);
     }
     tokens = baseTokens(s, target, tokens);
-    if (!ev.startMessages.empty()) sendMessages(ctx, ev, ev.startMessages, target, tokens, where, rng);
+    // Sent even when the record has no start message: an entry without a
+    // title and text of its own, and the first-contact check after it
+    // (confirmed: binary).
+    sendMessages(ctx, ev, ev.startMessages, target, tokens, where, rng);
     PendingEvent pe;
     pe.eventType = record;
     pe.empire = target.empire;
@@ -1746,45 +1780,48 @@ bool trigger(TurnContext& ctx, uint32_t record, const Target& target, Rng& rng) 
     pe.vehicle = target.vehicle;
     pe.system = target.system;
     pe.fireTurn = s.turn + static_cast<uint32_t>(ev.turnsToComplete);
-    s.pendingEvents.push_back(pe);
+    // The first free slot, or a new one at the end.
+    const auto slot = std::find_if(s.pendingEvents.begin(), s.pendingEvents.end(), [](const PendingEvent& p) { return p.isFree(); });
+    if (slot != s.pendingEvents.end()) *slot = pe;
+    else s.pendingEvents.push_back(pe);
     return true;
 }
 
 void fireDueEvents(TurnContext& ctx, Rng& rng) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    // In the order they were started. A timed event strikes exactly its
-    // `Time Till Completion` turns later if its target still exists, and is
-    // dropped silently otherwise (confirmed: binary).
-    for (size_t i = 0; i < s.pendingEvents.size();) {
-        if (s.pendingEvents[i].fireTurn > s.turn) {
-            ++i;
-            continue;
-        }
+    // In slot order. A timed event strikes exactly its `Time Till
+    // Completion` turns later if its target still exists, and is dropped
+    // silently otherwise; either way its slot is emptied and stays in the
+    // list (confirmed: binary).
+    for (size_t i = 0; i < s.pendingEvents.size(); ++i) {
+        if (s.pendingEvents[i].isFree() || s.pendingEvents[i].fireTurn > s.turn) continue;
         const PendingEvent pe = s.pendingEvents[i];
-        s.pendingEvents.erase(s.pendingEvents.begin() + static_cast<std::ptrdiff_t>(i));
+        s.pendingEvents[i] = PendingEvent{};
+        s.pendingEvents[i].eventType = PendingEvent::kFree;
         if (pe.eventType >= r.data().eventTypes.size()) continue;
+        // For the empire recorded when it was scheduled, which its "Owner"
+        // message reaches, whoever holds the target now (confirmed: binary;
+        // what that empire changes inside each effect is spec 05 question 85).
         Target t;
         t.object = pe.object;
         t.vehicle = pe.vehicle;
         t.system = pe.system;
         t.empire = pe.empire;
-        // The object's current owner is the one affected now.
-        if (const Vehicle* v = t.vehicle.valid() ? s.vehicle(t.vehicle) : nullptr) t.empire = v->owner;
-        else if (t.object.valid()) t.empire = s.colony(t.object) ? s.colony(t.object)->owner : EmpireId{};
         if (!targetExists(r, s, t)) continue;
-        fire(ctx, pe.eventType, t, rng);
+        fire(ctx, pe.eventType, t, rng, true);
     }
 }
 
 void rollNewEvent(TurnContext& ctx, uint32_t date, Rng& rng) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    // One roll for the whole galaxy (None never rolls), and no new events
-    // before 2402.0 (confirmed: binary).
-    const int chance = eventChance(r, s);
-    if (s.options.eventFrequency <= 0 || chance <= 0 || date < kFirstEventDate) return;
-    if (rng.range(1, 100) > chance) return;
+    // One roll for the whole galaxy, made every turn the frequency is not
+    // None, before 2402.0 too; there are no new events before that date
+    // (confirmed: binary).
+    if (s.options.eventFrequency <= 0) return;
+    const int64_t roll = rng.range(1, 100);
+    if (date < kFirstEventDate || roll > eventChance(r, s)) return;
     const auto record = pickRecord(r, s, rng);
     if (!record) return;
     const auto target = pickEventTarget(r, s, *record, rng);

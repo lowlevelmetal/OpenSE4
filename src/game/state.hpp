@@ -1097,13 +1097,19 @@ struct MoodEvent {
     int count = 1;
 };
 
+// One slot of the timed-event list (spec 05 §4, spec 08 §3.4, confirmed:
+// binary): an event that struck is emptied, never removed, and nothing is
+// scheduled once the list has events::kMaxTimedEventSlots slots, free or not.
 struct PendingEvent {
-    uint32_t eventType = 0;   // Events.txt index
-    EmpireId empire;
+    // `eventType` of a free slot.
+    static constexpr uint32_t kFree = UINT32_MAX;
+    uint32_t eventType = 0;   // Events.txt index, or kFree
+    EmpireId empire;          // the empire recorded when it was scheduled
     ObjectId object;
     VehicleId vehicle;
     SystemId system;
     uint32_t fireTurn = 0;
+    bool isFree() const { return eventType == kFree; }
 };
 
 // The values a new game's Victory Conditions page shows, every condition
