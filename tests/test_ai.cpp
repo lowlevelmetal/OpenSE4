@@ -7070,3 +7070,58 @@ TEST_CASE("ai: a research or units file with a loading error is not used") {
     ai::detail::planResearch(p);
     REQUIRE(p.st.empire(cpu).research.size() == 1);
 }
+
+TEST_CASE("ai: the ministers' lists compare whole numbers, with a sort that is not stable") {
+    using ai::detail::DefendEntry;
+    auto entry = [](int64_t threatTenths, bool planet) {
+        DefendEntry d;
+        d.threat = threatTenths;
+        d.planetSector = planet;
+        return d;
+    };
+    // 12.7 and 12.5 tie as whole numbers; the quicksort then swaps the pair,
+    // where an exact comparison would keep the stronger first.
+    std::vector<DefendEntry> pair{entry(127, false), entry(125, false)};
+    ai::detail::sortDefendEntries(pair, false);
+    CHECK(pair[0].threat == 125);
+    CHECK(pair[1].threat == 127);
+    // A sector with a planet comes first, the weaker threat first (the key
+    // 10,100 − threat, the higher first), unless its threat is 10,100 or more:
+    // at 10,100 it ties with the sectors without one (key 0) and goes by its
+    // threat; above, it comes after them.
+    std::vector<DefendEntry> list{entry(50, false), entry(110'000, true), entry(300, true), entry(200, true), entry(101'000, true)};
+    ai::detail::sortDefendEntries(list, false);
+    REQUIRE(list.size() == 5);
+    CHECK(list[0].threat == 200);
+    CHECK(list[1].threat == 300);
+    CHECK(list[2].threat == 101'000);
+    CHECK(list[3].threat == 50);
+    CHECK(list[4].threat == 110'000);
+}
+
+TEST_CASE("ai: a colonization target's value is summed in single precision, a hostile colony's holdings included") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    const EmpireId enemy{1u};
+    std::optional<ObjectId> planet;
+    for (ObjectId o = ObjectId{0u}; o.index() < s.galaxy.objects.size(); o = ObjectId{o.value + 1})
+        if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) {
+            planet = o;
+            break;
+        }
+    REQUIRE(planet);
+    SpaceObject& obj = s.galaxy.object(*planet);
+    obj.value = {100, 100, 100};
+    CHECK(ai::detail::colonyTargetValue(s, obj, nullptr) == 300'000);
+    s.options.finiteResources = true;
+    CHECK(ai::detail::colonyTargetValue(s, obj, nullptr) == 300);
+    s.options.finiteResources = false;
+    Colony& c = addColony(s, *planet, enemy, {});
+    c.facilities = {0, 0};
+    CHECK(ai::detail::colonyTargetValue(s, obj, &c) == 2'300'000);
+    // With the capital's 1,000,000,000 the float sum rounds to a multiple of 64.
+    c.facilities.clear();
+    c.homeworld = true;
+    CHECK(ai::detail::colonyTargetValue(s, obj, &c) == 1'000'300'032);
+    (void)r;
+}

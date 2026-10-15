@@ -356,6 +356,11 @@ void planStellarManipulation(Planner& p);
 // has no leader. The game's own leader (fleetLeader) is the player's choice.
 std::vector<const Vehicle*> ministersFleet(const GameState& s, const Fleet& f);
 const Vehicle* ministersLeader(const GameState& s, const Fleet& f);
+// A colonization target's planet value (spec 05 §7.5 *Order*), a whole
+// number: its resource values (× 1000 unless resources are finite) and, for a
+// hostile colony without population (`taken`), its population, facilities,
+// cargo and capital, summed in single precision.
+int64_t colonyTargetValue(const GameState& s, const SpaceObject& planet, const Colony* taken);
 // The planet's defence in an attack candidate's value (spec 05 §7.2), in
 // tenths: its colony's Planet - Shield Generation total / 5, its population
 // in millions div 100, and its units' summed best weapon damage.

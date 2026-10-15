@@ -1187,7 +1187,8 @@ High always notice.
   is no candidate: it is never a target, never makes a Prepare for Attack, and adds
   nothing to the anger's attack locations. Only a kept candidate also adds its owner's
   rating + 1 a second time to the strength of that system. They are ordered by fewest jumps
-  from our home, then highest anger toward the owner, then highest value. The value
+  from our home, then highest anger toward the owner, then highest value, the value compared
+  as a whole number (*The ministers' sort* below). The value
   (confirmed: binary) is the ratings (without the + 1) of every owned object in the
   planet's sector that is not ours, whoever owns it, plus the planet's defence: its
   colony's `Planet - Shield Generation` total / 5, plus its population in millions div 100,
@@ -1223,8 +1224,22 @@ High always notice.
      the Defense minister's own choice weakest first, or strongest first when the ship is
      in a fleet.
 
-  The defend list is the distinct systems of these entries in this order, at most `Maximum
-  Systems to Defend at a Time`.
+  The threats are compared as whole numbers, and key 3 is worked out as 10,100 − threat
+  (whole number) for a sector that holds a planet against 0 for the others, the higher
+  first: a planet-sector entry whose threat is 10,100 or more therefore loses its place
+  before the others (confirmed: binary; added 2026-10-14, complete listing). The defend
+  list is the distinct systems of these entries in this order, at most `Maximum Systems to
+  Defend at a Time`.
+- **The ministers' sort** (confirmed: binary; added 2026-10-14, complete listing). The
+  attack candidates, the defend list, the colonization targets and the attack routine's
+  candidates are sorted with a quicksort that is not stable, its pivot the middle entry, so
+  entries that tie on every key come out in an order that depends on how the list was built.
+  Threats and values are compared after cutting them to whole numbers, so 12.5 and 12.7
+  tie. The colonization targets are gathered in the game's object-slot order. OpenSE4
+  follows this since 2026-10-14 (`ministersSort`, `ai_planner.hpp`; `assess` and
+  `sortDefendEntries`, `ai.cpp`; the partition scheme is inferred, question 85). It used to
+  compare tenths, had no 10,100 cut-off, and broke ties by planet or object id or by the
+  scan order.
 
 **Whose lists the economy step reads** (confirmed: binary; observed 2026-10-02). There is
 one set of these lists for the whole game. An empire's start-of-turn step (§7.1 group 1)
@@ -2203,8 +2218,21 @@ binary).
     2. warp jumps from home, fewest first;
     3. planets with ancient ruins first;
     4. breathable atmosphere first;
-    5. larger planets first;
-    6. higher planet value first.
+    5. larger planets first: the planet size's `Stellar Size`, so Ringworlds and
+       Sphereworlds, Huge in the stock data, tie with Huge planets;
+    6. higher planet value first. The value is the sum of the three resource values, each
+       times 1000 unless the game uses finite resources. For a target that is a
+       zero-population hostile colony it also adds 100 per population unit, 1,000,000 per
+       facility, 10,000 per cargo unit and 1,000,000,000 when a certain colony flag is set
+       (its meaning was not traced; OpenSE4 takes the capital mark of the trade values,
+       §7.4, inferred). The sum is taken in single precision, and compared as a whole number
+       (*The ministers' sort*, §7.2), so such colonies come before plain planets that tie
+       on the keys above.
+
+    (Keys 5 and 6 confirmed: binary; added 2026-10-14, complete listing.) OpenSE4 follows
+    this since 2026-10-14 (`sizeRank`, `colonyTargetValue`, `ai.cpp`; a size none of the five
+    names hold ranks below Tiny, inferred). It used to rank constructed planets above Huge,
+    to count an unknown size as Medium, and to take the three resource values alone.
   - *Ships*: idle colony ships are those with no orders, or whose orders are Move To then
     Colonize and whose target has become one of our colonies. A ship whose target turned
     into an asteroid field, was taken by another empire or is gone keeps flying; its
