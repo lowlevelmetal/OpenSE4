@@ -46,9 +46,8 @@ Resources vehicleYardRates(const Rules& r, const GameState& s, const Vehicle& v)
     return out;
 }
 
-bool rioting(const Rules& r, const GameState& s, const Colony& c) {
-    return moodFromAnger(c.anger) == Mood::Rioting && !emotionless(r, s, c.owner);
-}
+// The anger band alone, whatever the race (spec 02 §4, confirmed: binary).
+bool rioting(const Colony& c) { return moodFromAnger(c.anger) == Mood::Rioting; }
 
 // Why a queue cannot work this turn (empty = it can).
 std::string_view queueBlocked(const Rules& r, const GameState& s, const cmd::QueueTarget& t) {
@@ -62,7 +61,7 @@ std::string_view queueBlocked(const Rules& r, const GameState& s, const cmd::Que
     const Colony* c = s.colony(t.planet);
     if (!c) return "gone";
     if (c->totalPopulation() <= 0) return "no population";
-    if (rioting(r, s, *c)) return "rioting";
+    if (rioting(*c)) return "rioting";
     return {};
 }
 
@@ -86,7 +85,7 @@ Resources constructionRate(const Rules& r, const GameState& s, EmpireId e, const
     } else {
         const Colony* c = s.colony(t.planet);
         if (!c || c->owner != e) return {};
-        if (c->totalPopulation() <= 0 || rioting(r, s, *c)) return {};
+        if (c->totalPopulation() <= 0 || rioting(*c)) return {};
         const int popShipyard = populationModifier(r, c->totalPopulation()).shipyard - 100;
         Resources base;
         int64_t m = 0;

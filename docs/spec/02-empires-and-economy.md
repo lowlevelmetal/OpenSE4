@@ -758,8 +758,18 @@ saved and loaded.
 - **Emotionless** trait: the empire skips the whole update above, riot events skip its
   planets, and any other change to its colonies' anger (such as a system happiness
   facility) sets the anger to 35 (Indifferent) instead. A new colony keeps its starting 25
-  (Happy, so +10 % output with stock Settings) until such a change. It never riots, and
-  its growth gets no mood term. The UI shows its mood as "Emotionless".
+  (Happy, so +10 % output with stock Settings) until such a change. The UI shows its mood
+  as "Emotionless", and its growth gets no mood term; nothing else ignores the band
+  (confirmed: binary; corrected 2026-10-14, complete listing: this said "it never riots").
+  The riot tests of output, growth and the queue rate look at the anger band only, with no
+  trait test, and the output follows the band's `Mood … Modifier` (25 gives the Happy
+  rate). A change of owner keeps the colony's anger (capture, treaty, gift, intelligence),
+  so a colony at anger 90 or more that passes to an Emotionless empire goes on rioting (no
+  output, no growth, no construction) until something changes its anger (a system happiness
+  facility sets it to 35). Since 2026-10-14 ours follows (`economy.cpp`
+  `reproductionPercent`, `colonyOutput` step 6, `economy_queue.cpp` `rioting`); before, such
+  a colony never rioted for growth and construction, and for output it skipped the riot stop
+  but took the riot modifier.
 
 ---
 

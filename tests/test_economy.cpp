@@ -2045,9 +2045,24 @@ TEST_CASE("economy: Emotionless races skip the update and sit at 35 after any ch
     CHECK(w.home->anger == 35);
     CHECK(w.moon->anger == 35);
     CHECK(w.far->anger == 25);
-    // It never riots and grows without a mood term.
-    w.far->anger = 95;
+    // Its growth has no mood term, but the riot tests read the anger band
+    // alone: a colony at 90 or more (kept through a change of owner) riots,
+    // with no output, growth or construction (spec 02 §4, confirmed: binary).
+    w.far->anger = 60;  // Angry: no −5 for an Emotionless race
     CHECK(economy::reproductionPercent(r, w.s, *w.far) == 10);
+    w.far->anger = 95;
+    CHECK(economy::reproductionPercent(r, w.s, *w.far) == 0);
+    w.far->facilities = {facilityIndex(r, "Test Mine")};
+    CHECK(economy::colonyOutput(r, w.s, *w.far).production.isZero());
+    CHECK(economy::constructionRate(r, w.s, kMe, cmd::QueueTarget{.planet = w.far->planet}).isZero());
+    // Its output follows the band's mood modifier like any other.
+    w.far->anger = 25;
+    const economy::ColonyOutput happy = economy::colonyOutput(r, w.s, *w.far);
+    w.far->anger = 60;
+    const economy::ColonyOutput angry = economy::colonyOutput(r, w.s, *w.far);
+    CHECK_FALSE(happy.production.isZero());
+    CHECK(happy.productionPercent[0] - angry.productionPercent[0] == 30);  // 110 % against 80 %
+    CHECK(economy::moodName(r, w.s, *w.far) == "Emotionless");
 }
 
 TEST_CASE("economy: riots stop output, growth and building, but never cause a rebellion") {

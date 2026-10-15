@@ -350,10 +350,13 @@ bool colonyBlockaded(const Rules& r, const GameState& s, const Colony& c) {
 }
 
 int reproductionPercent(const Rules& r, const GameState& s, const Colony& c) {
-    // One rate for the whole colony, from the owner's race (confirmed: binary, spec 02 §3).
+    // One rate for the whole colony, from the owner's race (confirmed: binary,
+    // spec 02 §3). The riot test reads the anger band alone, an Emotionless
+    // race's too; only the mood term ignores the band for such a race (spec 02
+    // §4, confirmed: binary).
     const bool calm = emotionless(r, s, c.owner);
     const Mood mood = moodFromAnger(c.anger);
-    if (c.totalPopulation() <= 0 || c.plagueLevel > 0 || (mood == Mood::Rioting && !calm)) return 0;
+    if (c.totalPopulation() <= 0 || c.plagueLevel > 0 || mood == Mood::Rioting) return 0;
     const Race& race = s.empire(c.owner).race;
     const SpaceObject& planet = s.galaxy.object(c.planet);
     int64_t rate = std::max<int64_t>(0, r.setting("Empire Starting Percent Reproduction", 10) + racialEffect(r, race, RacialEffect::Reproduction));
@@ -446,8 +449,10 @@ ColonyOutput colonyOutput(const Rules& r, const GameState& s, const Colony& c) {
         baseResearch += sumValue1(ab, AbilityKind::PointGenResearch);
         baseIntel += sumValue1(ab, AbilityKind::PointGenIntelligence);
     }
-    // Step 6: a rioting or blockaded colony produces nothing at all; the output is lost.
-    if ((out.mood == Mood::Rioting && !emotionless(r, s, c.owner)) || out.blockaded) return out;
+    // Step 6: a rioting or blockaded colony produces nothing at all; the output
+    // is lost. The riot test reads the anger band alone, an Emotionless race's
+    // too, and so does the mood modifier below (spec 02 §4, confirmed: binary).
+    if (out.mood == Mood::Rioting || out.blockaded) return out;
 
     const std::vector<ParsedAbility> own = workingAbilities(r, s, c);
     const int common = (moodOutputPercent(r, out.mood) - 100) + (populationModifier(r, population).production - 100);
