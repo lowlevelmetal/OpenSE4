@@ -1162,6 +1162,19 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
     sector with enemies (§6.2), and a battle on entry, or the Attack order at the end, takes
     them all into one battle (spec 04 §2). If any of them has no movement left when the
     order is given, the whole group waits where it is.
+  - **Orders expanded once** (confirmed: binary, 2026-10-14). Each composite order is worked
+    out once, for the first tagged vehicle, from where its list leaves it, and the same orders
+    go into every tagged list: Explore picks one warp point and every tagged vehicle gets the
+    same Move To and Warp; Resupply and Repair give one Move To to them all; Colonize's Load
+    Cargo goes to every tagged list or to none, depending only on whether the first tagged
+    vehicle carries population.
+  - **Changes other than adding** (confirmed: binary, 2026-10-14). Repeat Orders sets or
+    clears the flag of the first tagged vehicle only (or of its fleet's members at the
+    location); no list is otherwise touched. Set Patrol ending on the object's own sector
+    switches Repeat on for that vehicle alone. Clear Orders reaches every tagged list, and so
+    does the "exactly one order" clearing at the end of a patrol, which is tested on the first
+    tagged vehicle's list. Sentry tests the first tagged vehicle's head order: if it is a
+    Sentry, every tagged list is cleared.
   - The tags are cleared once the order is given and carried out (spec 06 §2.5). Whatever is
     left of the orders when movement runs out, because the target is further away than the
     slowest tagged vehicle can go this turn, is carried out at the start of the next turn by
@@ -1173,17 +1186,22 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   Since 2026-10-05 the engine follows (§19 Q82). The client gives an order to tagged vehicles
   as one command (`cmd::OrderTagged`) that names them in tag order; a fleet member stands for
   every member at its fleet's location (`taggedVehicles`), and the vehicles named must share
-  a sector. Each tagged list gets the orders appended as an order given to that vehicle (or
-  fleet) alone would: composite orders are expanded from where that list leaves it, so lists
-  that held different orders can get different expansions (inferred, §19 Q83). In a
+  a sector. Since 2026-10-14 the orders are expanded once, for the first one tagged, and the
+  same orders are appended to every tagged list (`cmd::OrderTagged` in `commands.cpp`; before,
+  each list expanded them from where it left its vehicle, inferred, §19 Q83). In a
   turn-based game the group then runs at once (`LiveMove::tagged`): the first tagged vehicle
   still in the game acts, every tagged vehicle in its sector is a member and a holder, a
   member whose maximum movement is 0 makes the group wait as it does a fleet (inferred), and
   the Attack Sector question names the whole group once (`EntryQuestion::tagged`, answered
   by `cmd::EnterSector::tagged`; declining clears every tagged list, logged under the first
   vehicle's name "and N others"). The question stays open while the first tagged vehicle
-  still in the game has orders (inferred). Set Patrol given to tagged vehicles appends its
-  Move To orders to each list and switches Repeat on in each (inferred).
+  still in the game has orders: equivalent to the original's blocking box as long as it is
+  answered before anything else runs (§19 Q83). Since 2026-10-14 Set Patrol given to tagged
+  vehicles appends its Move To orders to each list and switches Repeat on in the first one's
+  alone (`cmd::OrderTagged::repeat`), Repeat Orders switches the first one's alone
+  (`cmd::OrderTagged::toggleRepeat`, save format 11), and Sentry clears every tagged list when
+  the first one's starts with a Sentry; before, Set Patrol switched Repeat on in each list, and
+  Repeat Orders gave every tagged vehicle the first one's list with Repeat switched.
 
 Several orders are expanded into simpler ones at the moment they are given; they never exist as
 stored orders (confirmed: binary). "Composite" orders below become Move To (when the target
@@ -1201,7 +1219,7 @@ sector is elsewhere) plus the action.
 | Explore (E) | — | Expanded at once into Move To plus Warp for the warp point, nearest by travel distance from the selected object's current sector (whatever orders come before), that lies in a system the empire has explored and leads to one it has not (nothing else about the link is checked), skipping every warp point that some own vehicle has a Warp order for anywhere in its list, the ordered vehicle's own earlier orders and fleet copies included. The Move To is added even when the warp point is in the current sector. With no candidate nothing is added (confirmed: binary). |
 | Colonize (C) | planet | Composite. It first adds Load Cargo (population) where the list then leaves the ship, but only if the selected object's own cargo holds no population now, whatever the orders before it load (confirmed: binary); that Load Cargo completes and chains into the next order within the same action (§6.3). See the rules below the table. |
 | Sentry (Y) | — | Stays at the head at no MP cost. It ends when the owner can see, anywhere in the same **system**, an object (ship, base, unit group or colony) of an empire whose treaty with it is below Non-Aggression (War, Non-Intercourse, None or no contact), or when any group member's supply is below `Supply Amount for Low Supply Warning` (for fighter groups one tenth of it). The Sentry then counts as done: without Repeat it is removed and the following orders run; with Repeat on it stays in the list and execution moves past it. The list is not cleared (confirmed: binary). |
-| Set Patrol (P) | list of points | Each click appends a Move To at once to the existing list; the prompt names the point by its ordinal and says that a click on the ship ends the route. A click on the object's own system and sector appends that Move To too, ends the pick and turns Repeat on; if the whole list then holds exactly one order, it is cleared instead (confirmed: binary). Our client follows since 2026-10-14; Enter and a right click also end the route (OpenSE4's), turning Repeat on and keeping a list of one order as a plain move. In a turn-based game each point's Move To runs as it is added, as every order given there does (inferred, spec 06 §7 Q116). |
+| Set Patrol (P) | list of points | Each click appends a Move To to the existing list; the prompt names the point by its ordinal and says that a click on the ship ends the route. A click on the object's own system and sector appends that Move To too, ends the pick and turns Repeat on; if the whole list then holds exactly one order, it is cleared instead (confirmed: binary). In a turn-based game nothing runs while the player picks: the points are only appended, and when the click on the object's own sector closes the route, Repeat goes on and only then does the list run, from its first order (confirmed: binary; corrected 2026-10-14, complete listing: each point was said to run as it was added, inferred). Our client follows since 2026-10-14: it keeps the points until the route is closed and then gives them in one command with Repeat on (`MainWindow::finishPatrol`), so a turn-based game runs the list then; before, each point was given, and in a turn-based game run, at once, so a point reached during the picking was completed and removed while Repeat was still off. Enter and a right click also end the route (OpenSE4's), turning Repeat on and keeping a list of one order as a plain move. Esc, or another order picked, ends the pick with the points picked so far given as plain moves (OpenSE4's; in a turn-based game they then run). Our client shows the points picked only by the prompt's ordinal until the route is closed (the original's list shows them as they are added). |
 | Repeat Orders (K) | toggle | See the list rules above. |
 | Clear Orders (Del) | — | Empties the list and switches Repeat off. |
 | View Orders (V) | — | UI only. |
@@ -2926,6 +2944,15 @@ fleet's row in the sector list is spec 06 §7 Q110.
     first tagged vehicle has orders (OpenSE4) or ends with the order run, and whether a member
     whose maximum movement is 0 (a base, a mothballed ship) makes the group wait (OpenSE4, as
     for a fleet, §19 Q74) or makes the order fail.
+
+    **Answer** (confirmed: binary, 2026-10-14): once, for the first one tagged, and the same
+    orders go into every tagged list (§8 "Tagged vehicles"): Explore picks one warp point for
+    them all, Resupply and Repair give one Move To, and Colonize's Load Cargo goes to every
+    list or none as the first one carries population or not. A member with no movement left (a
+    base, for example) makes the group wait; it does not fail. The entry question is a
+    blocking box asked during the step, and nothing stays pending; OpenSE4's open question is
+    equivalent as long as it is answered before anything else runs. Since 2026-10-14 ours
+    expands once (`cmd::OrderTagged`).
 84. **The Scrap window, Create Fleet and Abandon Planet: details the 2026-10-11 audit left
     open.** OpenSE4's choices since 2026-10-13 (inferred), to verify in the executable:
     - Create Fleet's default name past the tenth fleet is "two words": OpenSE4 pairs the

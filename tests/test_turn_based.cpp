@@ -1117,11 +1117,23 @@ TEST_CASE("simultaneous: an order to tagged vehicles is only appended to each li
     CHECK(w.v(one).orders == std::vector<Order>{moveTo(a, 5, 5)});
     CHECK(w.v(two).orders == std::vector<Order>{moveTo(a, 0, 9), moveTo(a, 5, 5)});
     CHECK(w.v(one).location == at(a, 0, 0));
-    // Set Patrol's: Repeat on in each list.
+    // Set Patrol's: Repeat on in the first tagged vehicle's list alone (spec 03 §8, confirmed: binary).
     CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {moveTo(a, 1, 1), moveTo(a, 2, 2)}, true})));
     CHECK(w.v(one).repeatOrders);
-    CHECK(w.v(two).repeatOrders);
+    CHECK_FALSE(w.v(two).repeatOrders);
     CHECK(w.v(one).orders.size() == 3);
+    CHECK(w.v(two).orders.size() == 4);
+    // Repeat Orders with vehicles tagged switches the first one's alone, and touches no list.
+    CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {}, false, true})));
+    CHECK_FALSE(w.v(one).repeatOrders);
+    CHECK_FALSE(w.v(two).repeatOrders);
+    CHECK(w.v(one).orders.size() == 3);
+    CHECK(w.v(two).orders.size() == 4);
+    CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{two, one}, {}, false, true})));
+    CHECK(w.v(two).repeatOrders);
+    CHECK_FALSE(w.v(one).repeatOrders);
+    // No orders and no Repeat to switch: nothing to do.
+    CHECK(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {}})));
 }
 
 TEST_CASE("turn-based: tagged orders and a fleet's new leader replay from an order file as they were given") {

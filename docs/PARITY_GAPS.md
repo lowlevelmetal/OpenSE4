@@ -294,6 +294,14 @@ The accuracy pass of 2026-10-14 (spec 03 settled from the complete listing) clos
   supply step, not in the plague step (`depotCheck`).
 - **Fleet names** are the n-th of the original's, n counting every fleet ever created
   (`defaultFleetName`, `Empire::fleetsCreated`, save format 11).
+- **Tagged vehicles**: an order is worked out once, for the first one tagged, and the same
+  orders go into every list; Repeat Orders and a patrol's end switch the first one's Repeat
+  alone; Sentry clears every tagged list when the first one's starts with a Sentry
+  (`cmd::OrderTagged`, `toggleRepeat` from save format 11).
+- **Set Patrol** runs nothing until the route is closed: the client keeps the points and
+  gives them at once with Repeat on (`MainWindow::finishPatrol`). Ours: Esc or another order
+  gives the points picked so far as plain moves, and the order list shows them only once the
+  route is closed.
 - **Log entries**: "Vehicle Self-Destructed" / "Group Self-Destructed" and "Vehicle Scrapped"
   / "Group Scrapped" (Construction), "Cannot Mothball" and "Cannot Unmothball" (Misc), "Ship
   Mothballed" (Misc), "Retrofit Problem" and "Vehicle Retrofit" (Construction), "Planet

@@ -6152,6 +6152,12 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      first point as soon as it is clicked, and a point it reaches leaves the list before the
      route is closed. Does the original run the list after each point, or only when the route
      ends?
+
+     **Answer** (confirmed: binary, 2026-10-14; spec 03 §8 Set Patrol): only when the route
+     ends. In a turn-based game the points are only appended while the player picks; the click
+     on the object's own sector closes the route, Repeat goes on, and only then does the list
+     run, from its first order. Since 2026-10-14 our client keeps the points until then and
+     gives them in one command (`MainWindow::finishPatrol`).
 117. **Held keys.** Which of the main window's keys repeat while held, and does End Turn?
      Ours repeats only the selection cycles and the movement log's single step (§3).
 118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is

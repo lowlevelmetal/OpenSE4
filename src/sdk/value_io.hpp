@@ -715,6 +715,7 @@ void fields(A& a, cmd::OrderTagged& x) {
     a("vehicles", x.vehicles);
     a("orders", x.orders);
     a("repeat", x.repeat);
+    a("toggle_repeat", x.toggleRepeat);
 }
 template <class A>
 void fields(A& a, cmd::JoinFleet& x) {

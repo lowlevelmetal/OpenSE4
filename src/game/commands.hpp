@@ -48,18 +48,24 @@ struct CreateFleet {
     Location location;           // the empty form's sector (format 10)
 };
 // An order given to the vehicles tagged in the report panel's list (spec 03
-// §8 "Tagged vehicles", confirmed: binary): `orders` are appended to the own
-// list of every tagged vehicle, in the order they were tagged, a fleet member
-// standing for every member at its fleet's location (game::taggedVehicles),
-// each list expanding them as cmd::SetOrders does; `repeat` (Set Patrol)
-// switches Repeat on in each of those lists. The vehicles named must share a
-// sector. In a turn-based game the orders then run at once, as one group of
+// §8 "Tagged vehicles", confirmed: binary): `orders` are worked out once, for
+// the first one tagged (composite orders expanded from where its list leaves
+// it, as cmd::SetOrders expands them), and the same orders are appended to the
+// own list of every tagged vehicle, in the order they were tagged, a fleet
+// member standing for every member at its fleet's location
+// (game::taggedVehicles). `repeat` (Set Patrol ending on the object's own
+// sector) switches Repeat on in the first tagged vehicle's list alone (its
+// fleet's lists at the location, for a fleet member); `toggleRepeat` (Repeat
+// Orders, save format 11) switches it on or off there, and `orders` may then
+// be empty; the other lists keep their Repeat. The vehicles named must share
+// a sector. In a turn-based game the orders then run at once, as one group of
 // every tagged vehicle acting through the first one (applyLive); in a
 // simultaneous game nothing else happens.
 struct OrderTagged {
     std::vector<VehicleId> vehicles;
     std::vector<Order> orders;
     bool repeat = false;
+    bool toggleRepeat = false;
 };
 struct JoinFleet { FleetId fleet; VehicleId vehicle; };
 struct LeaveFleet { VehicleId vehicle; };

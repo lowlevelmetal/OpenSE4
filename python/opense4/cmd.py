@@ -42,21 +42,25 @@ def set_orders(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, plane
     }
 
 
-def order_tagged(vehicles: Optional[Sequence[Ref]] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False) -> Dict[str, Any]:
+def order_tagged(vehicles: Optional[Sequence[Ref]] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False, toggle_repeat: bool = False) -> Dict[str, Any]:
     """An order given to several vehicles at once, as when the player tags vehicles in a sector's list:
-    the orders are added to the end of each vehicle's own list, a fleet member standing for its
-    whole fleet. The vehicles must share a sector. In a turn-based game they then act at once as one
-    group.
+    the orders are worked out once, for the first vehicle tagged, and the same orders are added to
+    the end of each vehicle's own list, a fleet member standing for its whole fleet. The vehicles
+    must share a sector. In a turn-based game they then act at once as one group.
 
     vehicles: The tagged vehicles, in the order they were tagged.
-    orders: The orders to add.
-    repeat: Switch Repeat on in each list.
+    orders: The orders to add (may be empty with toggle_repeat).
+    repeat: Switch Repeat on in the first tagged vehicle's list (its fleet's lists, for a fleet
+        member), as a patrol route that ends does; the other lists keep theirs.
+    toggle_repeat: Switch the first tagged vehicle's Repeat over (on when off, off when on), as
+        Repeat Orders does with vehicles tagged.
     """
     return {
         'kind': 'order_tagged',
         'vehicles': [] if vehicles is None else _ids(vehicles, 'vehicle', 'order_tagged.vehicles'),
         'orders': [] if orders is None else _orders(orders, 'order_tagged.orders'),
         'repeat': _bool(repeat, 'order_tagged.repeat'),
+        'toggle_repeat': _bool(toggle_repeat, 'order_tagged.toggle_repeat'),
     }
 
 

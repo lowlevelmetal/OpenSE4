@@ -310,6 +310,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(tagged->vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
     CHECK(tagged->orders.size() == 1);
     CHECK(tagged->repeat);
+    CHECK(tagged->toggleRepeat);   // save format 11
     const auto* leader = lastCommand<cmd::SetFleetLeader>(all);
     REQUIRE(leader);
     CHECK(leader->fleet == FleetId{46u});

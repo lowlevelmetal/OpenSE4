@@ -519,3 +519,39 @@ TEST_CASE("vehicle rules: a Medical Bay cures a plague as the ship passes, step 
     movement::supplyEmpire(ctx, kA);
     CHECK(w.s.colony(allyWorld)->plagueLevel == 1);
 }
+
+// ---- Tagged orders (finding 5) ----------------------------------------------------------------------
+
+TEST_CASE("vehicle rules: an order to tagged vehicles is worked out once, for the first one tagged") {
+    World w;
+    const SystemId a = w.system("A"), b = w.system("B", 10, 0), c = w.system("C", 0, 10);
+    const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
+    const auto [ac, ca] = w.link(a, {6, 12}, c, {6, 0});
+    (void)ba;
+    (void)ca;
+    w.s.empire(kA).knowledge.explored[a.index()] = 1;
+    const VehicleId one = w.spawn(w.ship(kA, "One", 3), at(a, 10, 6));   // nearer the warp point to B
+    const VehicleId two = w.spawn(w.ship(kA, "Two", 3), at(a, 10, 6));
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {Order{OrderKind::Explore}}}).ok);
+    // One warp point for both: the same Move To and Warp in each list.
+    REQUIRE(w.v(one).orders.size() == 2);
+    CHECK(w.v(one).orders == w.v(two).orders);
+    CHECK(w.v(one).orders[1].kind == OrderKind::Warp);
+    CHECK(w.v(one).orders[1].object == ab);
+    (void)ac;
+
+    // Colonize's Load Cargo goes to every list or none, as the first carries population or not.
+    const ObjectId target = w.planet(a, {3, 3});
+    const DesignId settler = w.ship(kA, "Settler", 2, {"Test Rock Pod"});
+    const VehicleId full = w.spawn(settler, at(a, 1, 1));
+    const VehicleId empty = w.spawn(settler, at(a, 1, 1));
+    w.v(full).cargo.population = {{kA, 1}};
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::OrderTagged{{full, empty}, {Order{OrderKind::Colonize, {}, target}}}).ok);
+    CHECK(w.v(full).orders.front().kind == OrderKind::MoveTo);
+    CHECK(w.v(empty).orders == w.v(full).orders);   // no Load Cargo, though it carries nobody
+    w.v(full).orders.clear();
+    w.v(empty).orders.clear();
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::OrderTagged{{empty, full}, {Order{OrderKind::Colonize, {}, target}}}).ok);
+    CHECK(w.v(empty).orders.front().kind == OrderKind::LoadCargo);
+    CHECK(w.v(full).orders == w.v(empty).orders);
+}

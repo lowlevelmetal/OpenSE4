@@ -280,12 +280,17 @@ struct Applier {
         return {};
     }
 
-    // Tagged vehicles (spec 03 §8, confirmed: binary): the orders are appended
-    // to each tagged vehicle's own list, in tag order, as cmd::SetOrders
-    // appends them; a fleet's members at its location each hold the copy. The
-    // checks come first, so the command changes every list or none.
+    // Tagged vehicles (spec 03 §8, confirmed: binary): the orders are worked
+    // out once, for the first one tagged, from where its list leaves it (an
+    // Explore picks one warp point for them all, a Colonize's Load Cargo goes
+    // to every list or to none as the first carries population or not), and
+    // the same orders are appended to each tagged vehicle's own list, in tag
+    // order; a fleet's members at its location each hold the copy. Repeat
+    // (Set Patrol's `repeat`, Repeat Orders' `toggleRepeat`) changes only the
+    // first one's list, or its fleet's lists at the location. The checks
+    // come first, so the command changes every list or none.
     R operator()(const cmd::OrderTagged& c) {
-        if (c.orders.empty()) return R::fail("No orders given");
+        if (c.orders.empty() && !c.toggleRepeat) return R::fail("No orders given");
         if (c.vehicles.empty()) return R::fail("No vehicles tagged");
         std::optional<Location> where;
         for (VehicleId id : c.vehicles) {
@@ -300,25 +305,30 @@ struct Applier {
                 return R::fail("Only colonies carry out that order");
             if (scrapWindowOrder(o.kind)) return R::fail("That order is given only in the Scrap window");
         }
-        std::vector<FleetId> fleetsDone;
+        const Vehicle& first = *s.vehicle(c.vehicles.front());
+        const Fleet* firstFleet = first.fleet.valid() ? s.fleet(first.fleet) : nullptr;
+        std::vector<Order> given = first.orders;
+        given.insert(given.end(), c.orders.begin(), c.orders.end());
+        const OrderContext ctx = firstFleet ? orderContextOf(s, *firstFleet, &first) : orderContextOf(s, first);
+        const std::vector<Order> full = expandGivenOrders(r, s, ctx, first.orders, given);
+        std::vector<Order> added(full.begin() + static_cast<std::ptrdiff_t>(first.orders.size()), full.end());
+        // Use Component in a turn-based game: each list is cleared first.
+        const bool cleared = clearBeforeUse(added, 0);
+        // The first one's Repeat as the command sets it: Set Patrol switches it
+        // on, Repeat Orders switches it over (for a fleet, from the fleet's).
+        const bool firstRepeats = firstFleet ? fleetRepeats(s, *firstFleet) : first.repeatOrders;
+        const bool firstRepeat = c.toggleRepeat ? !firstRepeats : (c.repeat || firstRepeats);
         for (VehicleId id : taggedVehicles(s, e, c.vehicles)) {
-            const Vehicle& v = *s.vehicle(id);
-            cmd::SetOrders one;
-            if (v.fleet.valid()) {
-                // Each member at the location holds a copy: one change for them all.
-                if (std::find(fleetsDone.begin(), fleetsDone.end(), v.fleet) != fleetsDone.end()) continue;
-                fleetsDone.push_back(v.fleet);
-                const Fleet& f = *s.fleet(v.fleet);
-                one.fleet = f.id;
-                one.orders = fleetOrders(s, f);
-                one.repeat = c.repeat || fleetRepeats(s, f);
-            } else {
-                one.vehicle = id;
-                one.orders = v.orders;
-                one.repeat = c.repeat || v.repeatOrders;
+            Vehicle& v = *s.vehicle(id);
+            const bool firstList = v.id == first.id || (firstFleet && v.fleet == firstFleet->id);
+            if (cleared) {
+                changeOrderList(v.orders, v.repeatOrders, v.repeatShift, added, std::nullopt, false);
+                continue;
             }
-            one.orders.insert(one.orders.end(), c.orders.begin(), c.orders.end());
-            if (R res = (*this)(one); !res.ok) return res;
+            std::vector<Order> own = v.orders;
+            const size_t held = own.size();
+            own.insert(own.end(), added.begin(), added.end());
+            changeOrderList(v.orders, v.repeatOrders, v.repeatShift, std::move(own), held, firstList ? firstRepeat : v.repeatOrders);
         }
         return {};
     }

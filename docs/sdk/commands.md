@@ -100,15 +100,17 @@ takes only Launch Units, Recover Units, Use Facility and Convert Resources.
 ### `order_tagged`
 
 An order given to several vehicles at once, as when the player tags vehicles
-in a sector's list: the orders are added to the end of each vehicle's own
-list, a fleet member standing for its whole fleet. The vehicles must share a
+in a sector's list: the orders are worked out once, for the first vehicle
+tagged, and the same orders are added to the end of each vehicle's own list,
+a fleet member standing for its whole fleet. The vehicles must share a
 sector. In a turn-based game they then act at once as one group.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `vehicles` | list of vehicle id | The tagged vehicles, in the order they were tagged. |
-| `orders` | list of order | The orders to add. |
-| `repeat` | bool | Switch Repeat on in each list. |
+| `orders` | list of order | The orders to add (may be empty with `toggle_repeat`). |
+| `repeat` | bool | Switch Repeat on in the first tagged vehicle's list (its fleet's lists, for a fleet member), as a patrol route that ends does; the other lists keep theirs. |
+| `toggle_repeat` | bool | Switch the first tagged vehicle's Repeat over (on when off, off when on), as Repeat Orders does with vehicles tagged. |
 
 ```json
 {"kind": "order_tagged", "vehicles": [31, 32], "orders": [{"kind": "attack", "vehicle": 77}]}
