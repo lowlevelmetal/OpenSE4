@@ -479,5 +479,9 @@ Order seekAfter(const Vehicle& target);
 Order seekPlanet(const GameState& s, ObjectId planet);
 Order attackHere();
 Order joinFleetOrder(FleetId fleet);
+// The Defense, Attack and Exploration ministers do not clear a ship's list
+// (spec 05 §7.5, confirmed: binary): their orders go behind those it holds,
+// a Seek an earlier minister of the same pass gave running first.
+bool appendOrders(Planner& p, VehicleId v, std::vector<Order> orders);
 
 } // namespace opense4::game::ai::detail

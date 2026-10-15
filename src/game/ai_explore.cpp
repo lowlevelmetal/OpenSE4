@@ -143,9 +143,10 @@ void planExploration(Planner& p) {
     // earlier one on a tie). On the point itself it gets no order this turn.
     // Otherwise a Seek toward the point's sector, and the Warp through it when
     // its movement points now (what its last movement left) reach the
-    // distance (movementNow); the point leaves the list. A Seek lasts one
-    // movement phase, so an explorer that cannot reach its point this turn is
-    // planned again.
+    // distance (movementNow); the point leaves the list. The orders go behind
+    // a Seek the ship holds from an earlier minister of the pass, which runs
+    // first. A Seek lasts one movement phase, so an explorer that cannot
+    // reach its point this turn is planned again.
     for (VehicleId id : explorers) {
         if (list.empty()) break;
         const Vehicle* v = p.st.vehicle(id);
@@ -157,7 +158,7 @@ void planExploration(Planner& p) {
         std::vector<Order> orders{seekOrder(goals[near->goal])};
         if (movementNow(p, *v) >= near->path.length) orders.push_back(warpThrough(p.st, wp));
         list.erase(list.begin() + static_cast<std::ptrdiff_t>(near->goal));
-        p.setOrders(id, std::move(orders));
+        appendOrders(p, id, std::move(orders));   // behind a Seek it holds (confirmed: binary)
     }
 }
 

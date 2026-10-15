@@ -920,6 +920,14 @@ Order seekPlanet(const GameState& s, ObjectId planet) {
 
 Order attackHere() { return simpleOrder(OrderKind::Attack); }
 
+bool appendOrders(Planner& p, VehicleId v, std::vector<Order> orders) {
+    const Vehicle* vehicle = p.st.vehicle(v);
+    if (!vehicle) return false;
+    std::vector<Order> list = vehicle->orders;
+    list.insert(list.end(), std::make_move_iterator(orders.begin()), std::make_move_iterator(orders.end()));
+    return p.setOrders(v, std::move(list), vehicle->repeatOrders);
+}
+
 Order joinFleetOrder(FleetId fleet) {
     Order o;
     o.kind = OrderKind::JoinFleet;

@@ -2299,10 +2299,14 @@ binary).
       Without a plagued colony found it gets nothing that turn. When the empire has no
       plague, such a ship is treated by its type, so a Population Transport with a Medical
       Bay carries people as usual. OpenSE4 follows this since 2026-10-14 (`planTransports`,
-      `ai_military.cpp`), with the Move To alone: it has no Render Medical Aid order, and its
-      Medical Bay cures a plague in the sector by itself (spec 03 §3); what the original's
-      order does when carried out was not read (spec 03 §8, question 85). It used to skip
-      every Population Transport with a Medical Bay.
+      `ai_military.cpp`), with the Move To alone, which is equivalent: the Render Medical Aid
+      order is the computer players' alone (no button of the orders window gives it) and
+      does nothing when carried out; it counts as done at once and is removed, with no log
+      entry. The cure is the Medical Bay's own, made after each movement step and in the
+      supply step on a planet of the sector owned by the ship's owner or an empire at
+      Military Alliance or better (spec 03 §3), so the ship cures the colony when its Move To
+      brings it there (confirmed: binary, question 85). It used to skip every Population
+      Transport with a Medical Bay.
   - *Retrofit*: none while over the soft cap, in the Attack, Incursion or Defend (Short
     Term) states, or while 3 ships are already being retrofitted.
     - Eligible ships are idle, have empty cargo, are in a system without enemies, and have
@@ -2786,10 +2790,15 @@ binary).
     Ships, Attack Bases, Kamikaze Attack Ships, Carriers carrying fighters and Drone
     Carriers carrying drones; the Defense minister the same and Defense Ships. A base
     cannot move, but it still takes an entry or a candidate and adds its strength to it.
-    OpenSE4 follows this since 2026-10-14 (`takesDuty`, `freeForMinisters`,
-    `ai_military.cpp`); a ship that an earlier minister of the same pass gave orders keeps
-    them, and a mothballed one is left out (inferred, question 85). It used to send Attack
-    Ships alone to attack and Attack and Defense ships that could move to defend.
+    A Seek an earlier minister of the same pass gave counts too, any of the four kinds, and
+    neither minister clears the list: each puts its orders behind it, so that Seek still
+    runs first. In a simultaneous game it holds the ship for the whole movement phase and
+    the later orders wait; in a turn-based game they run after it with the movement left. In
+    Defend (Short Term) with no fleet in being, a defender's Seek can thus get an attack Seek
+    behind it, and then an explorer's Seek and Warp (confirmed: binary, question 85).
+    OpenSE4 follows this since 2026-10-14 (`takesDuty`, `freeForMinisters`, `appendOrders`,
+    `ai_military.cpp`; a mothballed ship is left out, inferred). It used to send Attack Ships
+    alone to attack and Attack and Defense ships that could move to defend.
   - *Defence* (confirmed: binary): only in Defend (Short Term) (and Defend (Long Term),
     which is never reached), and for the Defense minister only while the empire has no
     active fleet. Each defender in turn goes to the first entry, in the defend-list systems
@@ -2865,7 +2874,10 @@ binary).
     the ship is on the warp point and gets no order this turn. Otherwise it gets a Seek
     toward the point's sector, followed by a Warp through the point when its movement
     points at that moment (§7.5 *Space Yard Ships* says which value that is) reach the
-    distance. The point then leaves the list.
+    distance. The point then leaves the list. The minister does not clear the list: its
+    orders go behind a Seek the ship holds from an earlier minister of the same pass (a
+    defender's or an attacker's), which runs first (confirmed: binary, question 85; OpenSE4
+    since 2026-10-14, `appendOrders`).
   - A Seek lasts one movement phase, so an explorer that cannot reach its point this turn
     is planned again on the next one, and it jumps only on a turn it starts within reach
     of its point.
@@ -2897,7 +2909,12 @@ binary).
   star-destroyer flag is set (*Layer fallback* below) the target is instead the centre
   sector of the system where our colonies' minerals output plus their output of the fourth
   kind (research, inferred from the output routine's numbering) is highest, divided by our
-  ships present plus one, which is again always 0 + 1. OpenSE4 follows this since
+  ships present plus one, which is again always 0 + 1. The Patrol minister takes only a ship
+  whose order list is empty, so never one that an earlier minister of the same pass ordered,
+  the explorers' Seek and Warp included; so do the other ministers that want an empty list
+  (Transports, Retrofit and the stellar ministers) (confirmed: binary, question 85). The
+  Resupply and Repair ministers clear the list of the ships they act on, and the fleets'
+  recruiting clears a recruit's list before its Join Fleet. OpenSE4 follows this since
   2026-10-14 (`patrolTarget`, `planPatrol`, `ai_military.cpp`; the first system in system
   order on a tie, inferred). It used to count our ships at each colony live, less the
   patroller itself, so its patrollers spread out, to have no flag variant, and to send the
@@ -5136,6 +5153,16 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the original 0.6, our rule 0.56). Ours leaves a ship that an earlier minister of the same
     pass gave orders alone, and leaves mothballed ships out. Does the original's test
     accept a Seek given in the same pass, and only some kinds of Seek?
+    **Answer** (confirmed: binary, 2026-10-14): the Patrol minister takes only a ship whose
+    list is empty, so it never takes one an earlier minister of the pass ordered; so do
+    Transports, Retrofit and the stellar ministers. The Defense, Attack and Exploration
+    ministers take a ship outside fleets with no orders or any Seek first, a Seek given
+    earlier in the same pass included, and none of them clears the list: they put their
+    orders behind it, so that Seek runs first. Resupply and Repair clear the lists of the
+    ships they act on, and recruiting clears a recruit's before its Join Fleet. The
+    start-of-turn ministers run in the order of §7.1, as ours do. Since 2026-10-14 ours
+    follows (§7.5 *Attack and defence*, *Exploration*, *Patrol*; `appendOrders`); the
+    mothballed ships left out stay ours (inferred).
     (e) *The ministers' sort* is a quicksort that is not stable with the middle entry as its
     pivot; ours partitions from both ends toward the pivot's value (`ministersSort`). The
     Defense minister's order is sorted from the defend list's for each defender. Is the
@@ -5147,3 +5174,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     (h) *Medical aid* (§7.5 *Transports*): ours gives the Move To to the plagued colony
     without the original's Render Medical Aid order, which OpenSE4 does not have. What does
     that order do when carried out (spec 03 §8)?
+    **Answer** (confirmed: binary, 2026-10-14): nothing. It is the computer players' alone,
+    has no handler when carried out, counts as done at once and is removed, with no log entry;
+    the cure is the Medical Bay's automatic one (spec 03 §3). Our Move To alone is
+    equivalent.
