@@ -1,7 +1,8 @@
 # A battle that stops the turn, answered Strategic (docs/BUILDING.md "Input scripts"). With
-# seed 3, ten systems and seven empires, after the computer has played every empire for 40
-# turns, the player's first End Turn stops in a computer's turn: its destroyer moves onto the
-# player's homeworld (seed 2 until the claims at founding of 2026-10-14 changed the game).
+# seed 7, ten systems and seven empires, after the computer has played every empire for 40
+# turns, the player's first End Turn stops at a battle in a computer's turn (seed 2 until the
+# claims at founding of 2026-10-14 changed the game, then seed 3 until the computer players'
+# minister rules of 2026-10-14).
 # The notice comes first; Strategic Combat then asks Tactical or Strategic, and Strategic
 # fights the battle by the strategies.
 # The game stays as it was until Close lets the turn go on, and the turn then ends exactly
@@ -9,7 +10,7 @@
 # with the asan preset's client too: v0.8.1 crashed here, the main window drawing from
 # vehicles the stopped turn had freed.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
-options --quick-start --seed=3 --systems=10 --empires=7 --turns=40 --open=none --layout=1024x768 --size=1280x800
+options --quick-start --seed=7 --systems=10 --empires=7 --turns=40 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game
 assert-turn 40
