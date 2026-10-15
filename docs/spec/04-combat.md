@@ -324,8 +324,16 @@ moment, including during other empires' phases (§10.2).
   whose diagonal is blocked by a large piece slides along it, one axis at a time, even
   when that step brings it no nearer. OpenSE4 follows this since 2026-10-02
   (`Battle::walkToward`, `combat_space.cpp`). Each try draws 0 or 1 from the battle's own
-  random sequence at the moment of the step, for a computer's move and a player's alike;
-  which side square each value takes is question 90. A strategy's move is recorded as the
+  random sequence at the moment of the step, for a computer's move and a player's alike.
+  Every try starts again from the piece's current square, and the square it names is
+  kept on the map (columns 0 to 71, rows 0 to 62) before it is tested. For a diagonal
+  step 0 names the straight step along x and 1 the straight step along y; for a straight
+  step along x, 0 names the side square on the higher row (y + 1) and 1 the lower row;
+  for a straight step along y, 0 the higher column (x + 1) and 1 the lower column
+  (confirmed: binary; question 90, settled 2026-10-14, complete listing). The odds are
+  the same either way; only which number names which square changed: since 2026-10-14
+  ours follows (`stepToward`), where 0 used to name the lower coordinate of a straight
+  step. A strategy's move is recorded as the
   order a player would give (toward its square, the piece alone), so the same move given
   by hand or replayed draws the same numbers and the battle goes on the same. A player's
   move toward a square is therefore never refused for a blocked way: it makes its tries.
@@ -2459,6 +2467,14 @@ settled from the executable the same day; Q87 and Q88 need changes to the engine
     other square (inferred). To verify in the executable: which random call the tries make
     (and so how many numbers each takes from the sequence), and which square each result
     names.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): each try draws one
+    number, 0 or 1, from the game's random sequence. Every try starts again from the
+    piece's current square, and the square it names is kept on the map (columns 0 to 71,
+    rows 0 to 62) before it is tested. A diagonal step: 0 the straight step along x, 1
+    along y. A straight step along x: 0 the side square with the higher row (y + 1), 1
+    the lower. A straight step along y: 0 the higher column (x + 1), 1 the lower. Up to
+    four tries. The diagonal case matched; since 2026-10-14 ours follows for straight
+    steps too (`stepToward`, §5).
 
 ### 19.6 Questions from the 2026-10-11 parity audit of the combat windows
 

@@ -572,16 +572,17 @@ TEST_CASE("movement: each step goes one square toward the destination on each ax
 
 TEST_CASE("movement: a blocked step tries the two squares beside it at random, with the battle's numbers, four times at most") {
     // Spec 04 §5 (confirmed: binary). Each try draws 0 or 1 from the battle's
-    // sequence: 0 the first side square (a diagonal's step along x, a straight
-    // step's side toward lower y or x), 1 the second (inferred, §19.5 Q90).
-    int alongX = 0, alongY = 0, stayed = 0;
+    // sequence: for a diagonal step 0 names the straight step along x, 1 along
+    // y; for a straight step along x, 0 names the side square on the higher row
+    // (y + 1), 1 the lower (§19.5 Q90, settled 2026-10-14).
+    int alongX = 0, alongY = 0, stayed = 0, lowerRow = 0;
     for (uint64_t seed = 1; seed <= 12; ++seed) {
         CAPTURE(seed);
         Bench k(makeArena(seed));
         GameState& s = k.ar.s;
         const DesignId liner = frigate(s, k.ar.a, "Liner", 6, {"CT Gun"});   // 3 movement points
         std::vector<VehicleId> ships;
-        for (int n = 0; n < 6; ++n) ships.push_back(spawn(s, liner, k.ar.loc));
+        for (int n = 0; n < 9; ++n) ships.push_back(spawn(s, liner, k.ar.loc));
         const VehicleId target = spawn(s, frigate(s, k.ar.b, "Target", 1, {}), k.ar.loc);
         warpIn(s, target);
         Battle& b = k.start({k.ar.a});
@@ -599,7 +600,7 @@ TEST_CASE("movement: a blocked step tries the two squares beside it at random, w
         // A diagonal step blocked: one draw chooses the straight step along x or
         // along y; the piece then goes on diagonally, past the blocker.
         k.arrange({{p[0], 10, 10}, {p[1], 11, 11}, {p[2], 30, 20}, {p[3], 31, 19}, {p[4], 31, 20}, {p[5], 31, 21},
-                   {k.at(target), 60, 50}});
+                   {p[6], 40, 40}, {p[7], 41, 40}, {p[8], 41, 41}, {k.at(target), 60, 50}});
         Rng probe = k.rng;
         const bool firstSide = probe.below(2) == 0;
         REQUIRE(move(p[0], 15, 15).empty());
@@ -617,10 +618,24 @@ TEST_CASE("movement: a blocked step tries the two squares beside it at random, w
         Rng d = k.rng;
         CHECK(four.next() == d.next());
         stayed += square(p[2]) == std::pair{30, 20};
+        // A straight step along x whose higher-row side is taken: only a draw of 1
+        // (the lower row) gets past, within four tries.
+        Rng side = k.rng;
+        bool one = false;
+        for (int i = 0; i < 4 && !one; ++i) one = side.below(2) == 1;
+        const size_t from = b.record().events.size();
+        REQUIRE(move(p[6], 45, 40).empty());
+        std::optional<std::pair<int, int>> firstStep;
+        for (size_t e = from; e < b.record().events.size() && !firstStep; ++e)
+            if (b.record().events[e].kind == CombatEvent::Kind::Move && b.record().events[e].piece == static_cast<uint32_t>(p[6]))
+                firstStep = std::pair<int, int>{b.record().events[e].x, b.record().events[e].y};
+        CHECK(firstStep == (one ? std::optional{std::pair{41, 39}} : std::nullopt));
+        lowerRow += one ? 1 : 0;
     }
     CHECK(alongX > 0);
     CHECK(alongY > 0);
     CHECK(stayed == 12);
+    CHECK(lowerRow > 0);
 }
 
 // ---- Surrounded pieces (spec 04 §16.1, spec 03 §10) -------------------------------------------------------

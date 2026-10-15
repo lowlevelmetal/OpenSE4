@@ -3352,19 +3352,22 @@ namespace {
 
 // The step toward a square (spec 04 §5, confirmed: binary): one square toward
 // it on each axis where the two differ, and the two squares a blocked step
-// tries instead: a diagonal's straight steps along x and along y; a straight
-// step's diagonals on either side of it. Which of the two a draw of 0 takes
-// is an OpenSE4 choice (inferred, spec 04 §19.5 Q90): the first listed.
+// tries instead, the one a draw of 0 names first (spec 04 §19.5 Q90,
+// confirmed: binary; settled 2026-10-14, complete listing): a diagonal's
+// straight step along x, else along y; a straight step along x, the side
+// square on the higher row (y + 1), else the lower; a straight step along y,
+// the higher column (x + 1), else the lower. Each is kept on the map.
 struct StepChoice {
     std::pair<int, int> direct;
     std::array<std::pair<int, int>, 2> sides;
 };
 StepChoice stepToward(int x, int y, int tx, int ty) {
     const int dx = (tx > x) - (tx < x), dy = (ty > y) - (ty < y);
+    auto kept = [](int sx, int sy) { return std::pair{std::clamp(sx, 0, kW - 1), std::clamp(sy, 0, kH - 1)}; };
     StepChoice c{{x + dx, y + dy}, {}};
-    if (dx != 0 && dy != 0) c.sides = {std::pair{x + dx, y}, std::pair{x, y + dy}};
-    else if (dx != 0) c.sides = {std::pair{x + dx, y - 1}, std::pair{x + dx, y + 1}};
-    else c.sides = {std::pair{x - 1, y + dy}, std::pair{x + 1, y + dy}};
+    if (dx != 0 && dy != 0) c.sides = {kept(x + dx, y), kept(x, y + dy)};
+    else if (dx != 0) c.sides = {kept(x + dx, y + 1), kept(x + dx, y - 1)};
+    else c.sides = {kept(x + 1, y + dy), kept(x - 1, y + dy)};
     return c;
 }
 
