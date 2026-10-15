@@ -665,9 +665,12 @@ def send_message(message: Optional[Dict[str, Any]] = None, minister: bool = Fals
 
 
 def answer_message(message: Optional[Ref] = None, accept: bool = False, text: str = '', minister: bool = False) -> Dict[str, Any]:
-    """Answers a message delivered to us: accept or refuse, with a text. A human player whose race is
-    subjugated cannot accept a treaty. minister marks an answer the computer player or a Politics
-    minister gives, which is not checked so.
+    """Answers a message delivered to us: accept or refuse, with a text. A human player answers only
+    the newest recent message from that empire (sent this turn or the turn before; in a turn-based
+    game only this turn when the sender's number is lower than ours), at most one message to that
+    empire a turn, and cannot accept a treaty when its race is subjugated. minister marks an answer
+    the computer player or a Politics minister gives, which is not checked so. An accepted trade,
+    gift or tribute carries out the sender's newest offer.
 
     message: The message answered.
     accept: Accept (false by default: refuse).

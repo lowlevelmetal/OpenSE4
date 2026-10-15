@@ -187,10 +187,13 @@ TEST_CASE("client logic: the portrait's reply types answer the newest message in
     CHECK(replyableMessage(s, me, high)->id == ten);
     CHECK(offerView(replyableMessage(s, me, high)) == OfferView::None);
     CHECK(replyableMessage(s, high, me) == nullptr);   // nothing from us to them
-    // In a simultaneous game, from a lower player number: after the date − 1.
+    // In a turn-based game, from a lower player number: after the date − 1
+    // (spec 05 §3.4, confirmed: binary; spec 06 §1.5 had the turn style
+    // backwards until 2026-10-14).
     message(low, 9, MessageType::Tribute);
-    CHECK(replyableMessage(s, me, low) != nullptr);
     s.options.simultaneous = true;
+    CHECK(replyableMessage(s, me, low) != nullptr);
+    s.options.simultaneous = false;
     CHECK(replyableMessage(s, me, low) == nullptr);
     CHECK(replyableMessage(s, me, high) != nullptr);   // a higher number keeps two turns
     message(low, 10, MessageType::Tribute);

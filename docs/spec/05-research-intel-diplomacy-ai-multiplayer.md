@@ -716,9 +716,53 @@ up the trade chain [M].
   `cmd::AnswerMessage` fills the treaty from the proposal answered). Until then ours enacted
   only a proposal the recipient really sent (an extension against forged network messages),
   and an Accept Demand reply to a counter-proposal applied the counter.
+- **Answers** (confirmed: binary; corrected 2026-10-14, complete listing: ours let any
+  delivered, unanswered message be answered until it was dropped). One routine finds "the
+  newest political message from empire X in a log": it walks the whole log and keeps the
+  last political message sent by X that passes a date test. D is the date when it runs, and
+  the cut-off is D − 2, or D − 1 in a **turn-based** game when X's player number is lower
+  than the log owner's. The tests:
+  - *window*: dated strictly after the cut-off, so dated D − 1 or D (in that turn-based
+    case only D). The Communicate window uses it, and so does message processing unless one
+    of the two below applies;
+  - *exact*: dated exactly the cut-off. Message processing uses it for an empire the computer
+    plays at a simultaneous host's start-of-turn step (one that delivered no orders file: a
+    computer player, or a human the computer plays for);
+  - *previous turn*: dated exactly D − 1. The host uses it, before the other two, when it
+    processes the players' messages at the start of its turn processing, before the date
+    advances.
+
+  The Communicate window offers Accept, Refuse and Counter only for the newest political
+  message from that empire found by the window test, and of the matching type (a treaty
+  proposal or counter, a trade or counter, a gift, a tribute, a demand or request); an older
+  message can never be answered. The original keeps no "answered" mark, so the same message
+  may be answered again on a later turn while it is still the newest and recent. An accepted
+  trade, gift or tribute looks in the accepter's log for the proposer's newest political
+  message with the test of the moment and carries out that message's packages only when it is
+  the matching offer (Propose or Counter Trade for an Accept Trade; a Gift or Tribute for an
+  Accept Gift). Consequences: a human-to-human offer is accepted on the next turn; a computer
+  player accepts a player's offer two turns after it was sent, as its own answer window does
+  (§7.4); and a computer player's offer, dated with the advanced date, is not found when a
+  human accepts it on the next turn (nothing is carried out), only when it is accepted again
+  on the turn after (derived from the dating rules, medium confidence). In a simultaneous
+  game an acceptance processed live on a player's own machine carries out nothing; only the
+  host's processing does. Accept Treaty does no lookup (above).
+
+  Since 2026-10-14 ours follows (`diplomacy::newestMessage`, `MessageLookup`): the window and
+  `cmd::AnswerMessage` use the window test, so a human player can answer only the newest
+  recent message from an empire, once per turn per empire (an answer is that turn's message);
+  `cmd::SendMessage` refuses a human player's reply type (Accept, Refuse or Counter) unless the
+  newest recent message warrants it, and an Accept Treaty that names another treaty than that
+  proposal's (OpenSE4's: the window fills it). OpenSE4's own games process every message once,
+  at the turn processing (local and hotseat simultaneous games as a host does): turn-based
+  games use the window test when a message is sent; a simultaneous turn uses the previous-turn
+  test for the players' messages (`processTurn` step 2) and, at the start-of-turn step, the
+  exact test for an empire that gave no orders of its own and the window test for the
+  ministers of a player who did. `DiplomaticMessage::answered` is bookkeeping only.
 - **OpenSE4 choices** [I]:
   - Messages are kept 10 turns after sending, then dropped, together with any message
-    whose sender or recipient is gone.
+    whose sender or recipient is gone; only the newest recent one from an empire can be
+    answered (above).
   - The history record (an extension, open question 30): each empire keeps its own dated
     list, whose lines concern itself, another empire or nobody (the General list), each with
     an optional map position. It is kept for the whole game, saved with it, and shown only to

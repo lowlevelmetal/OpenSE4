@@ -80,11 +80,11 @@ public:
         const bool haveTarget = target_.valid() && target_.index() < s.empires.size() && target_ != ui.session.player();
         if (!started_ && haveTarget) {
             started_ = true;
-            // Opened from a portrait, the window answers the newest message
-            // from that empire, when it takes an answer (spec 06 §4.2,
-            // confirmed: binary). Our engine answers a message once.
+            // Opened from a portrait, the window answers the newest recent
+            // message from that empire, when it takes an answer (spec 06
+            // §4.2, spec 05 §3.4, confirmed: binary).
             if (!received)
-                if (const game::DiplomaticMessage* m = replyableMessage(s, ui.session.player(), target_); m && answerable(m->type) && !m->answered)
+                if (const game::DiplomaticMessage* m = replyableMessage(s, ui.session.player(), target_); m && answerable(m->type))
                     portraitReply_ = m->id;
             startAgain(ui);
             mode_ = received ? Mode::Received : Mode::Compose;
@@ -128,10 +128,11 @@ private:
     const game::Empire& them(const UiContext& ui) const { return ui.state().empire(target_); }
     const game::Relation& relation(const UiContext& ui) const { return ui.me().relation(target_); }
 
-    // The message the portrait's reply types answer, while it still can be.
+    // The message the portrait's reply types answer, while it still can be:
+    // the newest recent one from that empire.
     const game::DiplomaticMessage* portraitMessage(const UiContext& ui) const {
         const game::DiplomaticMessage* m = findMessage(ui.state(), portraitReply_);
-        return m && !m->answered ? m : nullptr;
+        return m && m == replyableMessage(ui.state(), ui.session.player(), target_) ? m : nullptr;
     }
 
     // The type of the message the draft answers, for its speech pool.
@@ -728,9 +729,11 @@ private:
         ImGui::BeginChild("##received", ImVec2(0, 0));
         heading(ui, "Message received");
         messageBody(ui, m);
-        if (m.answered) {
-            ImGui::TextColored(kTextDim, "We have answered this message.");
+        if (answerable(m.type) && !canAnswer(ui, m)) {
+            ImGui::TextColored(kTextDim, m.answered ? "We have answered this message."
+                                                    : "Only the newest message from an empire can be answered, and only while it is recent.");
         } else if (answerable(m.type)) {
+            if (m.answered) ImGui::TextColored(kTextDim, "We have answered this message already.");
             ImGui::TextColored(kTextBlue, "Our answer (optional)");
             inputTextMultiline("##answer", answerText_, ImVec2(-FLT_MIN, ui.px(60)));
             if (packageHasAny(m.request))
@@ -752,9 +755,16 @@ private:
         if (r.ok) closeNow_ = true;
     }
 
+    // Accept, Refuse and Counter: only for the newest recent message from that
+    // empire (spec 05 §3.4, confirmed: binary).
+    bool canAnswer(const UiContext& ui, const game::DiplomaticMessage& m) const {
+        const game::DiplomaticMessage* newest = replyableMessage(ui.state(), ui.session.player(), m.from);
+        return answerable(m.type) && newest && newest->id == m.id;
+    }
+
     void receivedButtons(UiContext& ui, Dialog& d, const game::DiplomaticMessage* m) {
         if (!m) return;
-        const bool open = answerable(m->type) && !m->answered;
+        const bool open = canAnswer(ui, *m);
         if (d.button("Accept", open && !packageHasAny(m->request))) answer(ui, *m, true);
         if (d.button("Refuse", open)) answer(ui, *m, false);
         const MessageType counter = counterType(m->type);

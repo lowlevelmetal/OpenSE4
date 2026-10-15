@@ -725,9 +725,12 @@ computer player or a Politics minister writes, which is not checked so.
 ### `answer_message`
 
 Answers a message delivered to us: accept or refuse, with a text. A human
-player whose race is subjugated cannot accept a treaty. `minister` marks an
-answer the computer player or a Politics minister gives, which is not checked
-so.
+player answers only the newest recent message from that empire (sent this
+turn or the turn before; in a turn-based game only this turn when the sender's
+number is lower than ours), at most one message to that empire a turn, and cannot
+accept a treaty when its race is subjugated. `minister` marks an answer the
+computer player or a Politics minister gives, which is not checked so. An
+accepted trade, gift or tribute carries out the sender's newest offer.
 
 | Field | Type | Meaning |
 |---|---|---|

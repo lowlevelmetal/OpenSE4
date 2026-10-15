@@ -324,8 +324,11 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     // first-contact check runs (spec 05 §9.2, confirmed: binary).
     sight::updateKnowledge(r, s);
 
-    // ---- 2. Each player's messages, player by player.
-    diplomacy::deliverMessages(ctx);
+    // ---- 2. Each player's messages, player by player. An acceptance carries
+    // out an offer dated exactly the turn before (spec 05 §3.4, confirmed:
+    // binary: the host's processing of a player's messages before the date
+    // advances).
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
     stepDone(static_cast<int>(s.empires.size()));
 
     // ---- 3. The date advances. GameState::turn stays the number the orders
@@ -347,6 +350,11 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
         const EmpireId id{i};
         stepDone();
         if (!s.empire(id).alive) continue;
+        // An empire that gave no orders of its own (a computer player, or a
+        // human the computer plays) looks up the offer it accepts dated
+        // exactly the advanced date − 2; a player's ministers use the window
+        // (spec 05 §3.4, confirmed: binary).
+        const diplomacy::MessageLookup lookup = byEmpire[i] ? diplomacy::MessageLookup::Window : diplomacy::MessageLookup::Exact;
         // An empire a script or external player plays (players.hpp): its
         // player gets the `politics` and `orders` calls in the ministers'
         // place, the classic ministers answering only when it gives no answer
@@ -371,7 +379,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
             keepStartTerritory(ctx, id, territory);
             const CommandSink sink{[&](const Command& c) { return applyCommand(ctx, id, c); }, [] {}};
             planCall(ctx, id, PlanCall::Politics, sink, [&] { applyCommands(ctx, id, classicPlan(ctx, id, PlanCall::Politics)); });
-            diplomacy::deliverMessages(ctx, date);
+            diplomacy::deliverMessages(ctx, date, lookup);
             std::optional<std::vector<ObjectId>> lists;
             if (own) lists = ai::colonyTargetsNow(r, s, id, &territory);
             planCall(ctx, id, PlanCall::Orders, sink, [&] {
@@ -380,7 +388,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
                 if (!own) ctx.aiColonyTargets = std::move(targets);
             });
             if (own) ctx.aiColonyTargets = std::move(lists);   // the step's lists stay in place
-            diplomacy::deliverMessages(ctx, date);
+            diplomacy::deliverMessages(ctx, date, lookup);
             continue;
         }
         // First thing, before the AI state update and the Politics minister,
@@ -398,12 +406,12 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
         // Messages sent now carry the advanced date (spec 05 §7.4 "Answer window").
         if (ministersPlan(s, id, controlOf(i))) {
             applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));
-            diplomacy::deliverMessages(ctx, date);
+            diplomacy::deliverMessages(ctx, date, lookup);
             std::vector<ObjectId> targets;
             applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets, figures ? &*figures : nullptr));
             ctx.aiColonyTargets = std::move(targets);  // the step's lists stay in place
             keepStartFigures(ctx, id, figures);
-            diplomacy::deliverMessages(ctx, date);
+            diplomacy::deliverMessages(ctx, date, lookup);
         }
     }
     ai::recordAiDecisions(ctx);

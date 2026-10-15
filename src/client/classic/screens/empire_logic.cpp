@@ -191,16 +191,10 @@ MessageType counterType(MessageType received) {
 }
 
 const game::DiplomaticMessage* replyableMessage(const game::GameState& s, game::EmpireId me, game::EmpireId from) {
-    if (!me.valid() || !from.valid() || me == from) return nullptr;
-    // Dated after the cut: the date − 2, or in a simultaneous game the date −
-    // 1 when the sender's number is lower than ours.
-    const int64_t cut = int64_t{s.turn} - (s.options.simultaneous && from.value < me.value ? 1 : 2);
-    const game::DiplomaticMessage* newest = nullptr;
-    for (const game::DiplomaticMessage& m : s.messages) {
-        if (m.from != from || m.to != me || !m.delivered || int64_t{m.dated} <= cut) continue;
-        if (!newest || m.dated > newest->dated || (m.dated == newest->dated && m.id.value > newest->id.value)) newest = &m;
-    }
-    return newest;
+    if (!me.valid() || !from.valid() || me == from || me.index() >= s.empires.size() || from.index() >= s.empires.size()) return nullptr;
+    // Dated after the cut: the date − 2, or in a turn-based game the date − 1
+    // when the sender's number is lower than ours (the engine's window).
+    return game::diplomacy::newestMessage(s, me, from, s.turn);
 }
 
 std::vector<MessageType> replyTypes(MessageType received) {
@@ -1078,14 +1072,12 @@ bool logListsEntry(const game::GameState& s, const game::LogEntry& l) { return l
 
 int messagesAwaitingReply(const game::GameState& s, game::EmpireId me, game::EmpireId from) {
     if (!me.valid() || me.index() >= s.empires.size()) return 0;
+    // Only the newest recent message from that empire can be answered (spec
+    // 05 §3.4, confirmed: binary).
+    const game::DiplomaticMessage* m = replyableMessage(s, me, from);
+    if (!m || m->answered || !answerable(m->type)) return 0;
     const std::vector<game::LogEntry>& log = s.empire(me).log;
-    int n = 0;
-    for (const game::DiplomaticMessage& m : s.messages) {
-        if (m.from != from || m.to != me || !m.delivered || m.answered || !answerable(m.type)) continue;
-        const bool listed = std::any_of(log.begin(), log.end(), [&](const game::LogEntry& l) { return l.message == m.id && logListsEntry(s, l); });
-        if (listed) ++n;
-    }
-    return n;
+    return std::any_of(log.begin(), log.end(), [&](const game::LogEntry& l) { return l.message == m->id && logListsEntry(s, l); }) ? 1 : 0;
 }
 
 uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts) {

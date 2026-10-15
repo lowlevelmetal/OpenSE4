@@ -72,19 +72,22 @@ bool tradePackage(game::MessageType t);
 std::vector<game::MessageType> sendableMessageTypes(game::Treaty t, const game::GameOptions& o, bool subjugated = false);
 // Whether a received message can be accepted or refused (cmd::AnswerMessage).
 bool answerable(game::MessageType t);
-// How many messages from `from` wait for `me` to answer them: delivered, not
-// answered, of a type that takes an answer, and still in the Log. Only the
-// Log's Send Reply answers a message (spec 06 §4.1), so once its entry has
-// left the Log (spec 05 §3.4 "Log lifetime") the chance to reply has passed
-// and it waits no more (Empires' "Inbox: N waiting", GitHub issue #4).
+// How many messages from `from` wait for `me` to answer them, 0 or 1: the
+// newest recent one (replyableMessage), when it takes an answer, has none
+// yet and is still in the Log (spec 05 §3.4, confirmed: binary: only that
+// one can be answered). Once its entry has left the Log (spec 05 §3.4 "Log
+// lifetime") the chance to reply has passed and it waits no more (Empires'
+// "Inbox: N waiting", GitHub issue #4).
 int messagesAwaitingReply(const game::GameState& s, game::EmpireId me, game::EmpireId from);
 // The counter-proposal type for a received proposal (General when there is none).
 game::MessageType counterType(game::MessageType received);
 // The newest political message from `from` that Communicate, opened from
-// `from`'s portrait, can answer (spec 06 §4.2, confirmed: binary): delivered
-// to `me` and dated (DiplomaticMessage::dated) after the date − 2, or in a
-// simultaneous game after the date − 1 when `from`'s player number is lower
-// than ours. Only the newest counts; nullptr when there is none.
+// `from`'s portrait, can answer (spec 06 §4.2, spec 05 §3.4, confirmed:
+// binary): delivered to `me` and dated (DiplomaticMessage::dated) after the
+// date − 2, or in a turn-based game after the date − 1 when `from`'s player
+// number is lower than ours (game::diplomacy::newestMessage). Only the
+// newest counts; nullptr when there is none. It is the only message the
+// engine lets a player answer (cmd::AnswerMessage).
 const game::DiplomaticMessage* replyableMessage(const game::GameState& s, game::EmpireId me, game::EmpireId from);
 // The reply types Communicate adds for a received message (spec 06 §4.2,
 // confirmed: binary): Accept, Refuse and Counter Treaty after a treaty

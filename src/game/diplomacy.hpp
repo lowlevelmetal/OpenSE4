@@ -17,8 +17,31 @@ struct TurnContext;
 namespace opense4::game::diplomacy {
 
 // Messages are kept this many turns after they were sent, so replies can
-// refer to them and the UI can show recent history (inferred).
+// refer to them and the UI can show recent history (inferred). Only the
+// newest recent one from an empire can be answered (newestMessage).
 inline constexpr uint32_t kMessageLifetime = 10;
+
+// ---- Answers (spec 05 §3.4 "Answers", confirmed: binary) ---------------------------------------
+
+// How the newest political message from an empire is looked up: the
+// original's one finder, with three date tests. D is the date the lookup
+// runs at (a GameState::turn number, as DiplomaticMessage::dated).
+enum class MessageLookup : uint8_t {
+    // The Communicate window and message processing: dated strictly after D −
+    // 2, or after D − 1 in a turn-based game when the sender's player number
+    // is lower than the reader's.
+    Window,
+    // Processing for an empire the computer plays at a simultaneous turn's
+    // start-of-turn step (no orders of its own): dated exactly that cut-off.
+    Exact,
+    // Processing of the players' messages at a simultaneous turn's start,
+    // before the date advances: dated exactly D − 1.
+    PreviousTurn,
+};
+// The newest delivered message from `from` to `reader` that passes the date
+// test of `mode` at date `date`, whatever its type: the last one in the
+// reader's log. nullptr when there is none.
+const DiplomaticMessage* newestMessage(const GameState& s, EmpireId reader, EmpireId from, uint32_t date, MessageLookup mode = MessageLookup::Window);
 
 // ---- Turn phases -------------------------------------------------------------------------------
 
@@ -29,8 +52,11 @@ inline constexpr uint32_t kMessageLifetime = 10;
 // and after each computer player's and minister's orders (step 4: their
 // messages take effect as they are sent). Each delivered message is dated
 // `date` (DiplomaticMessage::dated; by default GameState::turn): a
-// simultaneous turn passes the advanced date for step 4.
-void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt);
+// simultaneous turn passes the advanced date for step 4. An accepted trade,
+// gift or tribute carries out the packages of the proposer's newest message
+// to the accepter, looked up with `lookup` at that date, only when it is the
+// matching offer (spec 05 §3.4, confirmed: binary).
+void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt, MessageLookup lookup = MessageLookup::Window);
 // The first-contact check in one system (spec 05 §3.1, confirmed: binary):
 // every pair of living empires that have not both met the other, that each
 // detect an object of the other in `sys` now (a vehicle or a colony there

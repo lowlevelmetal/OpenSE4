@@ -285,6 +285,113 @@ TEST_CASE("diplomacy: refusals, counter-proposals and forged acceptances") {
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::Partnership);
 }
 
+TEST_CASE("diplomacy: only the newest recent message from an empire can be answered (spec 05 §3.4)") {
+    GameState s = newPoliticsGame();
+    s.options.simultaneous = false;  // turn-based: the window's one-turn case
+    setContact(s, kA, kB);
+    setContact(s, kB, kC);
+    TurnContext ctx = context(s);
+    // C (a higher number than B) proposes, then sends a General message: only
+    // the newest counts, whatever its type.
+    const MessageId proposal = send(s, kC, kB, MessageType::ProposeTreaty, Treaty::NonAggression);
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    const MessageId chat = send(s, kC, kB, MessageType::General);
+    diplomacy::deliverMessages(ctx);
+    CHECK(diplomacy::newestMessage(s, kB, kC, s.turn)->id == chat);
+    CommandResult res = apply(politicsRules(), s, kB, cmd::AnswerMessage{proposal, true, {}});
+    CHECK_FALSE(res.ok);
+    CHECK(res.error == "Only the newest recent message from that empire can be answered");
+    // A counter-proposal needs a recent proposal as the newest message too.
+    DiplomaticMessage counter;
+    counter.to = kC;
+    counter.type = MessageType::CounterTreaty;
+    counter.treaty = Treaty::NonAggression;
+    CHECK_FALSE(apply(politicsRules(), s, kB, cmd::SendMessage{counter}).ok);
+
+    // A (a lower number than B) proposes: in a turn-based game its message is
+    // recent only on the date it was sent (dated after the date − 1).
+    nextTurn(s);
+    const MessageId fromA = send(s, kA, kB, MessageType::ProposeTreaty, Treaty::NonAggression);
+    diplomacy::deliverMessages(ctx);
+    CHECK(diplomacy::newestMessage(s, kB, kA, s.turn)->id == fromA);
+    nextTurn(s);
+    CHECK(diplomacy::newestMessage(s, kB, kA, s.turn) == nullptr);
+    CHECK_FALSE(apply(politicsRules(), s, kB, cmd::AnswerMessage{fromA, true, {}}).ok);
+    // From a higher number, two dates: C's chat of two turns ago is gone too.
+    CHECK(diplomacy::newestMessage(s, kB, kC, s.turn) == nullptr);
+    // Simultaneous games have no one-turn case.
+    s.options.simultaneous = true;
+    CHECK(diplomacy::newestMessage(s, kB, kA, s.turn)->id == fromA);
+    // An answer counts as the turn's message to that empire.
+    REQUIRE(apply(politicsRules(), s, kB, cmd::AnswerMessage{fromA, false, {}}).ok);
+    CHECK(s.empire(kB).relation(kA).messageSentThisTurn);
+    CHECK(apply(politicsRules(), s, kB, cmd::AnswerMessage{fromA, true, {}}).error == "Only one message per empire per turn");
+}
+
+TEST_CASE("diplomacy: an accepted package is the proposer's newest offer, looked up by the processing's date test (spec 05 §3.4)") {
+    GameState s = newPoliticsGame();   // simultaneous
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    s.empire(kA).stockpile = {0, 0, 0};
+    s.empire(kB).stockpile = {9000, 0, 0};
+    auto turnTo = [&](uint32_t t) {
+        s.turn = t;
+        for (Empire& e : s.empires)
+            for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
+    };
+    // A player's gift, from its orders of turn 4: the host's processing of
+    // turn 4 dates it 4. A accepts in its orders of turn 5; the processing of
+    // the players' messages looks for an offer dated exactly 4: carried out.
+    turnTo(4);
+    MessageId gift = send(s, kB, kA, MessageType::Gift, Treaty::None, {resources(1000, 0, 0)});
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    turnTo(5);
+    answer(s, kA, gift, true);
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1000);
+
+    // A computer player's gift, sent at the start-of-turn step of turn 5's
+    // processing: dated with the advanced date, 6. Accepted in the orders of
+    // turn 6, the lookup for an offer dated exactly 5 finds nothing (medium
+    // confidence); accepted again in the orders of turn 7 it is found.
+    gift = sendUnchecked(s, kB, kA, MessageType::Gift);
+    for (DiplomaticMessage& m : s.messages)
+        if (m.id == gift) m.offer = {resources(1000, 0, 0)};
+    diplomacy::deliverMessages(ctx, 6, diplomacy::MessageLookup::Exact);
+    turnTo(6);
+    answer(s, kA, gift, true);
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1000);
+    turnTo(7);
+    answer(s, kA, gift, true);
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 2000);
+
+    // A computer player accepting at the start-of-turn step (the advanced
+    // date 9, exact mode): an offer dated exactly 9 − 2 = 7, a player's from
+    // its orders of turn 7.
+    turnTo(7);
+    gift = send(s, kA, kB, MessageType::Gift, Treaty::None, {resources(500, 0, 0)});
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    turnTo(8);
+    REQUIRE(apply(politicsRules(), s, kB, cmd::AnswerMessage{gift, true, {}, true}).ok);
+    diplomacy::deliverMessages(ctx, 9, diplomacy::MessageLookup::Exact);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1500);
+
+    // The packages carried out are the newest offer's, whatever the answer
+    // copied; and a newer message of another kind leaves nothing to carry out.
+    turnTo(10);
+    const MessageId small = send(s, kB, kA, MessageType::Gift, Treaty::None, {resources(100, 0, 0)});
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::Window);
+    turnTo(11);
+    answer(s, kA, small, true);
+    for (DiplomaticMessage& m : s.messages)
+        if (!m.delivered) m.request = {resources(7000, 0, 0)};  // the reply's copy: ignored
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::Window);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1600);
+}
+
 TEST_CASE("diplomacy: break treaty and declare war are immediate") {
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);

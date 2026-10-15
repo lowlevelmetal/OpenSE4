@@ -534,8 +534,9 @@ cultural, population-level and mood lines.
   §7.5), its tokens filled in; an Accept or Refuse Demand takes "Response Friend|Enemy YES|NO
   <demand>", Friend when the player holds Non-Aggression or better with the recipient.
 - Opened from a portrait, the window looks at the newest political message from that empire
-  that is dated after the date − 2 (in a simultaneous game, after the date − 1 when the
-  sender's player number is lower than ours), and adds the types that answer it: Accept,
+  that is dated after the date − 2 (in a turn-based game, after the date − 1 when the
+  sender's player number is lower than ours; corrected 2026-10-14, complete listing: this
+  said "simultaneous", spec 05 §3.4 "Answers"), and adds the types that answer it: Accept,
   Refuse and Counter Treaty after a Propose or Counter Treaty; Accept, Refuse and Counter
   Trade after a trade; Accept and Refuse Gift after a gift; Accept and Refuse Tribute after a
   tribute; Accept and Refuse Demand after any demand or request. A Counter Trade starts from
@@ -545,11 +546,13 @@ cultural, population-level and mood lines.
 Our client follows since 2026-10-14: the separate View and Edit buttons, a package type
 opening Select Package at once, the text from the speech pool (drawn with a random source of
 the window's own, never the game's), the answers from the portrait (sent as
-`cmd::AnswerMessage`, so only while our engine has not yet seen an answer to the message) and
-the inert portrait. Our client differs: the type, treaty, empire, system and planet are drop-down
+`cmd::AnswerMessage`, for the newest recent message only, `replyableMessage`; until the
+correction above ours had the turn style of the one-turn case backwards) and the inert
+portrait. Our client differs: the type, treaty, empire, system and planet are drop-down
 lists in the window rather than pickers opened at once, Select Package returns with Done, a
 received message opened from the Log's Send Reply shows OpenSE4's Accept, Refuse, Counter and
-Reply buttons, and the demands and requests are listed flat rather than behind a "Demand /
+Reply buttons (Accept, Refuse and Counter lit only for the newest recent message from that
+empire, as the portrait's), and the demands and requests are listed flat rather than behind a "Demand /
 Request / Warn" entry that switches the list to its 16 types (cosmetic). The Declare War and
 Surrender confirmations are OpenSE4's.
 
