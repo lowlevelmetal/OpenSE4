@@ -403,8 +403,10 @@ TEST_CASE("turn-based: a human left with units only is destroyed without the Los
 }
 
 TEST_CASE("turn-based: a failed order of the human whose turn it is is a message box; otherwise a log entry") {
-    // Spec 03 §8 (confirmed: binary for a move): a titled box at once and
-    // nothing logged; in a simultaneous game the minister's log entry.
+    // Spec 03 §8 (confirmed: binary): the original says nothing about a
+    // missing route. With OpenSE4's "Explain failed orders" a titled box comes
+    // at once and nothing is logged; in a simultaneous game the minister's log
+    // entry.
     {
         Duel d;
         const SystemId island = d.w.system("Island", 30, 30);   // no warp point leads there
@@ -413,7 +415,11 @@ TEST_CASE("turn-based: a failed order of the human whose turn it is is a message
         Order o;
         o.kind = OrderKind::MoveTo;
         o.location = at(island, 1, 1);
-        const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {o}));
+        const TurnResult silent = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {o}));
+        CHECK_FALSE(hasRejection(silent));
+        CHECK(silent.messages.empty());
+        CHECK(d.w.v(d.runner).orders.empty());
+        const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {o}), nullptr, {}, true);
         CHECK_FALSE(hasRejection(res));
         REQUIRE(res.messages.size() == 1);
         CHECK(res.messages.front().empire == kA);
@@ -431,7 +437,9 @@ TEST_CASE("turn-based: a failed order of the human whose turn it is is a message
         o.location = at(island, 1, 1);
         d.w.v(d.runner).orders = {o};
         const std::vector<EmpireOrders> given{EmpireOrders{kA, 0, {}}, EmpireOrders{kB, 0, {}}};
-        const TurnResult res = processTurn(d.r(), d.s(), given);
+        TurnOptions explain;
+        explain.explainFailedOrders = true;
+        const TurnResult res = processTurn(d.r(), d.s(), given, explain);
         CHECK(res.messages.empty());
         CHECK(d.w.logged(kA, "Unable to Move"));
     }
@@ -770,7 +778,7 @@ TEST_CASE("turn-based: an Attack order's approach asks like any step; entering t
     REQUIRE(d.s().vehicle(gunboat));
     CHECK(d.w.v(gunboat).location == at(d.a, 2, 0));
     CHECK(d.w.v(gunboat).orders.empty());
-    CHECK(d.w.logged(kA, "Combat on entering the sector."));
+    CHECK_FALSE(d.w.logged(kA, "Combat on entering the sector."));   // the battle is the news (spec 03 §8)
 }
 
 TEST_CASE("turn-based: the Attack order where the target is fights at once and is used up; sitting together starts nothing") {

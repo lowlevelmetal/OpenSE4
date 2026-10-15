@@ -270,6 +270,26 @@ maximum alone, for every vehicle and in either turn style (`movement::capMovemen
 Ship Report shows it as "3/6". What stays different: the report draws no gauge beside the
 figures.
 
+The accuracy pass of 2026-10-14 (spec 03 settled from the complete listing) closed these:
+
+- **Load Cargo** takes from own colonies and then own bases that are not cloaked, never from
+  ships, and ignores a plague (`loadCargo`); a group's **Drop Cargo** succeeds or fails on its
+  last member alone; a load or drop that finds no room gives the turn-based player the "Load
+  Cargo" or "Drop Cargo" box and nothing else (`movement.cpp` `cargo`, `roomBox`).
+- **Colonization** unloads the ship by the Drop Cargo rules, kind by kind, after the automatic
+  colonists; the new colony is under minister control when new vehicles are; it gives the
+  empire 100 experience and counts the colony ship as scrapped; its entry is "New Colony in
+  <system>", the ruins' "Ruins Discovered" (Misc) (`movement_upkeep.cpp` `colonize`,
+  `unloadColonyShip`, `grantRuins`).
+- **Failed orders** say nothing, as in the original, except those it reports (spec 03 §8
+  "Where the player reads why").
+
+What stays different, as an option:
+
+| Item | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| Explain failed orders (`TurnContext::explainFailedOrders`; client Options → OpenSE4, server `--explain-failed-orders`) | Off by default, as the original. On: the failures the original passes over (no route, an unset waypoint, a warp point gone or closed to fighters or neutrals, a battle on entering a sector, a Drop with nothing to drop...) give a box in the player's turn of a turn-based game, else an "Unable to <order>" entry; it acts on the turns the computer with the setting carries out | Silent: the list is cleared and nothing is said (spec 03 §8) | L |
+
 ## Combat (spec 04)
 
 The combat engine follows the rules of spec 04 settled on 2026-09-30 (§2-§19.1): start

@@ -1339,7 +1339,9 @@ std::expected<void, std::string> HostSession::processTurnNow() {
     game::GameState before = *state_;
     game::TurnResult result;
     try {
-        result = game::processTurn(rules_, *state_, list);
+        game::TurnOptions options;
+        options.explainFailedOrders = config_.explainFailedOrders;
+        result = game::processTurn(rules_, *state_, list, options);
     } catch (const std::exception& e) {
         *state_ = std::move(before);
         for (size_t i = 0; i < list.size(); ++i) orders_[list[i].empire.index()] = std::move(list[i]);
@@ -1445,6 +1447,7 @@ game::EmpireId HostSession::activeEmpire() const {
 // Human empires handed to the computer (kicked, or by an administrator).
 game::LiveOptions HostSession::liveOptions() const {
     game::LiveOptions o;
+    o.explainFailedOrders = config_.explainFailedOrders;
     for (size_t i = 0; i < slots_.size() && state_ && i < state_->empires.size(); ++i)
         if (slots_[i]->info.kind == SlotKind::Human && slots_[i]->info.aiControl) o.computerPlays.push_back(game::EmpireId{static_cast<uint32_t>(i)});
     return o;
@@ -1489,7 +1492,7 @@ game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<g
     game::TurnResult all;
     try {
         for (const game::Command& c : commands) {
-            game::TurnResult r = game::applyLive(rules_, *state_, empire, c);
+            game::TurnResult r = game::applyLive(rules_, *state_, empire, c, nullptr, {}, config_.explainFailedOrders);
             for (auto& x : r.rejected) all.rejected.push_back(std::move(x));
             for (auto& q : r.questions) all.questions.push_back(q);
             for (auto& m : r.messages) all.messages.push_back(std::move(m));

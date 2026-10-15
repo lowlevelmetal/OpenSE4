@@ -79,6 +79,11 @@ struct HostConfig {
     int handshakeTimeoutSeconds = 10;
     int keepaliveSeconds = 5;
     int timeoutSeconds = 60;           // drop a client that sent nothing for this long
+    // OpenSE4's "Explain failed orders" for the turns and orders this host
+    // carries out (game::TurnContext::explainFailedOrders): the hosting
+    // client's Options setting, the server's --explain-failed-orders. Off by
+    // default, as in the original.
+    bool explainFailedOrders = false;
 };
 
 enum class HostPhase : uint8_t { Stopped, Lobby, Playing, GameOver };

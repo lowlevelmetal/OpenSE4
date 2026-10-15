@@ -314,10 +314,11 @@ std::vector<DesignId> designsIn(const Rules& r, const GameState& s, const Cargo&
     return out;
 }
 
-int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group) {
+int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, bool* noRoom) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
+    if (noRoom) *noRoom = false;
     if (!v || !alive(*v)) return 0;
     const EmpireId owner = v->owner;
     const Location where = v->location;
@@ -325,8 +326,10 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
     int64_t moved = 0;
     const int64_t mass = std::max<int64_t>(1, r.setting("Population Mass", 5));
 
+    bool offered = false;   // a source held something of the kind (for noRoom)
     auto fromCargo = [&](Cargo& src) {
         if (!what.population()) {
+            if (!designsIn(r, s, src, what).empty()) offered = true;
             // Every design it takes, stack by stack in the source's cargo order.
             for (DesignId unit : designsIn(r, s, src, what)) {
                 if (want <= 0) break;
@@ -337,6 +340,7 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             }
             return;
         }
+        if (src.totalPopulation() > 0) offered = true;
         for (EmpireId race : racesOf(src.population, owner)) {
             v = s.vehicle(id);
             const int64_t n = movePopulation(src.population, v->cargo.population, race, std::min(want, freeCargo(r, s, *v) / mass));
@@ -345,15 +349,22 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         }
     };
 
-    // Own planets first (none quarantined by plague), then own vehicles (§8, §11).
+    // Each member loads for itself in two passes (spec 03 §8 Load Cargo,
+    // confirmed: binary): first from the own colonies in the sector, in the
+    // system's object order, a plague making no difference (only the Cargo
+    // Transfer window refuses a plagued planet, §11); then, while it still
+    // has room, from the cargo of the empire's own bases there that are not
+    // cloaked, in object order. Ships are never sources: moving cargo from
+    // ship to ship is what Cargo Transfer is for.
     for (ObjectId o : ownColoniesHere(s, owner, where)) {
         Colony* c = s.colony(o);
-        if (want <= 0 || c->plagueLevel > 0) continue;
+        if (want <= 0) break;
         if (!what.population()) {
             fromCargo(c->cargo);
             continue;
         }
         // A colony keeps at least 1M people (spec 03 §11).
+        if (c->totalPopulation() > 1) offered = true;
         for (EmpireId race : racesOf(c->population, owner)) {
             v = s.vehicle(id);
             const int64_t spare = std::max<int64_t>(0, c->totalPopulation() - 1);
@@ -362,19 +373,29 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             moved += n;
         }
     }
-    for (VehicleId b : ownHoldersHere(r, s, owner, where, id, group)) {
+    for (VehicleId b : vehiclesInObjectOrder(s)) {
         if (want <= 0) break;
+        const Vehicle* base = s.vehicle(b);
+        if (b == id || !alive(*base) || base->owner != owner || base->location != where || base->status == VehicleStatus::Cloaked ||
+            vehicleType(r, s, *base) != VehicleType::Base)
+            continue;
         fromCargo(s.vehicle(b)->cargo);
     }
+    // Nothing came aboard although a source held some: the hold had no room.
+    if (noRoom) *noRoom = moved == 0 && offered;
     return moved;
 }
 
 int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group, ObjectId colony,
-                  VehicleId into) {
+                  VehicleId into, bool* noRoom) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
+    if (noRoom) *noRoom = false;
     if (!v || !alive(*v)) return 0;
+    // Something of the kind aboard, and a place that could take it (for noRoom).
+    const bool aboard = what.population() ? v->cargo.totalPopulation() > 0 : !designsIn(r, s, v->cargo, what).empty();
+    bool place = false;
     const EmpireId owner = v->owner;
     const Location where = v->location;
     int64_t want = amount < 0 ? std::numeric_limits<int64_t>::max() : amount;
@@ -395,6 +416,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         if (want <= 0) break;
         if (named && o != colony) continue;
         Colony* c = s.colony(o);
+        place = true;
         v = s.vehicle(id);
         if (!what.population()) {
             unitsInto(c->cargo, [&] { return colonyFreeCargo(r, s, *c); });
@@ -414,6 +436,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             for (ObjectId o : planetsAt(s, where)) {
                 const Colony* c = s.colony(o);
                 if (want <= 0 || !c || c->owner == owner || !hostile(s, owner, c->owner)) continue;
+                place = true;
                 const int n = combat::landTroops(r, s, id, o, unit, static_cast<int>(std::min<int64_t>(want, s.vehicle(id)->cargo.unitCount(unit))));
                 want -= n;
                 moved += n;
@@ -423,6 +446,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         if (want <= 0) break;
         if (named && b != into) continue;
         Vehicle* holder = s.vehicle(b);
+        place = true;
         v = s.vehicle(id);
         if (!what.population()) {
             unitsInto(holder->cargo, [&] { return freeCargo(r, s, *holder); });
@@ -434,6 +458,9 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             }
         }
     }
+    // Nothing left the ship although it held some and had a place to drop
+    // it: the place had no room.
+    if (noRoom) *noRoom = moved == 0 && aboard && place;
     return moved;
 }
 

@@ -738,17 +738,37 @@ private:
         logIt();
     }
 
-    // A failed order clears the whole list (§8). The player reads why as
-    // `tell` says: the box is titled after the order, the log entry is
-    // "Unable to <order>" in the words of the minister in charge, with the
-    // acting object's picture (spec 06 §4.1).
+    // A failed order clears the whole list (§8). The original says nothing
+    // about most failures (spec 03 §8 "Where the player reads why",
+    // confirmed: binary): no route, an invalid destination, an unset
+    // waypoint, a warp point that is gone or that fighters or neutral
+    // empires cannot use, a battle on entering a sector, a Drop with nothing
+    // to drop or no valid target, and the others that are not
+    // failReported's. With OpenSE4's option "Explain failed orders" on
+    // (TurnContext::explainFailedOrders) the player reads why as `tell`
+    // says: the box is titled after the order, the log entry is "Unable to
+    // <order>" in the words of the minister in charge, with the acting
+    // object's picture (spec 06 §4.1).
     Exec fail(const Group& g, const Order& o, std::string_view why) {
+        if (ctx_.explainFailedOrders) tell(g.owner, failureBoxTitle(o), std::string(why), [&] { logFailure(g, o, why); });
+        return Exec::Fail;
+    }
+
+    // A failure the original reports whatever the option (spec 03 §8,
+    // confirmed: binary): a move refused while the vehicle's space yard is
+    // building ("Move") and a stellar manipulation refused ("Cannot
+    // <action>"), told as `tell` says. The other reported ones have their
+    // own words: Colonize (colonizeFailed), damage on the way (hazardHit),
+    // mines (afterBattle), Launch and Recover warnings and the Load and Drop
+    // boxes (cargo), Mothball, Unmothball and Retrofit (cannot).
+    Exec failReported(const Group& g, const Order& o, std::string_view why) {
         tell(g.owner, failureBoxTitle(o), std::string(why), [&] { logFailure(g, o, why); });
         return Exec::Fail;
     }
 
     // The log entry of a failed order (`fail`), also for a failure the
-    // player never gets a box for (combat on entering a sector).
+    // player never gets a box for (combat on entering a sector, explained
+    // only with the option on).
     void logFailure(const Group& g, const Order& o, std::string_view why) {
         const Location here = where(g);
         const std::string system = here.system.valid() && here.system.index() < s_.galaxy.systems.size() ? s_.galaxy.system(here.system).name : "?";
@@ -833,7 +853,7 @@ private:
             case Travel::Wait: return Exec::Wait;
             case Travel::Unreachable: return fail(g, o, "No known route to the destination.");
             case Travel::Immobile: return fail(g, o, "It cannot move.");
-            case Travel::Busy: return fail(g, o, "Its space yard is building; it cannot move.");
+            case Travel::Busy: return failReported(g, o, "Its space yard is building; it cannot move.");
             case Travel::Stopped: return fail(g, o, "Movement stopped by a hazard.");
             case Travel::Blocked: return fail(g, o, "The way is blocked.");
             case Travel::FighterWarp: return fail(g, o, "Fighters cannot use warp points.");
@@ -1615,7 +1635,11 @@ private:
         for (VehicleId id : g.members)
             if (colonizerProblem(r_, s_, *s_.vehicle(id), planet).empty()) colonizer = id;
         if (!colonizer.valid()) return colonizeFailed(g, std::format("Unable to colonize {} planets.", planet.surface));
-        foundColony(ctx_, colonizer, o.object);
+        const std::string shipName = s_.vehicle(colonizer)->name;
+        // What the colony had no room for is lost; the human whose turn it is
+        // in a turn-based game gets the Drop Cargo box (spec 03 §8, confirmed: binary).
+        if (foundColony(ctx_, colonizer, o.object))
+            roomBox(g, "Drop Cargo", std::format("{} dropped no cargo: there is no room here for any more.", shipName));
         return Exec::Done;
     }
 
@@ -1641,11 +1665,16 @@ private:
 
     // Load, Launch and Recover are always done; Drop can fail (§8, confirmed:
     // binary). Each moves the order's kind of cargo, every design of it (one
-    // design for the orders of OpenSE4's computer players). A launch or
-    // recovery that cannot fully happen gives a human owner one warning,
-    // "Launch Warning" or "Recover Warning" (spec 03 §12 "Warnings",
-    // confirmed: binary), a log entry or a box as `tell` says; nothing else
-    // is logged.
+    // design for the orders of OpenSE4's computer players), each member for
+    // itself. A group's Drop succeeds or fails on its last living member
+    // alone: it fails when that member dropped nothing, whatever the others
+    // dropped, and is done when it dropped something (confirmed: binary). A
+    // launch or recovery that cannot fully happen gives a human owner one
+    // warning, "Launch Warning" or "Recover Warning" (spec 03 §12
+    // "Warnings", confirmed: binary), a log entry or a box as `tell` says.
+    // A member that loads or drops nothing for lack of room gives the human
+    // whose turn it is in a turn-based game a "Load Cargo" or "Drop Cargo"
+    // box (confirmed: binary; the words are ours); nothing else is logged.
     Exec cargo(Group& g, Order& o) {
         if (!g.planet.valid() && o.location.system.valid()) {
             const Travel t = travel(g, o.location);
@@ -1661,6 +1690,7 @@ private:
                 if (std::find(done.warnings.begin(), done.warnings.end(), w) == done.warnings.end()) done.warnings.push_back(w);
         };
         auto left = [&]() { return o.amount < 0 ? int64_t{-1} : std::max<int64_t>(0, o.amount - moved); };
+        bool lastDropped = true, lastNoRoom = false;  // the last living member's drop
         if (g.planet.valid()) {
             const Launcher from{{}, g.planet};
             add(o.kind == OrderKind::LaunchUnits ? launchUnits(ctx_, budget_, from, what, o.amount)
@@ -1669,16 +1699,34 @@ private:
             for (VehicleId id : std::vector<VehicleId>(g.members)) {
                 const int64_t amount = left();
                 if (amount == 0) break;
+                const Vehicle* member = s_.vehicle(id);
+                if (!member || !alive(*member)) continue;
+                const std::string memberName = member->name;
+                bool noRoom = false;
                 switch (o.kind) {
-                    case OrderKind::LoadCargo: moved += loadCargo(ctx_, id, what, amount, g.members); break;
-                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, what, amount, g.members, o.object, o.vehicle); break;
+                    case OrderKind::LoadCargo:
+                        moved += loadCargo(ctx_, id, what, amount, &noRoom);
+                        if (noRoom) roomBox(g, "Load Cargo", std::format("{} loaded no cargo: it has no room for any more.", memberName));
+                        break;
+                    case OrderKind::DropCargo: {
+                        const int64_t n = dropCargo(ctx_, id, what, amount, g.members, o.object, o.vehicle, &noRoom);
+                        moved += n;
+                        lastDropped = n > 0;
+                        lastNoRoom = noRoom;
+                        if (noRoom) roomBox(g, "Drop Cargo", std::format("{} dropped no cargo: there is no room here for any more.", memberName));
+                        break;
+                    }
                     case OrderKind::LaunchUnits: add(launchUnits(ctx_, budget_, Launcher{id, {}}, what, amount)); break;
                     case OrderKind::RecoverUnits: add(recoverUnits(ctx_, Launcher{id, {}}, what, amount, o.vehicle)); break;
                     default: break;
                 }
             }
         }
-        if (o.kind == OrderKind::DropCargo && moved <= 0) return fail(g, o, "Nothing could be dropped here.");
+        if (o.kind == OrderKind::DropCargo && !lastDropped) {
+            // The box already said why (the room ran out); otherwise the original says nothing.
+            if (lastNoRoom && live_ && live_->ask && g.owner == live_->empire) return Exec::Fail;
+            return fail(g, o, "Nothing could be dropped here.");
+        }
         // The reasons a launch or recovery could not fully happen reach a
         // human owner as `tell` says: a box titled "Launch Warning" or
         // "Recover Warning" while its turn-based turn is live, otherwise the
@@ -1690,6 +1738,13 @@ private:
             tell(g.owner, title, text, [&] { ctx_.log(g.owner, LogCategory::Misc, title, text, where(g), "AtMaxUnits"); });
         }
         return Exec::Acted;
+    }
+
+    // The box of a load or drop that found no room: only for the human whose
+    // turn it is in a turn-based game; a simultaneous game logs nothing
+    // (spec 03 §8, confirmed: binary).
+    void roomBox(const Group& g, std::string title, std::string text) {
+        if (live_ && live_->ask && g.owner == live_->empire) ctx_.messages.push_back(PlayerMessage{g.owner, std::move(title), std::move(text)});
     }
 
     // Cloaking needs a working part of level 2 or more and supply above 0; it
@@ -1883,7 +1938,7 @@ private:
 
     Exec stellar(Group& g, Order& o) {
         const auto target = stellarTarget(s_, o, where(g));
-        if (!target) return fail(g, o, "The target no longer exists.");
+        if (!target) return failReported(g, o, "The target no longer exists.");
         const Travel t = travel(g, *target);
         if (t != Travel::Arrived) return afterTravel(g, o, t);
         // Movement is needed but not spent; a refusal for lack of it makes the
@@ -1902,7 +1957,7 @@ private:
         }
         bool consumed = false;
         const std::string why = stellarManipulation(ctx_, g.members, o, consumed);
-        if (!why.empty()) return fail(g, o, why);
+        if (!why.empty()) return failReported(g, o, why);
         routes_.clear();  // the map may have changed
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
@@ -2198,8 +2253,10 @@ private:
         if (!battleSince(here, records)) return g.stopped || pursuit;  // only mines struck
         if (!g.stopped && !pursuit)
             if (const std::vector<Order>* list = orders(g); list && !list->empty()) {
-                // The battle was the news: no message box for it (inferred).
-                logFailure(g, list->front(), "Combat on entering the sector.");
+                // The battle is the news: the original says nothing else
+                // (confirmed: binary); with the option on, an entry and no
+                // box (inferred).
+                if (ctx_.explainFailedOrders) logFailure(g, list->front(), "Combat on entering the sector.");
                 setLists(g, {});
             }
         g.stopped = true;

@@ -162,6 +162,13 @@ public:
         heading(ui, "OpenSE4");
         changed |= movementSpeedRow(ui, s);
         changed |= shipMovementRows(ui, s);
+        changed |= lampToggle(ui, "Explain failed orders", &s.explainFailedOrders);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The original says nothing when most orders fail (no route, an unset waypoint,\n"
+                              "a warp point that is gone, a battle on entering a sector, a drop with nothing\n"
+                              "to drop): the list is just cleared. With this on, such a failure gives a\n"
+                              "message box in a turn-based game and an \"Unable to ...\" entry in the log in\n"
+                              "a simultaneous one, for the turns this computer carries out.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

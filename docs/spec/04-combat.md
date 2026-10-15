@@ -1211,8 +1211,10 @@ command exists). The only ways to disengage are:
 - **Design statistics** (confirmed: binary). A design keeps four counters: Number
   Constructed, Number Lost, Number Scrapped and Enemy Tonnage Destroyed (In Service is
   constructed − lost − scrapped). There is no kill counter. A vehicle that self-destructs
-  counts as scrapped, not lost. Units killed count as lost for their design as they die, and
-  so do units jettisoned from cargo (spec 03 §8).
+  counts as scrapped, not lost, and so does a colony ship that founds a colony (spec 03 §8;
+  confirmed: binary, 2026-10-14). Units killed count as lost for their design as they die, and
+  so do units jettisoned from cargo (spec 03 §8). Since 2026-10-14 ours counts the colony
+  ship (`movement_upkeep.cpp` `colonize`); before, it stayed In Service for good.
   Enemy tonnage destroyed, credited when a piece is destroyed:
   - the value is the victim's hull `Tonnage` for a ship or base; for a unit group, hull
     `Tonnage` × every unit it had in the battle (killed ones included), credited only when

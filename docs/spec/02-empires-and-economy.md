@@ -1416,7 +1416,10 @@ counting, and a wrong one shows "Invalid Password" (spec 08 §13.4, confirmed: b
     survives, units stored on planets or carried by ships, mines outside a battle, ground
     combat, events and hazards;
   - each finished facility item adds its count;
-  - each ship built adds its hull's tonnage div 10; units add nothing.
+  - each ship built adds its hull's tonnage div 10; units add nothing;
+  - each colony founded by the Colonize order adds 100; no other way of gaining a colony
+    founds one this way (spec 03 §8) (confirmed: binary). Since 2026-10-14 ours follows
+    (`movement_upkeep.cpp` `colonize`); before, colonization gave nothing.
 - Race age is not stored; it is a label read off the experience: up to 5,000 Newborn,
   10,000 Infantile, 50,000 Young, 200,000 Moderate, 1,000,000 Old, 10,000,000 Ancient,
   100,000,000 God-like, 400,000,000 Stellar Ancients, and above that First Ones.
@@ -1525,8 +1528,9 @@ is on (confirmed: binary).
 
 **Minister options**
 - "Automatically use Individual Ministers for newly built vehicles" turns the flag on for
-  vehicles and launched units as they appear (confirmed: binary). The manual says it
-  also covers new colonies.
+  vehicles and launched units as they appear, and for colonies founded by the Colonize order,
+  as the manual says (confirmed: binary). Since 2026-10-14 ours follows for colonies too
+  (`movement_upkeep.cpp` `colonize`); before, a new colony's flag was always off.
 - The option that forbids AI changes in a simultaneous game: when the host covers this
   player's missed turn, the stand-in changes nothing (confirmed: binary).
 - Bulk buttons (confirmed: binary):

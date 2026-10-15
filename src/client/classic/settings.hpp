@@ -64,6 +64,14 @@ struct ClassicSettings {
     // summary at its end, in place of its empty weapon grid (Combat Replay
     // Options; the original has no such list, spec 06 §7 Q39). Off by default.
     bool replayEvents = false;
+    // "Explain failed orders" (Options, under OpenSE4): the orders the
+    // original fails without a word (no route, an unset waypoint, a warp point
+    // that is gone, a battle on entering a sector, a Drop with nothing to
+    // drop...) get a message box in a turn-based game or an "Unable to ..."
+    // log entry, for the turns this computer carries out
+    // (game::TurnContext::explainFailedOrders). Off by default, as in the
+    // original (spec 03 §8). `explain_failed_orders` in the file.
+    bool explainFailedOrders = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

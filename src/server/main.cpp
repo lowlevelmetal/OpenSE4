@@ -70,6 +70,10 @@ Network game options:
   --bind=ADDRESS         Listen on one address only (default: all IPv4 interfaces)
   --upnp / --no-upnp     Forward the port on the router with UPnP (default: on)
   --no-lan-discovery     Do not answer LAN game searches (UDP port 6716)
+  --explain-failed-orders  Orders that fail without a word in the original (no route,
+                         an unset waypoint, a battle on entering a sector...) get an
+                         "Unable to ..." log entry or a message, as the client's
+                         Options "Explain failed orders" (default: off)
   --players=N            Human player slots (default 2)
   --ai=N                 Computer empires (default 0)
   --ai=MOD:PLAYER        Every computer empire is played by this script player of
@@ -430,7 +434,8 @@ int runServer(std::span<char*> args) {
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
                              "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key", "mod", "mods-dir", "bot-port",
                              "bot-bind", "bot-token", "bot-timeout"},
-                            {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version", "no-bundled-mods"});
+                            {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version", "no-bundled-mods",
+                             "explain-failed-orders"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
     if (o.has("help")) return usage();
@@ -491,6 +496,7 @@ int runServer(std::span<char*> args) {
     cfg.upnp.enabled = !o.has("no-upnp");
     cfg.lanDiscovery = !o.has("no-lan-discovery");
     cfg.passwordMigration = !o.has("no-password-migration");
+    cfg.explainFailedOrders = o.has("explain-failed-orders");
     // The host's identity: players' games remember its key and refuse a host
     // that shows another (docs/MULTIPLAYER.md, "Security").
     auto hostKey = loadHostKey(o, KeyUse::Network);

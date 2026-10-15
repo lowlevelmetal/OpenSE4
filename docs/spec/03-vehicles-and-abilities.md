@@ -1057,26 +1057,58 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
 - Repeat with a single order that completes without effect makes the vehicle idle. This is legal.
 - New orders are **appended**. Giving orders to a vehicle that already has some is a common player
   mistake, so the UI should show the queue.
-- **Where the player reads why an order failed** (confirmed: binary for Move and Colonize, the
-  same two ways inferred for the others). In a turn-based game, while the human whose turn it is
-  carries orders out (an order just given, or the orders carried over at the start of its
-  turn), a message box comes at once, titled after what failed, and nothing is logged. In a
-  simultaneous game the owner gets a log entry instead, "Unable to <order>", in the words of
-  the minister in charge (the Fleet Minister for a vehicle's order, the Planetary Minister for
-  a colony's: inferred). The boxes: "Move" (a vehicle that cannot move, such as one whose
-  space yard is building, or one with no route), "Colonize" (below), "Damage Taken" (a group
-  damaged on its way through a damaging sector), "Drop Cargo" or "Drop Troops", "Launch
-  Warning" and "Recover Warning" (a launch or recovery that could not fully happen, with
-  its reasons, §12 "Warnings": the order is still done),
-  "Cannot Mothball", a retrofit's, a stellar manipulation's "Cannot <action>" and "Minefield"
-  (stopped by a minefield). The Colonize gives a computer player's failure in a turn-based
-  game no message; OpenSE4 logs a computer player's other failures as in a simultaneous game
-  (inferred). A battle on entering a sector fails the order with an entry and no box (the
-  battle is the news, inferred). OpenSE4 follows this since 2026-10-14 (`movement.cpp`
-  `tell`, `fail`, `logFailure`; the boxes are `TurnResult::messages`, shown by the client as
-  titled OK boxes over the view, spec 06 §2.7); before, every failure but a Colonize was a
-  Misc entry "<name>: <order> order cancelled" in both turn styles. When a warning comes for
-  Launch and Recover, and the titles other than Move and Colonize, are (inferred).
+- **Where the player reads why an order failed** (confirmed: binary; corrected 2026-10-14,
+  complete listing). Most failed orders say nothing at all: the list is cleared and that is
+  all. Silent are no route, an invalid destination, an unset waypoint, a warp point that is
+  gone or that fighters or neutral empires cannot use, a battle on entering a sector (the
+  battle is the news), and a Drop with nothing of the kind aboard or no valid target. The
+  original tells the player only of these:
+  - **Move**, only for a vehicle whose space yard is building;
+  - **Colonize** (below);
+  - **Damage Taken**, for a group damaged on its way through a damaging sector or by warp
+    turbulence;
+  - the **Minefield** entries;
+  - **Launch Warning** and **Recover Warning**, for a launch or recovery that could not
+    fully happen, with its reasons (§12 "Warnings"; the order is still done);
+  - the **Load Cargo** and **Drop Cargo** boxes of a load or drop that found no room
+    (below);
+  - Mothball, Unmothball and Retrofit (§15);
+  - a stellar manipulation's "Cannot <action>".
+
+  In a turn-based game, while the human whose turn it is carries orders out (an order just
+  given, or the orders carried over at the start of its turn), such a report is a message box
+  at once, titled after what failed, and nothing is logged. Otherwise the owner gets a log
+  entry, in the words of the minister in charge. The Colonize gives a computer player's
+  failure in a turn-based game no message; OpenSE4 logs a computer player's other reported
+  failures as in a simultaneous game (inferred). When the warnings for Launch and Recover
+  come, and the box titles other than Move and Colonize, are (inferred).
+  - **The Load and Drop boxes** (confirmed: binary). A member of the group that loads
+    nothing because its hold has no room for what the sources offer, or drops nothing because
+    the place it drops at has no room, gives the human whose turn it is in a turn-based game a
+    box titled "Load Cargo" or "Drop Cargo" naming the ship (the original's words say that
+    nothing was loaded, or dropped, for lack of room). A colonization whose population or
+    units do not fit gives the Drop Cargo box too. Nothing else comes of either: a
+    simultaneous game never logs a Load or a Drop, and the executable's "Unable to Drop Cargo"
+    entry can never be reached. Which shortfall gives the box when part of the cargo moved is
+    (inferred): ours gives it only when the member moved nothing at all, and a colonization
+    only when a kind aboard (its population, or one unit kind) found no room at all, once
+    (§19 Q86).
+  - **OpenSE4's option "Explain failed orders"** (Options → OpenSE4, off by default, per
+    computer: it acts on the orders that computer carries out, the turns of a local game or
+    of the games it hosts; the server's `--explain-failed-orders`). With it on, the silent
+    failures are told as the reported ones are: a box titled after the order ("Move" for the
+    moves) in the player's turn of a turn-based game, otherwise an entry "Unable to <order>"
+    in the words of the minister in charge (the Fleet Minister for a vehicle's order, the
+    Planetary Minister for a colony's, inferred), with the acting object's picture; a battle on
+    entering a sector gives the entry only. Off, they say nothing and the game comes out as the
+    original's.
+
+  Since 2026-10-14 ours follows (`movement.cpp` `fail`, `failReported`, `tell`,
+  `logFailure`, `roomBox`; `TurnContext::explainFailedOrders`; the boxes are
+  `TurnResult::messages`, shown by the client as titled OK boxes over the view, spec 06
+  §2.7). Before, every failure was told, a box or an "Unable to ..." entry, combat on
+  entering a sector included, and a Drop that found no room failed with "Nothing could be
+  dropped here." as a box or an entry.
 - **Fleets:** a fleet has no list of its own; its orders are copies in the lists of its members
   at the fleet's location. Orders given to the fleet or to any member are appended to each of
   those lists, and every change to the list applies to each of them. The Stellar
@@ -1168,8 +1200,8 @@ sector is elsewhere) plus the action.
 | Repeat Orders (K) | toggle | See the list rules above. |
 | Clear Orders (Del) | — | Empties the list and switches Repeat off. |
 | View Orders (V) | — | UI only. |
-| Load Cargo (L) | cargo kind, sector | Composite. The sector is picked first; at the click a picker asks for the kind of cargo, always the same seven: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms, whatever the selection carries. Loads as much of the kind as fits, every design of it, from own planets in the sector first, then own vehicles; in a group each member loads for itself. Always done, even when nothing loads (confirmed: binary). |
-| Drop Cargo (D) | cargo kind, sector, object | Composite. The sector first, then its destination (spec 06 §2.9), then the kind from the same seven. Drops every design of the kind into that own colony or vehicle, as far as it has room. Can fail (confirmed: binary). |
+| Load Cargo (L) | cargo kind, sector | Composite. The sector is picked first; at the click a picker asks for the kind of cargo, always the same seven: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms, whatever the selection carries. In a group each member loads for itself, as much of the kind as fits, every design of it, in two passes: first from the own colonies in the sector, in the system's object order, then, while it still has room, from the cargo of the empire's own bases there that are not cloaked, in object order. Ships are never sources, so a transport cannot take troops or population from another transport through this order; that is what Cargo Transfer is for. A plague makes no difference: only the Cargo Transfer window refuses a plagued planet (§11). Always done, even when nothing loads (confirmed: binary; corrected 2026-10-14, complete listing: this row said the second pass took from own vehicles). |
+| Drop Cargo (D) | cargo kind, sector, object | Composite. The sector first, then its destination (spec 06 §2.9), then the kind from the same seven. Every living member drops every design of the kind it carries into that own colony or vehicle, as far as it has room. The order's result is the result of the **last** living member in group order: it fails, clearing the lists, when that member dropped nothing, whatever the earlier members dropped, and it is done when that member dropped something, even if all the others dropped nothing (confirmed: binary). |
 | Launch Units Remotely (I) | unit kind, sector | Composite. The sector first, then the kind: Fighters, Satellites, Mines or Drones. Launches as many units of the kind as allowed, every design of it (§12). A colony's: only the kind is asked; the order goes at once into the colony's list at its own sector, and in a turn-based game the colony carries out its list then. Always done; what could not be launched gives a warning (§12) (confirmed: binary). |
 | Recover Units Remotely (O) | unit kind, sector | Composite. The sector first, then the kind: Fighters, Satellites or Drones (a colony's: the kind only, as for the launch). Names a unit kind, not a design. For each own group of that kind in the sector, in object order, it recovers the units of every design as far as cargo room allows, and moves on to the next group only while the previous one gave at least one unit. Drones never come back, which gives a warning (§12). Always done (confirmed: binary). |
 | Cargo Transfer (T) | — | Instant window, both turn styles (§11; spec 06 §2.8). |
@@ -1191,7 +1223,11 @@ sector is elsewhere) plus the action.
 Since 2026-10-14 the engine follows the table's Explore, Resupply, Repair and Colonize
 expansions (`orders.cpp`, `OrderContext::here`): before, it searched from where the list left
 the group, added no Move To for the current sector, and judged Colonize's Load Cargo by the
-group's cargo after the orders before it (inferred).
+group's cargo after the orders before it (inferred). Since 2026-10-14 ours also follows the
+Load Cargo and Drop Cargo rows (`movement_util.cpp` `loadCargo`, `movement.cpp` `cargo`):
+before, Load Cargo's second pass took from every own ship and base in the sector outside the
+group, in creation order, it skipped plagued colonies, and a group's Drop failed only when no
+member dropped anything.
 
 **Colonize** (confirmed: binary):
 
@@ -1213,10 +1249,35 @@ group's cargo after the orders before it (inferred).
   cloaked, or if no member has the `Colonize Planet - *` ability matching the planet type. The game
   options that limit colonization to the empire's own planet type or to breathable atmospheres
   apply.
-- The colonizer is the last suitable member in group order. The colony starts with
-  `Automatic Colonization Population`, and then every kind of cargo on the ship is dropped under
-  the Drop Cargo rules, so only what fits arrives; the rest is lost with the ship, which is
-  consumed. Then the planet's ancient ruins take effect (§3.3).
+- The colonizer is the last suitable member in group order. The colony is made with
+  `Automatic Colonization Population` of the owner's race, even above the planet's maximum.
+  Then the ship is unloaded by the Drop Cargo rules, kind by kind (confirmed: binary;
+  corrected 2026-10-14, complete listing):
+  - its population, each race entry in the ship's order, up to the colony's free population
+    room (its maximum population less its current population, never below 0). The drop is
+    tried twice; the second try matters only if the first changed the room;
+  - then troops, fighters, mines, satellites, drones and weapon platforms, in that kind
+    order. Each kind goes stack by stack in the ship's cargo order, one unit at a time while
+    its hull tonnage fits the colony's free cargo space, so a unit too large is skipped and a
+    later, smaller one still goes;
+  - whatever is left is lost with the ship, which is consumed. A colonization that leaves
+    something behind for lack of room gives the human whose turn it is in a turn-based game
+    the Drop Cargo box (§8 "Where the player reads why").
+
+  Then the planet's ancient ruins take effect (§3.3).
+- **What else founding a colony does** (confirmed: binary): when the colonizing empire's
+  "Automatically use Individual Ministers for newly built vehicles" is on, the new colony's
+  own minister flag is switched on, as for built ships and launched units (spec 02 "Minister
+  options"); the empire gains 100 experience, capped at 500,000,000 as always (spec 02
+  "Experience and race age"); and the colony ship counts as scrapped in its design's
+  statistics, so it leaves In Service (spec 04 §15). The owner gets the log entry "New Colony
+  in <system>", category Misc, in the Colonization Minister's words naming the planet and the
+  system, with the picture `Colony<Surface><Atmosphere>` (spec 06 §4.1). Since 2026-10-14
+  ours follows all of this (`movement_upkeep.cpp` `colonize`, `unloadColonyShip`): before,
+  it copied everything aboard and then trimmed the population from the last race entry
+  (which could cut the starting colonists when the owner's race was not aboard) and the units
+  one at a time from the last stack whatever their size; it left the minister flag off, gave
+  no experience, counted the ship as still in service, and wrote "<planet> colonized".
 - When the colonizing empire's Empire Options switch "claim every system we colonize" is on (it
   is on for a new empire, computer players included), the planet's system is claimed for it as
   the colony is founded, whatever the system's other claims (spec 06 §7 Q47).
@@ -1563,7 +1624,8 @@ All rules in this section are (confirmed: binary).
   sector that have capacity above 0; never with allies. It costs nothing and uses no MP. It moves
   1, 5, 10, 100 or all per click and only what fits; the empire's options keep the choice, Ten
   at first (spec 08 §3.6.7). Nothing can be loaded from a planet quarantined by plague: the
-  window says so in a message box. Taking population from a planet always leaves at least 1M;
+  window says so in a message box (the Load Cargo order has no such test, §8). Taking
+  population from a planet always leaves at least 1M;
   emptying a colony needs the Abandon Planet order.
   - **The window** (Cargo Transfer, order T, lit for every own ship, base and colony in both
     turn styles, spec 06 §2.8). The left list ("Cargo From") holds the selected ship, base or
@@ -2207,6 +2269,9 @@ All rules in this section are (confirmed: binary).
     colonized. When two ships reach a planet in the same turn the lower vehicle id wins.
     **Answer:** cargo beyond capacity is lost; the first ship processed (object-slot order) wins
     and the other's order fails; the colony also receives `Automatic Colonization Population`.
+    What arrives is what the Drop Cargo rules unload, kind by kind, population first; the
+    colonists come first, even above the planet's maximum (corrected 2026-10-14, complete
+    listing; §8 Colonize).
     The colony type is picked by the player in a dialog when the empire's option for it is on (the
     default) and a human colonizes in a turn-based game, and otherwise chosen automatically as a
     computer player would. `Ancient Ruins` are used up (removed) once applied; `Ancient Ruins
@@ -2884,3 +2949,16 @@ fleet's row in the sector list is spec 06 §7 Q110.
     games did not change: their daily cap (§6.3) already gave the same results. Our client shows
     the Movement line as "3/6" since then, without the gauge. Open: unit groups (fighters,
     drones) were not checked in the executable; OpenSE4 caps them the same way (inferred).
+
+**The accuracy pass of 2026-10-14** (the rules settled from the complete listing) left these
+questions of ours:
+
+86. **The Load and Drop boxes when part of the cargo moved (§8).** The original's boxes say
+    that nothing was loaded, or dropped, for lack of room. Does a member that loaded or
+    dropped some of the kind before the room ran out get the box too, and does a
+    colonization give one box per kind that did not fit, or one for the whole unloading?
+    OpenSE4 gives the box only to a member that moved nothing although the sources offered
+    something (Load) or it carried something of the kind to a place that could take it
+    (Drop), and at most one Drop Cargo box for a colonization, when its population or one of
+    its unit kinds found no room at all (inferred; `movement_util.cpp` `loadCargo`,
+    `dropCargo`, `movement_upkeep.cpp` `unloadColonyShip`).

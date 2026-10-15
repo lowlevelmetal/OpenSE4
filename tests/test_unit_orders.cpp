@@ -86,8 +86,14 @@ TEST_CASE("unit orders: Load and Drop Cargo move every design of the kind") {
     CHECK(w.v(hauler).cargo.totalPopulation() > 0);
     CHECK(w.s.colony(other)->totalPopulation() >= 1);
     // A Drop of a kind the ship does not carry drops nothing, and fails (spec 03 §8):
+    // without a word in the original; with OpenSE4's "Explain failed orders",
     // "Unable to Drop Cargo" in a simultaneous game (spec 03 §8 "Where the player reads why").
     w.order(hauler, byKind(OrderKind::DropCargo, CargoKind::Mines));
+    w.move();
+    CHECK(w.v(hauler).orders.empty());
+    CHECK_FALSE(w.logged(kA, "Unable to Drop Cargo"));
+    w.order(hauler, byKind(OrderKind::DropCargo, CargoKind::Mines));
+    w.explainFailedOrders = true;
     w.move();
     CHECK(w.logged(kA, "Unable to Drop Cargo"));
 }
