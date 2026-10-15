@@ -414,6 +414,42 @@ std::vector<int> startingTechLevels(const Rules& r, const GameOptions& o, const 
     return levels;
 }
 
+int networkRandomPlayerCount(int level, Rng& rng) {
+    // Low 1-3, Medium 3-7, High 6-10; any other setting 1 (confirmed: binary).
+    switch (level) {
+        case 0: return rng.rangeInt(1, 3);
+        case 1: return rng.rangeInt(3, 7);
+        case 2: return rng.rangeInt(6, 10);
+        default: return 1;
+    }
+}
+
+std::vector<EmpireSetup> networkRandomPlayers(const Rules& r, int level, bool computers, bool neutrals, size_t empires,
+                                              std::vector<std::string> usedStyles, int racialPoints, Rng& rng) {
+    constexpr size_t kMaxEmpireCount = 20;
+    size_t computerCount = computers ? static_cast<size_t>(networkRandomPlayerCount(level, rng)) : 0;
+    size_t neutralCount = neutrals ? static_cast<size_t>(networkRandomPlayerCount(level, rng)) : 0;
+    neutralCount = std::min<size_t>(neutralCount, kMaxNetworkNeutrals);
+    const size_t room = empires < kMaxEmpireCount ? kMaxEmpireCount - empires : 0;
+    computerCount = std::min(computerCount, room);
+    neutralCount = std::min(neutralCount, room - computerCount);
+    std::vector<EmpireSetup> out;
+    for (const bool neutral : {false, true}) {
+        const size_t count = neutral ? neutralCount : computerCount;
+        for (const std::string& folder : ai::randomRacePresets(r, static_cast<int>(count), neutral, usedStyles, rng)) {
+            const ruleset::RacePreset* p = findPreset(r, folder);
+            if (!p) continue;
+            EmpireSetup e;
+            e.preset = folder;
+            e.customRace = ai::randomPlayerRace(r, *p, racialPoints, rng);
+            e.kind = neutral ? PlayerKind::Neutral : PlayerKind::Computer;
+            usedStyles.push_back(folder);
+            out.push_back(std::move(e));
+        }
+    }
+    return out;
+}
+
 std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup& setup, const StartExtras& extras) {
     if (setup.empires.empty()) return std::unexpected("A game needs at least one empire.");
     GameState s;

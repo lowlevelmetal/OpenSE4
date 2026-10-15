@@ -21,6 +21,7 @@
 #include "server/setup_file.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <charconv>
@@ -72,6 +73,12 @@ Network game options:
   --no-lan-discovery     Do not answer LAN game searches (UDP port 6716)
   --players=N            Human player slots (default 2)
   --ai=N                 Computer empires (default 0)
+  --random-ai=LEVEL      Random computer players join as the game starts: low (1-3),
+                         medium (3-7) or high (6-10), as a game hosted over TCP/IP
+                         rolls them in the original (spec 05 §9.4)
+  --random-neutrals=LEVEL
+                         Random neutral players too, the same way, at most 5; with
+                         --random-ai, the same level (one serves both)
   --ai=MOD:PLAYER        Every computer empire is played by this script player of
                          a mod the game uses ([[ai.players]], docs/sdk/ai-protocol.md);
                          "builtin" for the built-in AI; "external:N" for the external
@@ -429,7 +436,7 @@ int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
                              "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key", "mod", "mods-dir", "bot-port",
-                             "bot-bind", "bot-token", "bot-timeout"},
+                             "bot-bind", "bot-token", "bot-timeout", "random-ai", "random-neutrals"},
                             {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version", "no-bundled-mods"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
@@ -501,6 +508,19 @@ int runServer(std::span<char*> args) {
     cfg.setup.options.quadrantSize = static_cast<int>(*quadrantSize);
     cfg.setup.options.quadrantType = o.get("quadrant");
     cfg.setup.options.simultaneous = true;  // a network host runs simultaneous turns unless --turn-based (docs/MULTIPLAYER.md)
+    // Random players (spec 05 §9.4): one level serves both kinds.
+    for (const char* key : {"random-ai", "random-neutrals"}) {
+        if (!o.has(key)) continue;
+        static constexpr std::array<std::string_view, 3> kLevels{"low", "medium", "high"};
+        const std::string v = o.get(key);
+        const auto at = std::find(kLevels.begin(), kLevels.end(), v);
+        if (at == kLevels.end()) return fail(std::format("--{} must be low, medium or high, not '{}'", key, v), 2);
+        const int level = static_cast<int>(at - kLevels.begin());
+        if ((cfg.randomComputers || cfg.randomNeutrals) && level != cfg.randomPlayersLevel)
+            return fail("--random-ai and --random-neutrals take the same level: one serves both", 2);
+        cfg.randomPlayersLevel = level;
+        (std::string_view(key) == "random-ai" ? cfg.randomComputers : cfg.randomNeutrals) = true;
+    }
     std::vector<game::EmpireSetup> computers(static_cast<size_t>(*ai));
 
     if (o.has("setup")) {

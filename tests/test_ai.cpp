@@ -21,9 +21,11 @@
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/serialize.hpp"
+#include "game/setup.hpp"
 #include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
+#include "net/host.hpp"
 
 #include <doctest/doctest.h>
 
@@ -428,18 +430,89 @@ TEST_CASE("ai: random races fill the personality groups toward their shares") {
     Rng rng(5);
     // Empty game: both groups at 0 %, the lowest group wins. Then group 1 is at
     // 50 % of two empires, so group 2 (0 %) comes next; then group 1 again.
-    const auto computers = ai::randomComputerPresets(rules, 1, false, rng);
+    const auto computers = ai::randomRacePresets(rules, 5, false, {}, rng);
     REQUIRE(computers.size() == 4);  // races are never drawn twice: Omega is neutral
     CHECK((computers[0] == "Alpha" || computers[0] == "Beta"));
     CHECK(computers[1] == "Gamma");
     CHECK((computers[2] == "Alpha" || computers[2] == "Beta"));
     CHECK(computers[2] != computers[0]);
     CHECK(computers[3] == "Delta");  // no qualifying group has a race left: any unused race
-    const auto neutrals = ai::randomComputerPresets(rules, 0, true, rng);
+    const auto neutrals = ai::randomRacePresets(rules, 1, true, {}, rng);
     CHECK(neutrals == std::vector<std::string>{"Omega"});
     // A race already in the game is never drawn.
     const ruleset::RacePreset* pick = ai::pickRandomRace(rules, rng, false, {"Alpha", "Beta", "Gamma", "Delta"});
     CHECK(pick == nullptr);
+}
+
+TEST_CASE("setup: a game hosted over TCP/IP rolls its random players from fixed ranges, at most 5 neutral ones (spec 05 §9.4)") {
+    // Low 1-3, Medium 3-7, High 6-10, anything else 1 (confirmed: binary).
+    std::map<int, std::pair<int, int>> seen;
+    for (uint64_t seed = 1; seed <= 200; ++seed) {
+        Rng rng(seed);
+        for (int level : {0, 1, 2, 7}) {
+            const int n = networkRandomPlayerCount(level, rng);
+            auto [it, fresh] = seen.try_emplace(level, n, n);
+            it->second.first = std::min(it->second.first, n);
+            it->second.second = std::max(it->second.second, n);
+        }
+    }
+    CHECK(seen[0] == std::pair{1, 3});
+    CHECK(seen[1] == std::pair{3, 7});
+    CHECK(seen[2] == std::pair{6, 10});
+    CHECK(seen[7] == std::pair{1, 1});
+
+    TempTree t("network_random");
+    for (int i = 0; i < 12; ++i) {
+        t.write(std::format("Pictures/Races/Race{0}/Race{0}_AI_General.txt", i), std::format("Name := Racer{}\n", i));
+        t.write(std::format("Pictures/Races/Race{0}/Race{0}_AI_Settings.txt", i), "Personality Group := 0\n");
+    }
+    for (int i = 0; i < 8; ++i) t.write(std::format("Pictures/RaceNeutral/Calm{0}/Calm{0}_AI_General.txt", i), std::format("Name := Calm{}\n", i));
+    const Rules rules{buildEngineRuleset(), t.root};
+    for (uint64_t seed = 1; seed <= 10; ++seed) {
+        Rng rng(seed);
+        const auto out = networkRandomPlayers(rules, 2, true, true, 1, {"Race0"}, 2000, rng);
+        int computers = 0, neutrals = 0;
+        for (const EmpireSetup& e : out) {
+            CHECK(e.preset != "Race0");   // not a race already in the game
+            CHECK(e.customRace.has_value());
+            computers += e.kind == PlayerKind::Computer;
+            neutrals += e.kind == PlayerKind::Neutral;
+        }
+        CHECK(computers >= 6);
+        CHECK(computers <= 10);
+        CHECK(neutrals == kMaxNetworkNeutrals);   // 6 to 10 drawn: capped at 5
+    }
+    // At most 20 empires: the computers first.
+    Rng rng(3);
+    const auto full = networkRandomPlayers(rules, 2, true, true, 17, {}, 2000, rng);
+    CHECK(full.size() == 3);
+    for (const EmpireSetup& e : full) CHECK(e.kind == PlayerKind::Computer);
+
+    // The network host adds them as the game starts, each with a slot of its own.
+    net::HostConfig cfg;
+    cfg.port = 0;
+    cfg.humanSlots = 1;
+    cfg.localPlayer = net::LocalPlayer{"host", "", {}};
+    cfg.upnp.enabled = false;
+    cfg.lanDiscovery = false;
+    cfg.setup.seed = 11;
+    cfg.setup.options.systemCount = 30;
+    cfg.randomNeutrals = true;
+    cfg.randomPlayersLevel = 0;
+    net::HostSession host(rules, cfg);
+    REQUIRE(host.start().has_value());
+    REQUIRE(host.startGame(true).has_value());
+    REQUIRE(host.state() != nullptr);
+    const GameState& s = *host.state();
+    REQUIRE(s.empires.size() >= 2);
+    REQUIRE(s.empires.size() <= 4);
+    CHECK(s.empires[0].kind == PlayerKind::Human);
+    for (size_t i = 1; i < s.empires.size(); ++i) {
+        CHECK(s.empires[i].kind == PlayerKind::Neutral);
+        REQUIRE(s.options.randomAiPlayers.size() > i);
+        CHECK(s.options.randomAiPlayers[i] == 1);
+    }
+    CHECK(host.lobby().slots.size() == s.empires.size());
 }
 
 TEST_CASE("ai: a random computer player's race uses the Race Opt of the racial-point level") {
@@ -5231,7 +5304,10 @@ TEST_CASE("ai: a computer player starts with its AI strategies, else the data se
     CHECK(names(s.empire(EmpireId{0u}).strategies) == dataSet);  // a human
     CHECK(names(s.empire(EmpireId{1u}).strategies) == fromAi);   // the table's, in its order, not added to the data set's
     CHECK(names(s.empire(EmpireId{2u}).strategies) == fromAi);   // a neutral too
-    CHECK(names(s.empire(EmpireId{3u}).strategies) == fromFile); // an empire file's list comes whole
+    // A computer player's are replaced by its AI table, whatever its empire
+    // file brought (spec 08 §11.1 Q24, confirmed: binary).
+    CHECK(names(s.empire(EmpireId{3u}).strategies) == fromAi);
+    CHECK(names(s.empire(EmpireId{3u}).strategies) != fromFile);
     for (const Empire& e : s.empires) {
         CHECK(e.designTypes == r.data().names.designTypes);
         CHECK(e.colonyTypes == r.data().names.colonyTypes);

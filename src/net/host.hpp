@@ -56,6 +56,13 @@ struct HostConfig {
     int humanSlots = 2;                // human players, the local player included
     std::optional<LocalPlayer> localPlayer;
     game::GameSetup setup;             // seed and options; the empires come from the lobby
+    // Random computer and neutral players, added when the game starts with
+    // the counts of a game hosted over TCP/IP (game::networkRandomPlayers,
+    // spec 05 §9.4): `randomPlayersLevel` 0 Low, 1 Medium, 2 High serves
+    // both. Off by default: OpenSE4's lobby adds computer empires itself.
+    bool randomComputers = false;
+    bool randomNeutrals = false;
+    int randomPlayersLevel = 1;
     std::string joinPassword;          // the password needed to join; empty: open game
     std::string masterPassword;        // the master password: grants remote admin rights (empty: none)
     std::string masterPasswordVerifier;  // instead: its verifier in this game (net::passwordVerifier, with gameId)

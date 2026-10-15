@@ -955,8 +955,14 @@ question 79).
   - Each kind draws a count uniformly in [`Minimum … Player <L> Setting`, `Maximum … Player
     <L> Setting`], with the `Computer` or `Neutral` keys. Computer players are added
     first, and the game never exceeds 20 empires.
-  - A game set up in the multiplayer lobby uses fixed ranges instead: Low 1–3, Medium 3–7,
-    High 6–10, with at most 5 neutral players.
+  - A game hosted over TCP/IP adds its random players when the host generates the first
+    turn, not at Begin Game, from fixed ranges instead: Low 1–3, Medium 3–7, High 6–10 (1 if
+    the setting is none of these), for both kinds; the neutrals are then capped at 5, and both
+    kinds so that the game has at most 20 empires (confirmed: binary, 2026-10-14). Quick Start
+    caps its computer players at 9 (spec 01 §2.1). OpenSE4's network lobby is its own design
+    and had no random players; since 2026-10-14 its Host form and `opense4-server`
+    (`--random-ai`, `--random-neutrals`) offer them, off by default, rolled by this rule as
+    the game starts (`game::networkRandomPlayers`, `HostSession::startGame`).
 - **Random race choice** (confirmed: binary):
   - Races already used by an empire in the game are never drawn.
   - A computer player first picks a personality group. For each group N from 1 to `Random

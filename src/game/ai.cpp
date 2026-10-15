@@ -1402,16 +1402,9 @@ Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int rac
     return race;
 }
 
-std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool neutral, Rng& rng) {
-    static constexpr std::array<std::string_view, 3> kLevels{"Low", "Medium", "High"};
-    static constexpr std::array<int64_t, 3> kMin{1, 3, 6}, kMax{3, 7, 10};  // our fallbacks
-    const size_t level = static_cast<size_t>(std::clamp(setting, 0, 2));
-    const std::string_view kind = neutral ? "Neutral" : "Computer";
-    const int64_t lo = r.setting(std::format("Minimum {} Player {} Setting", kind, kLevels[level]), kMin[level]);
-    const int64_t hi = r.setting(std::format("Maximum {} Player {} Setting", kind, kLevels[level]), kMax[level]);
-    const int64_t count = rng.range(std::max<int64_t>(0, lo), std::max<int64_t>({0, lo, hi}));
-    std::vector<std::string> out, used;
-    for (int64_t n = 0; n < count; ++n) {
+std::vector<std::string> randomRacePresets(const Rules& r, int count, bool neutral, std::vector<std::string> used, Rng& rng) {
+    std::vector<std::string> out;
+    for (int n = 0; n < count; ++n) {
         const ruleset::RacePreset* p = pickRandomRace(r, rng, neutral, used);
         if (!p) break;
         used.push_back(p->folder);
