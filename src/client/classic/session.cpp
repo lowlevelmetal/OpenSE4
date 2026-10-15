@@ -181,6 +181,7 @@ bool ClassicSession::myTurn() const {
 
 const std::vector<game::EntryQuestion>& ClassicSession::questions() const {
     static const std::vector<game::EntryQuestion> none;
+    if (!entryStop_.empty()) return entryStop_;
     return myTurn() ? state_.playerTurn.questions : none;
 }
 
@@ -434,6 +435,18 @@ std::expected<bool, std::string> ClassicSession::masterLoginMatches(std::string_
 }
 
 void ClassicSession::answer(bool enter) {
+    if (!entryStop_.empty()) {
+        // The call stopped at the question: made again with the answer, it
+        // carries the group on (or fails its order) and then the rest of the
+        // turn's start (spec 03 §6.2, spec 06 §2.4).
+        if (call_ == Call::None) return;
+        entryStop_.clear();
+        game::BattleAnswer a;
+        a.enter = enter;
+        answers_.push_back(std::move(a));
+        runCall();
+        return;
+    }
     if (questions().empty()) return;
     const game::EntryQuestion q = questions().front();  // the answer drops it (applyLive, or issue() on a network copy)
     issue(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, enter, q.tagged});
@@ -619,6 +632,7 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
     answers_.clear();
     fought_.clear();
     battle_.reset();
+    entryStop_.clear();
     noteMovesBefore(call);
     runCall();
 }
@@ -770,6 +784,13 @@ void ClassicSession::finishCall(game::TurnResult res) {
         // (spec 06 §2.4 "Order"), and the call made again hands on the rest.
         queueMoves(res, call_ == Call::EndTurn || call_ == Call::Resume, true);
         callBefore_.clear();
+        if (res.battle->kind == game::BattleQuestion::Kind::Enter && res.battle->entry) {
+            // The Attack Sector question at the start of the player's turn: asked now (questions()).
+            entryStop_ = {*res.battle->entry};
+            log::info("The Attack Sector question for system {} ({}, {}) stops the turn's start", res.battle->where.system.value,
+                      res.battle->where.sector.x, res.battle->where.sector.y);
+            return;
+        }
         // The call stopped at a battle (or ground fight) to show; the game is as it was.
         battle_ = std::move(res.battle);
         log::info("A battle at system {} ({}, {}) stops the turn to be shown ({} human side(s))", battle_->where.system.value,
@@ -872,6 +893,7 @@ void ClassicSession::dropCall(std::string_view why) {
     answers_.clear();
     fought_.clear();
     battle_.reset();
+    entryStop_.clear();
     if (tactical_ && tactical_->kind == TacticalFight::Kind::Game) tactical_.reset();
     ++revision_;
 }
@@ -880,6 +902,7 @@ void ClassicSession::answerBattle(game::BattleAnswer answer) {
     if (!battle_ || call_ == Call::None) return;
     answers_.push_back(std::move(answer));
     battle_.reset();
+    entryStop_.clear();
     runCall();
 }
 
@@ -1098,6 +1121,7 @@ void ClassicSession::replaceState(game::GameState s) {
     strategic_.clear();
     call_ = Call::None;
     battle_.reset();
+    entryStop_.clear();
     answers_.clear();
     callOrders_.clear();
     tactical_.reset();

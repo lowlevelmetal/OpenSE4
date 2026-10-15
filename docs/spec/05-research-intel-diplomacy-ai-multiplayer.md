@@ -3607,7 +3607,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - OpenSE4 extensions, engine choice stands: `processTurn` for a turn-based game (orders
       given in advance, a missing human played by the computer) and an Attack Sector
       question kept open in the game. The original asks its questions at once, in a window,
-      during the human's own turn.
+      during the human's own turn; since 2026-10-14 a local or hotseat game does too at the
+      start of the turn, the turn's start stopping at the question (spec 03 §19 Q55), and the
+      question stays open in the game only on a network or e-mail game's host.
 33. **Turn-based games on different machines** (§9.1, §9.5): closed as an OpenSE4
     extension; engine choice stands. The original has no host for turn-based games: the
     save file passes from player to player, the computer players' turns run at once on the

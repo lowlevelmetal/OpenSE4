@@ -157,7 +157,10 @@ public:
     bool myTurn() const;
     // Turn-based games: moves of the player's ships that stopped before a
     // sector with enemies, oldest first; answer() gives the Attack Sector
-    // answer to the first (spec 03 §6.2).
+    // answer to the first (spec 03 §6.2). At the start of the player's turn
+    // in a local or hotseat game the call stops at the question, as the
+    // original's pass waits for it (game::BattleQuestion::Kind::Enter): it is
+    // the only question then, and the answer carries the call on.
     const std::vector<game::EntryQuestion>& questions() const;
     void answer(bool enter);
     // Battles for the local player to watch in the Strategic Combat window
@@ -541,6 +544,8 @@ private:
     std::vector<game::EmpireOrders> callOrders_;   // Process: the humans' (already applied) orders
     size_t callBattles_ = 0;                  // GameState::combats before the call
     std::vector<game::BattleAnswer> answers_;
+    // The Attack Sector question that stopped the call under way (questions()).
+    std::vector<game::EntryQuestion> entryStop_;
     game::CommandResult issued_;              // the result of the last Issue call that finished
     std::optional<game::BattleQuestion> battle_;
     std::unique_ptr<TacticalFight> tactical_;

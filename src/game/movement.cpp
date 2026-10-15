@@ -22,6 +22,7 @@
 
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
+#include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
@@ -33,6 +34,7 @@
 #include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
+#include "game/turn_internal.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
@@ -2255,6 +2257,26 @@ private:
         const EntryQuestion q = g.tagged ? EntryQuestion{{}, {}, next, live_->tagged} : EntryQuestion{g.fleet.valid() ? VehicleId{} : g.lead, g.fleet, next, {}};
         if (live_->allowed && *live_->allowed == q) return false;
         if (!enemiesAt(g.owner, next)) return false;
+        // At the start of the player's turn the pass waits for the answer: a
+        // call that stops asks now, and the call made again with the answer
+        // carries it out here, before any later group moves.
+        if (live_->stops && ctx_.battles && ctx_.battles->answers) {
+            TurnContext::Battles& b = *ctx_.battles;
+            if (b.next >= b.answers->size()) {
+                BattleQuestion stop;
+                stop.kind = BattleQuestion::Kind::Enter;
+                stop.where = next;
+                stop.humans = {g.owner};
+                stop.participants = {g.owner};
+                stop.index = b.next;
+                stop.entry = q;
+                throw game::detail::BattleQuestionRaised{std::move(stop), ctx_.liveSteps, ctx_.messages};
+            }
+            if ((*b.answers)[b.next++].enter.value_or(true)) return false;
+            // Declined: the order fails, as the answer given later does (cmd::EnterSector).
+            (void)apply(r_, s_, g.owner, cmd::EnterSector{q.vehicle, q.fleet, q.where, false, q.tagged});
+            return true;
+        }
         if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);
         return true;
     }

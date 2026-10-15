@@ -368,7 +368,10 @@ The host runs the game. Choose "Turn-based" as the turn style in the host form, 
 - **Attack Sector questions.** When a move stops before a sector with enemy forces, the
   player is asked whether to enter it (spec 03 §6.2). The question is part of the game
   state. It survives a reconnect, a saved game and a host restart, and the other players
-  never see it (inferred).
+  never see it (inferred). At the start of the player's turn the host does not wait for the
+  answer in the middle of carrying out the orders: the groups after the asking one carry out
+  theirs, and the question waits in the game. The original, and OpenSE4 on one computer, ask
+  it there and move the later groups only after it (spec 03 §19 Q55).
 - **Other players** get their view of the game each time the turn passes to the next
   player. A player who took part in a battle fought in someone else's turn gets their
   view at once, and can watch the battle (inferred). The others see nothing of the turn

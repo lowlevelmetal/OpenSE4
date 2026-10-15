@@ -1813,6 +1813,9 @@ cells sit inside it after a margin:
     turn in the game's object order, vehicles and colonies alike: it is selected (§2.7: its
     report opened, its orders lit, the yellow marks on its square), then its run is carried
     out and animated, and the next object is selected right after its last square (observed).
+    An Attack Sector question in a run is asked in its step, so the pass waits for the answer
+    and the next object acts only once the group has entered (and fought) or its order has
+    failed (confirmed: binary; spec 03 §19 Q55).
     Vehicles that moved with an earlier group of the pass (a fleet's members) are skipped. An
     order given during the turn (to the selected vehicle, a fleet or the tagged vehicles, by
     any of the ways of §2.7) is one run, the tagged vehicles one group moving together.
@@ -1961,7 +1964,12 @@ cells sit inside it after a margin:
     (`ShipGlides::release`, the game still holding them where they were). The call made again
     with the answer makes the same steps again first, and the session hands on only the rest,
     shown after the battle (since 2026-10-14; before, the battle came first and all the
-    call's moves after it).
+    call's moves after it). An Attack Sector question at the start of the player's turn stops
+    the call in the same way in a local or hotseat game (`BattleQuestion::Kind::Enter`, spec 03
+    §19 Q55): the moves before it are shown, the question is asked (`ClassicSession::questions`,
+    the call's stop), and the answer carries the call on, the groups after it moving only then.
+    A network or e-mail game's host does not wait for it (OpenSE4's own, docs/PARITY_GAPS.md):
+    the later groups' moves come with the player's new state, and the question after them.
 
     Whatever the call opens waits for these glides: the battles to watch, the endings, the
     questions and the Log of a turn's start (§2.7), and a question an order given during the
@@ -2459,7 +2467,10 @@ this order (`turnStartGate`, `client/classic/turn_start.hpp`; `ClassicMode`): fi
 of the shown system glide (§2.4 "Moves as they are made"), then the battles to watch (a
 network or e-mail game's, after the turn, §1.10.5), the endings, the questions and the
 picker, and the Log last, each waiting for the ones before it; since 2026-10-14 the message
-boxes come in their place among the moves, as the original's (§2.4 "Order"). Before, the Log
+boxes come in their place among the moves, as the original's (§2.4 "Order"), and so does an
+Attack Sector question of the turn's start in a local or hotseat game: the turn's start stops
+at it, the moves before it are shown, and the groups after it move once it is answered (spec 03
+§19 Q55). Before, the Log
 opened at once, the ships gliding under it, and a question or the picker waited for the Log to
 be closed. Since 2026-10-14 a battle that stops the engine call comes after the moves that
 led to it, as the original's: the moves the call made before the stop are shown first, the

@@ -354,6 +354,7 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     movement::LiveMove all;
     all.empire = e;
     all.ask = control == Control::Player;
+    all.stops = all.ask;
     carryOut(lc, all);
     // 4. The destruction check comes now (spec 05 §6, spec 06 §7 Q99,
     // confirmed: binary). A computer player's turn then ends. A human found

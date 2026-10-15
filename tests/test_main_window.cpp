@@ -916,6 +916,62 @@ TEST_CASE("main window: a battle that stops the call comes after the moves that 
     }
 }
 
+TEST_CASE("main window: at a turn's start the session asks the Attack Sector question in its place, and the groups after it move then (spec 06 §2.4)") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);
+    start.options.simultaneous = false;
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod", "Test Laser"});
+    const int dx = home.sector.x > 6 ? -1 : 1;
+    const int dy = home.sector.y > 6 ? -1 : 1;
+    Vehicle& first = addTestVehicle(start, *rules, runner, home);
+    first.supply = 1000;
+    const VehicleId ship = first.id;
+    Vehicle& second = addTestVehicle(start, *rules, runner, home);
+    second.supply = 1000;
+    const VehicleId other = second.id;
+    // Another empire's armed ship one square along the row; orders carried over to our next turn.
+    const Location enemyAt{home.system, Sector{home.sector.x + dx, home.sector.y}};
+    const DesignId picket = addTestDesign(start, *rules, EmpireId{1u}, "Picket", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Supply Pod", "Test Laser"});
+    addTestVehicle(start, *rules, picket, enemyAt).supply = 1000;
+    for (Empire& e : start.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    // Each ship first uses up its movement (two squares) this turn; the orders given then wait for the next.
+    const Location up{home.system, Sector{home.sector.x, home.sector.y - 2 * dy}};
+    const Location back{home.system, Sector{home.sector.x - 2 * dx, home.sector.y}};
+    const Location away{home.system, Sector{home.sector.x - 2 * dx, home.sector.y + 2 * dy}};
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, up}}, false}).ok);
+    REQUIRE(session.issue(cmd::SetOrders{other, {}, {Order{OrderKind::MoveTo, back}}, false}).ok);
+    REQUIRE(session.state().vehicle(ship)->location == up);
+    REQUIRE(session.state().vehicle(other)->location == back);
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, enemyAt}}, false}).ok);
+    REQUIRE(session.issue(cmd::SetOrders{other, {}, {Order{OrderKind::MoveTo, away}}, false}).ok);
+    REQUIRE(session.questions().empty());
+    (void)session.takeMoves();
+    session.endTurn();
+    // The turn's start stops at the question: asked now, the game as before the call.
+    REQUIRE(session.questions().size() == 1);
+    CHECK(session.questions().front().vehicle == ship);
+    CHECK(session.questions().front().where == enemyAt);
+    CHECK(session.callUnderWay());
+    const std::vector<ClassicSession::ShownMove> before = session.takeMoves();
+    CHECK(std::none_of(before.begin(), before.end(), [&](const ClassicSession::ShownMove& m) {
+        return m.step && std::find(m.step->members.begin(), m.step->members.end(), other) != m.step->members.end();
+    }));
+    // Declined: the call goes on, and the other ship's moves come after.
+    session.answer(false);
+    CHECK_FALSE(session.callUnderWay());
+    CHECK(session.questions().empty());
+    CHECK(session.state().vehicle(ship)->orders.empty());
+    const std::vector<ClassicSession::ShownMove> after = session.takeMoves();
+    CHECK(std::any_of(after.begin(), after.end(), [&](const ClassicSession::ShownMove& m) {
+        return m.step && m.original && std::find(m.step->members.begin(), m.step->members.end(), other) != m.step->members.end();
+    }));
+}
+
 TEST_CASE("main window: the movement log replay's keys") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

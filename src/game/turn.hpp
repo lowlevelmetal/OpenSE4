@@ -88,15 +88,25 @@ struct BattleAnswer {
     // Without them (nullopt) those players' sides follow their strategies in
     // this battle, as the window showed them (docs/sdk/ai-protocol.md §8).
     std::optional<std::vector<JournalEntry>> decisions;
+    // The answer to an Enter stop (BattleQuestion::Kind::Enter): whether the
+    // group enters the sector; the battle fields are unused then.
+    std::optional<bool> enter;
 };
 
 // A stop: a battle about to start with human participants (in a simultaneous
-// game that shows battles, any battle), or a ground fight to show.
+// game that shows battles, any battle), a ground fight to show, or the
+// Attack Sector question of a group carrying out its orders at the start of
+// a human player's turn.
 struct BattleQuestion {
     enum class Kind : uint8_t {
         Choose,   // Tactical or Strategic: the Strategic Combat window in its question form
         Show,     // the Strategic Combat window with Begin and Close; the strategies fight it while it shows it
         Ground,   // the colony owner's end-of-turn ground combat: the notice, then the Ground Combat window
+        // The Attack Sector question (`entry`) of a group at the start of a
+        // human player's turn: the original's pass waits for the answer, and
+        // the groups after it move only then (spec 03 §6.2, spec 06 §2.4).
+        // Answered with BattleAnswer::enter.
+        Enter,
     };
     Kind kind = Kind::Choose;
     Location where;
@@ -109,6 +119,8 @@ struct BattleQuestion {
     size_t index = 0;                             // its place among the call's stops
     // Ground: the fight as the engine fought it (the answer only says it was shown).
     std::optional<GroundCombat> ground;
+    // Enter: the question.
+    std::optional<EntryQuestion> entry;
 };
 
 // Whether battles ask their human participants: turn-based games without
