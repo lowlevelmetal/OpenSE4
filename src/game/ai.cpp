@@ -74,6 +74,18 @@ int64_t bestDamage(const Rules& r, const DesignEntry& en) {
     return best;
 }
 
+// The ratings (without the + 1) of every object in a sector that is not ours, whoever owns it.
+int64_t foreignRatingsAt(const Rules& r, const GameState& s, EmpireId us, Location where) {
+    int64_t sum = 0;
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.owner != us && v.location == where) sum += vehicleRating(r, s, v);
+    return sum;
+}
+
+} // namespace
+
+// ---- Situation ---------------------------------------------------------------------------------
+
 // The planet's defence in an attack candidate's value (spec 05 §7.2,
 // confirmed: binary), in tenths: its colony's Planet - Shield Generation
 // total / 5, its population in millions div 100, and for every unit stack in
@@ -86,17 +98,18 @@ int64_t planetDefence(const Rules& r, const GameState& s, const Colony& c) {
     return tenths;
 }
 
-// The ratings (without the + 1) of every object in a sector that is not ours, whoever owns it.
-int64_t foreignRatingsAt(const Rules& r, const GameState& s, EmpireId us, Location where) {
-    int64_t sum = 0;
-    for (const Vehicle& v : s.vehicles)
-        if (v.count > 0 && v.owner != us && v.location == where) sum += vehicleRating(r, s, v);
-    return sum;
+std::vector<const Vehicle*> ministersFleet(const GameState& s, const Fleet& f) {
+    std::vector<const Vehicle*> out;
+    for (VehicleId id : fleetMembersAt(s, f))
+        if (const Vehicle* v = s.vehicle(id)) out.push_back(v);
+    std::sort(out.begin(), out.end(), [](const Vehicle* a, const Vehicle* b) { return std::pair(a->arrival, a->id) < std::pair(b->arrival, b->id); });
+    return out;
 }
 
-} // namespace
-
-// ---- Situation ---------------------------------------------------------------------------------
+const Vehicle* ministersLeader(const GameState& s, const Fleet& f) {
+    const std::vector<const Vehicle*> members = ministersFleet(s, f);
+    return members.empty() ? nullptr : members.front();
+}
 
 bool hostileTo(const Empire& e, EmpireId other) {
     if (!other.valid() || other == e.id || other.index() >= e.relations.size()) return false;
@@ -360,6 +373,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         it->latest = t;
     }
     sortDefendEntries(sit.defendEntries, false);
+    for (size_t i = 0; i < sit.defendEntries.size(); ++i) sit.defendEntries[i].index = i;
     const size_t maxDefend = static_cast<size_t>(std::max(0, prof.settings.maxSystemsToDefend));
     for (const DefendEntry& d : sit.defendEntries)
         if (sit.defend.size() < maxDefend && std::find(sit.defend.begin(), sit.defend.end(), d.where.system) == sit.defend.end())

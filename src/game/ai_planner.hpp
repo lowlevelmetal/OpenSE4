@@ -19,12 +19,53 @@
 #include "game/ai_data.hpp"
 #include "game/design.hpp"
 
+#include <cstddef>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace opense4::game::ai::detail {
+
+// The ministers' sort (spec 05 §7.2 *Attack candidates*, *Defend list*, §7.5
+// *Colonization*, attack routine; confirmed: binary): a quicksort that is not
+// stable, its pivot the middle entry of each part, so entries that tie on
+// every key come out in an order that depends on how the list was built.
+// `cmp(a, b)` is negative when a goes first, positive when b does, 0 on a
+// tie. The partition is the usual one of such a sort: from both ends toward
+// the pivot's value, swapping, then the left part sorted and the right part
+// taken in turn (inferred, question 85).
+template <class T, class Cmp>
+void ministersSortRange(std::vector<T>& v, std::ptrdiff_t lo, std::ptrdiff_t hi, Cmp& cmp) {
+    std::ptrdiff_t i = lo;
+    do {
+        i = lo;
+        std::ptrdiff_t j = hi;
+        const T pivot = v[static_cast<size_t>((lo + hi) / 2)];
+        do {
+            while (cmp(v[static_cast<size_t>(i)], pivot) < 0) ++i;
+            while (cmp(v[static_cast<size_t>(j)], pivot) > 0) --j;
+            if (i <= j) {
+                std::swap(v[static_cast<size_t>(i)], v[static_cast<size_t>(j)]);
+                ++i;
+                --j;
+            }
+        } while (i <= j);
+        if (lo < j) ministersSortRange(v, lo, j, cmp);
+        lo = i;
+    } while (i < hi);
+}
+template <class T, class Cmp>
+void ministersSort(std::vector<T>& v, Cmp cmp) {
+    if (v.size() > 1) ministersSortRange(v, 0, static_cast<std::ptrdiff_t>(v.size()) - 1, cmp);
+}
+// -1, 0 or 1 for a < b, a == b, a > b.
+template <class T>
+constexpr int threeWay(const T& a, const T& b) {
+    return a < b ? -1 : b < a ? 1 : 0;
+}
 
 enum class Mode : uint8_t {
     Computer,   // a computer player, or a human empire played by the computer: every minister, every object
@@ -94,6 +135,7 @@ struct DefendEntry {
     int64_t ourMaxPopulation = 0;  // our colonies' maximum population in the sector
     bool planetSector = false; // the sector holds a planet (not an asteroid field)
     Threat latest;             // the entry's latest object
+    size_t index = 0;          // its place in Situation::defendEntries
 };
 // The entries' order (spec 05 §7.2): fewest jumps, our colonies' maximum
 // population, planet sectors first (the weaker threat first among them),
@@ -267,6 +309,15 @@ public:
     std::set<FleetId> busyFleets;
     std::set<ObjectId> reservedPlanets;   // colonization targets taken this turn
 
+    // ---- What the start-of-turn ministers share during one pass (spec 05 §7.5).
+    // The strength sent so far to each defend-list entry (per sit.defendEntries,
+    // in tenths) and to each attack candidate (by planet): the Fleets, Defense
+    // and Attack ministers add to the same totals.
+    std::vector<int64_t> defendAssigned;
+    std::map<ObjectId, int64_t> candidateAssigned;
+    // The patrol target, worked out once per pass (patrolTarget, ai_military.cpp).
+    std::optional<std::optional<Location>> patrolTargetOnce;
+
 private:
     std::vector<DesignInfo> infos_;
 };
@@ -296,6 +347,19 @@ void planRetrofit(Planner& p);
 void planStellarManipulation(Planner& p);
 
 // ---- Shared helpers ------------------------------------------------------------------------------
+// A fleet as the ministers see it (spec 05 §7.5 `AI_Fleets`, confirmed:
+// binary): its members are the vehicles that carry its tag and stand at its
+// own position, in the order of that system's own object list
+// (Vehicle::arrival); its leader is the first of them, whoever the player
+// chose. A member standing elsewhere is counted nowhere: not as leader, not in
+// the fleet's strength, supply or troops. A fleet with nobody at its position
+// has no leader. The game's own leader (fleetLeader) is the player's choice.
+std::vector<const Vehicle*> ministersFleet(const GameState& s, const Fleet& f);
+const Vehicle* ministersLeader(const GameState& s, const Fleet& f);
+// The planet's defence in an attack candidate's value (spec 05 §7.2), in
+// tenths: its colony's Planet - Shield Generation total / 5, its population
+// in millions div 100, and its units' summed best weapon damage.
+int64_t planetDefence(const Rules& r, const GameState& s, const Colony& c);
 // The maintenance the soft and hard caps compare (spec 05 §7.5 "Budget and
 // maintenance caps", confirmed: binary): the sum over the empire's ships and
 // bases now of each one's maintenance by spec 02 §7, leaving out every
