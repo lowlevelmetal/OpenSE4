@@ -421,14 +421,20 @@ int compareNoCase(std::string_view a, std::string_view b) {
 
 } // namespace
 
-void sortScrapList(const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass) {
-    auto designName = [&](const game::Vehicle* v) -> std::string_view {
-        return v->design.valid() && v->design.index() < s.designs.size() ? std::string_view(s.design(v->design).name) : std::string_view{};
+void sortScrapList(const game::Rules& r, const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass) {
+    // The class key: the design's name compared exactly, by character code;
+    // a unit group has none, so groups come before every ship and base.
+    auto className = [&](const game::Vehicle* v) -> std::string_view {
+        if (!v->design.valid() || v->design.index() >= s.designs.size() || game::isUnitType(game::vehicleType(r, s, *v))) return {};
+        return s.design(v->design).name;
     };
+    // The original's sort is not stable; ours keeps ties in the order they came in.
     std::stable_sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
-        const int first = byClass ? compareNoCase(designName(a), designName(b)) : compareNoCase(a->name, b->name);
+        const int byName = compareNoCase(a->name, b->name);
+        const int byDesign = className(a).compare(className(b));
+        const int first = byClass ? byDesign : byName;
         if (first != 0) return first < 0;
-        return (byClass ? compareNoCase(a->name, b->name) : compareNoCase(designName(a), designName(b))) < 0;
+        return (byClass ? byName : byDesign) < 0;
     });
 }
 

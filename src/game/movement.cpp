@@ -383,16 +383,27 @@ private:
         Group last;
         moveRun_ = {};      // each action is a run of its own (moveTo)
         moveRunSteps_ = 0;
+        // The acting vehicle's points before the action, which its fleet's
+        // members at the fleet's location get back too (spec 03 §6.3 step 4,
+        // confirmed: binary).
+        std::optional<int> actorBefore;
+        FleetId actorFleet;
+        if (const Vehicle* actor = ref.vehicle.valid() ? s_.vehicle(ref.vehicle) : nullptr) {
+            actorBefore = actor->movement;
+            actorFleet = actor->fleet;
+        }
         act(ref, last);
-        for (const auto& [id, before] : actionMovement_) {
+        const Fleet* fleet = actorFleet.valid() ? s_.fleet(actorFleet) : nullptr;
+        for (auto [id, before] : actionMovement_) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
-            // A maximum that fell below the points during the action keeps what
-            // the action left, which stops the vehicle for the turn (§6.3, §6.4).
-            // A unit group's movement is never cut when its maximum drops
-            // (capMovement), so it gets its points back (inferred).
-            const int max = isShipOrBase(vehicleType(r_, s_, *v)) ? turnMovement(r_, s_, *v) : INT_MAX;
-            v->movement = max < before ? std::min(v->movement, max) : before;
+            if (fleet && actorBefore && v->fleet == fleet->id && v->location == fleet->location) before = *actorBefore;
+            // The points come back only when they are not above the current
+            // maximum; otherwise the vehicle keeps what the action left it,
+            // which stops it for the turn (§6.3, §6.4). The same for unit
+            // groups, whose movement left a recompute never cuts (confirmed: binary).
+            const int max = turnMovement(r_, s_, *v);
+            v->movement = max < before ? (isShipOrBase(vehicleType(r_, s_, *v)) ? std::min(v->movement, max) : v->movement) : before;
         }
         actionMovement_.clear();
     }
@@ -878,8 +889,10 @@ private:
     // (carried_), but nothing is left of it for a later turn; otherwise the
     // action ends there.
     Exec encounter(Group& g, const Order& o, bool arrived) {
-        ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
-                 "Another empire is in the system; the orders were cleared (empire options).", where(g), picture(g));
+        // The original clears silently; OpenSE4's "Explain failed orders" says so (spec 03 §6.4).
+        if (ctx_.explainFailedOrders)
+            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
+                     "Another empire is in the system; the orders were cleared (empire options).", where(g), picture(g));
         routes_.erase(routeKey(g));
         clearListsOf(g.members);
         clearListsOf(g.holders);
@@ -1330,8 +1343,11 @@ private:
         });
         const bool enemy = hostilePresentInSystem(g.owner, where(g).system);
         if (!lowSupply && !enemy) return Exec::Wait;
-        ctx_.log(g.owner, LogCategory::Combat, std::format("{}: {}", name(g), enemy ? "enemy sighted" : "supplies low"), "Sentry duty ended.",
-                 where(g), picture(g));
+        // A Sentry ends silently in the original; OpenSE4's "Explain failed
+        // orders" says why (spec 03 §8, confirmed: binary).
+        if (ctx_.explainFailedOrders)
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: {}", name(g), enemy ? "enemy sighted" : "supplies low"), "Sentry duty ended.",
+                     where(g), picture(g));
         return Exec::Done;
     }
 
@@ -1374,7 +1390,8 @@ private:
         const bool stored = !o.vehicle.valid() && !o.object.valid() && !validLocation(s_, o.location);
         if ((live_ && !onlyDrones(g)) || stored) return placeAttack(g, o);
         if (pursuitOver(s_, g.owner, o)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g), picture(g));
+            // Silent in the original; OpenSE4's "Explain failed orders" says so (spec 03 §8).
+            if (ctx_.explainFailedOrders) ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g), picture(g));
             return Exec::Done;
         }
         // A drone sent at a warp point goes through it (an order given before
@@ -1528,8 +1545,10 @@ private:
             if (t != Travel::Arrived) return afterTravel(g, o, t);
         }
         if (remaining(g) <= 0 || immobile(g)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g),
-                     picture(g));
+            // Silent in the original; OpenSE4's "Explain failed orders" says so (spec 03 §8).
+            if (ctx_.explainFailedOrders)
+                ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.",
+                         where(g), picture(g));
             return Exec::Done;
         }
         bool lowered = false;
@@ -1593,7 +1612,9 @@ private:
             const char* why = o.kind == OrderKind::Explore    ? "nothing left to explore"
                               : o.kind == OrderKind::Resupply ? "no reachable resupply depot"
                                                               : "no reachable repair facility";
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g), picture(g));
+            // Nothing is added and nothing said in the original; OpenSE4's
+            // "Explain failed orders" says why (spec 03 §8).
+            if (ctx_.explainFailedOrders) ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g), picture(g));
             return Exec::Removed;
         }
         forEachList(g, [&](std::vector<Order>& list, bool, uint16_t&) {

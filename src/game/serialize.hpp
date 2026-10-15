@@ -149,6 +149,11 @@ class Rules;
 // - The fleets each empire ever created (Empire::fleetsCreated, spec 03 §9,
 //   spec 08 §3.6.12), which the next default fleet name counts from; a
 //   format 10 game reads each empire's fleet count.
+// - Orders to tagged vehicles switching the first one's Repeat over
+//   (cmd::OrderTagged::toggleRepeat, Repeat Orders), and orders given held,
+//   which a turn-based game runs only at the list's next run
+//   (cmd::SetOrders::hold, cmd::OrderTagged::hold, Set Patrol's points; spec
+//   03 §8). A format 10 command reads with neither.
 inline constexpr uint32_t kSaveVersion = 11;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

@@ -208,11 +208,14 @@ game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& 
 // its ability list; satellite groups, minefields and drone groups always;
 // fighter groups never (spec 03 §12, §15).
 bool canSelfDestruct(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
-// The Scrap window's list order (spec 06 §1.3, confirmed: binary): Order By
-// Name (the default) by vehicle name with letter case ignored, then by
-// design name; Order By Class by design name, then by vehicle name
-// (inferred). Ties keep the order they came in.
-void sortScrapList(const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass);
+// The Scrap window's list order (spec 06 §1.3, spec 03 §19 Q84, confirmed:
+// binary): Order By Class by the design name compared exactly (letter case
+// counts, by character code), then by the vehicle's name with letter case
+// ignored; a unit group has no design name for this key, so groups come
+// first. Order By Name (the default) uses the same two keys the other way
+// round. Ties keep the order they came in (ours: the original's sort is not
+// stable).
+void sortScrapList(const game::Rules& r, const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass);
 // The Retrofit picker's designs, "Select New Design" (spec 03 §14,
 // confirmed: binary): the empire's own designs in its design-list order
 // with the vehicle's hull, other than its design, not obsolete and

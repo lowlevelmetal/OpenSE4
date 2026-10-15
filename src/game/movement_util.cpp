@@ -109,7 +109,7 @@ void depotCheck(TurnContext& ctx, Vehicle& v) {
         if (medical > 0)
             for (ObjectId o : planetsAt(s, v.location))
                 if (Colony* c = s.colony(o); c && c->plagueLevel > 0 && medical >= c->plagueLevel && allied(s, v.owner, c->owner))
-                    economy::curePlague(ctx, *c);
+                    economy::curePlague(ctx, *c, v.owner);
     }
     if (resupplyDepotAt(r, s, v.owner, v.location)) refillSupply(r, s, v);
 }
@@ -261,13 +261,12 @@ int64_t movePopulation(std::vector<PopulationGroup>& from, std::vector<Populatio
     return n;
 }
 
-// The owner's race first, then the others by empire id.
-std::vector<EmpireId> racesOf(const std::vector<PopulationGroup>& pop, EmpireId owner) {
+// The races of a population, in their stored order, first to last; the
+// owner's race has no priority (spec 03 §8, §11, confirmed: binary).
+std::vector<EmpireId> racesOf(const std::vector<PopulationGroup>& pop) {
     std::vector<EmpireId> out;
     for (const auto& p : pop)
-        if (p.millions > 0) out.push_back(p.race);
-    std::sort(out.begin(), out.end(), [&](EmpireId a, EmpireId b) { return (a == owner) != (b == owner) ? a == owner : a < b; });
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+        if (p.millions > 0 && std::find(out.begin(), out.end(), p.race) == out.end()) out.push_back(p.race);
     return out;
 }
 
@@ -359,7 +358,7 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
             return;
         }
         if (src.totalPopulation() > 0) offered = true;
-        for (EmpireId race : racesOf(src.population, owner)) {
+        for (EmpireId race : racesOf(src.population)) {
             v = s.vehicle(id);
             const int64_t n = movePopulation(src.population, v->cargo.population, race, std::min(want, freeCargo(r, s, *v) / mass));
             want -= n;
@@ -383,7 +382,7 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         }
         // A colony keeps at least 1M people (spec 03 §11).
         if (c->totalPopulation() > 1) offered = true;
-        for (EmpireId race : racesOf(c->population, owner)) {
+        for (EmpireId race : racesOf(c->population)) {
             v = s.vehicle(id);
             const int64_t spare = std::max<int64_t>(0, c->totalPopulation() - 1);
             const int64_t n = movePopulation(c->population, v->cargo.population, race, std::min({want, spare, freeCargo(r, s, *v) / mass}));
@@ -439,7 +438,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         if (!what.population()) {
             unitsInto(c->cargo, [&] { return colonyFreeCargo(r, s, *c); });
         } else {
-            for (EmpireId race : racesOf(v->cargo.population, owner)) {
+            for (EmpireId race : racesOf(v->cargo.population)) {
                 const int64_t room = std::max<int64_t>(0, maxPopulation(r, s, *c) - c->totalPopulation());
                 const int64_t n = movePopulation(v->cargo.population, c->population, race, std::min(want, room));
                 want -= n;
@@ -469,7 +468,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t
         if (!what.population()) {
             unitsInto(holder->cargo, [&] { return freeCargo(r, s, *holder); });
         } else {
-            for (EmpireId race : racesOf(v->cargo.population, owner)) {
+            for (EmpireId race : racesOf(v->cargo.population)) {
                 const int64_t n = movePopulation(v->cargo.population, holder->cargo.population, race, std::min(want, freeCargo(r, s, *holder) / mass));
                 want -= n;
                 moved += n;

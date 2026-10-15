@@ -6,7 +6,7 @@
 # - With no pick asked for, a click on a sector of a system not explored changes nothing.
 # - Space selects a ship; Change Name refuses a name another object has with the Invalid Name
 #   box, then asks again.
-# - Set Patrol keeps each point until the route is closed, so that nothing runs before then; a
+# - Set Patrol adds each point as it is clicked, and nothing runs before the route is closed; a
 #   click on the ship's own sector closes the route with Repeat on, and a route of one order is
 #   cleared.
 # (docs/BUILDING.md "Input scripts")
@@ -86,16 +86,17 @@ type "Picket Two"
 key Enter
 wait-closed rename
 assert { command = "Rename" }
-# Set Patrol: each point is kept until the route is closed, and in a turn-based game nothing runs
-# before then (spec 03 §8, confirmed: binary): the ship stays while (7,12) is picked. A click on
-# its own sector closes the route: both points go into its list, Repeat goes on, and only then
-# does the list run.
+# Set Patrol: each point is added to the list as it is clicked, and in a turn-based game nothing
+# runs before the route is closed (spec 03 §8, confirmed: binary): the ship stays while (7,12) is
+# picked. A click on its own sector closes the route: Repeat goes on, and only then does the list
+# run.
 key P
 wait-until { picking = "patrol" }
 click sector:7,12
 wait 3
 assert { picking = "patrol" }
-assert { not = { route = true } }
+assert { route = true }
+assert-absent sector:gliding
 screenshot patrol.png
 click sector:selected
 wait 3

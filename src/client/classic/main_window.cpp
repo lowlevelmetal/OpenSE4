@@ -633,7 +633,7 @@ void MainWindow::startPick(UiContext& ui, Pick p, std::string prompt) {
     if (pick_ == Pick::Patrol) abandonPatrol(ui);   // the points picked so far stay in the lists
     pick_ = p;
     pickPrompt_ = std::move(prompt);
-    patrolPoints_.clear();
+    patrolPoints_ = 0;
 }
 
 void MainWindow::startLocationPick(UiContext& ui, Pick p, int slot) {
@@ -902,40 +902,64 @@ std::optional<game::Location> MainWindow::patrolHome(UiContext& ui) const {
 
 std::string MainWindow::patrolPrompt() const {
     // The point by its ordinal, and how to end (the original's: a click on the ship).
-    const size_t n = patrolPoints_.size() + 1;
+    const int n = patrolPoints_ + 1;
     const char* suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th";
     return std::format("Set Patrol: pick the {}{} point; the ship's own sector ends the route", n, suffix);
 }
 
 void MainWindow::addPatrolPoint(UiContext& ui, game::Location where) {
     const std::optional<game::Location> home = patrolHome(ui);
-    // Kept until the route is closed: nothing runs before then (spec 03 §8, confirmed: binary).
-    patrolPoints_.push_back(game::Order{game::OrderKind::MoveTo, where});
+    // Each point is appended at once, held: a turn-based game runs nothing
+    // before the route is closed (spec 03 §8, confirmed: binary). The tags
+    // stay until the route ends.
+    const game::Order move{game::OrderKind::MoveTo, where};
+    if (!tagged_.empty()) {
+        game::cmd::OrderTagged c{tagged_, {move}, false};
+        c.hold = true;
+        if (const game::CommandResult r = ui.session.issue(c); !r.ok) note(ui, r.error);
+    } else {
+        const game::GameState& s = ui.state();
+        for (const OrderOwner& w : orderOwners(ui)) {
+            game::cmd::SetOrders c;
+            c.vehicle = w.vehicle;
+            c.fleet = w.fleet;
+            c.hold = true;
+            if (const game::Fleet* f = s.fleet(w.fleet)) {
+                c.orders = game::fleetOrders(s, *f);
+                c.repeat = game::fleetRepeats(s, *f);
+            } else if (const game::Vehicle* v = s.vehicle(w.vehicle)) {
+                c.orders = v->orders;
+                c.repeat = v->repeatOrders;
+            }
+            c.orders.push_back(move);
+            if (const game::CommandResult r = ui.session.issue(c); !r.ok) note(ui, r.error);
+        }
+    }
+    ++patrolPoints_;
     if (home && where == *home) finishPatrol(ui, true);
     else pickPrompt_ = patrolPrompt();
 }
 
 void MainWindow::finishPatrol(UiContext& ui, bool atHome) {
     pick_ = Pick::None;
-    std::vector<game::Order> points = std::exchange(patrolPoints_, {});
-    if (points.empty()) {
+    if (std::exchange(patrolPoints_, 0) == 0) {
         orderDone();
         return;
     }
-    // The original tests the first list: when it would then hold exactly one
-    // order, a route closed on the object's own sector clears the lists
-    // (every tagged one, as Clear Orders); Enter or a right click (ours)
-    // keeps it as a plain move. Otherwise the points go to each list and
-    // Repeat goes on, the first tagged vehicle's alone, and only then does
-    // the list run, from its first order (spec 03 §8, confirmed: binary).
+    // The original tests the first list: when it holds exactly one order, a
+    // route closed on the object's own sector clears the lists (every tagged
+    // one, as Clear Orders); Enter or a right click (ours) keeps it as a
+    // plain move. Otherwise Repeat goes on, the first tagged vehicle's alone,
+    // and only then does the list run, from its first order (spec 03 §8,
+    // confirmed: binary).
     const auto [firstList, firstRepeat] = firstOwnerList(ui);
-    const bool single = firstList.size() + points.size() == 1;
+    const bool single = firstList.size() == 1;
     if (single && atHome) {
         replaceOrders(ui, {}, false);
         return;
     }
     if (!tagged_.empty()) {
-        giveTagged(ui, std::move(points), !single);
+        giveTagged(ui, {}, !single);
         return;
     }
     const game::GameState& s = ui.state();
@@ -950,37 +974,19 @@ void MainWindow::finishPatrol(UiContext& ui, bool atHome) {
             c.orders = v->orders;
             c.repeat = v->repeatOrders;
         }
-        c.orders.insert(c.orders.end(), points.begin(), points.end());
         if (!single) c.repeat = true;
         if (const game::CommandResult r = ui.session.issue(c); !r.ok) note(ui, r.error);
     }
     orderDone();
 }
 
-void MainWindow::abandonPatrol(UiContext& ui) {
+void MainWindow::abandonPatrol(UiContext&) {
+    // The points picked so far stay in the lists as plain moves, Repeat as it
+    // was, nothing cleared; a turn-based game runs them at the list's next
+    // run (spec 03 §8, confirmed: binary). The original cancels the pick when
+    // another order is given or the turn ends; Esc doing the same is ours.
     pick_ = Pick::None;
-    std::vector<game::Order> points = std::exchange(patrolPoints_, {});
-    if (points.empty()) return;
-    // The points picked so far stay in the lists as plain moves, Repeat as it was.
-    if (!tagged_.empty()) {
-        if (const game::CommandResult r = ui.session.issue(game::cmd::OrderTagged{tagged_, std::move(points), false}); !r.ok) note(ui, r.error);
-        return;
-    }
-    const game::GameState& s = ui.state();
-    for (const OrderOwner& w : orderOwners(ui)) {
-        game::cmd::SetOrders c;
-        c.vehicle = w.vehicle;
-        c.fleet = w.fleet;
-        if (const game::Fleet* f = s.fleet(w.fleet)) {
-            c.orders = game::fleetOrders(s, *f);
-            c.repeat = game::fleetRepeats(s, *f);
-        } else if (const game::Vehicle* v = s.vehicle(w.vehicle)) {
-            c.orders = v->orders;
-            c.repeat = v->repeatOrders;
-        }
-        c.orders.insert(c.orders.end(), points.begin(), points.end());
-        if (const game::CommandResult r = ui.session.issue(c); !r.ok) note(ui, r.error);
-    }
+    patrolPoints_ = 0;
 }
 
 // Load Cargo, Drop Cargo, Launch Units Remotely and Recover Units Remotely
@@ -1532,8 +1538,12 @@ void MainWindow::commandPanel(UiContext& ui) {
         if (clicked) {
             // A left click on any command button plays cmdbtn; End Turn adds endturn when the turn ends (§5.5).
             audio().play("cmdbtn");
-            if (b.screen) ui.open(*b.screen);
-            else ui.requests.endTurn = true;
+            if (b.screen) {
+                ui.open(*b.screen);
+            } else {
+                if (pick_ == Pick::Patrol) abandonPatrol(ui);   // ending the turn cancels a patrol's pick (spec 03 §8)
+                ui.requests.endTurn = true;
+            }
         }
     }
 

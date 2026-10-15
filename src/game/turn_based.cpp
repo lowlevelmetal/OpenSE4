@@ -146,9 +146,12 @@ struct Effects {
 
 void noteEffects(Effects& fx, const GameState& s, EmpireId e, const Command& c) {
     if (const auto* t = std::get_if<cmd::OrderTagged>(&c)) {
-        // The tagged vehicles act at once as one group (spec 03 §8 "Tagged vehicles").
-        fx.move.tagged = taggedVehicles(s, e, t->vehicles);
+        // The tagged vehicles act at once as one group (spec 03 §8 "Tagged
+        // vehicles"), unless the orders are held for the list's next run.
+        if (!t->hold) fx.move.tagged = taggedVehicles(s, e, t->vehicles);
     } else if (const auto* o = std::get_if<cmd::SetOrders>(&c)) {
+        // Held orders run at the list's next run (Set Patrol's points, spec 03 §8).
+        if (o->hold) return;
         // A colony's list runs at once when the player gives it an order,
         // except Use Facility: the immediate run covers vehicle lists only,
         // so that order waits for the colony's next run (spec 03 §8).

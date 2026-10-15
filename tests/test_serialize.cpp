@@ -296,6 +296,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front().planetSize == 2);   // format 10
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).ownList);                          // format 10
+    CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).hold);                             // format 11
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
     // The last command of each kind, found by kind (newer kinds are appended to the samples).
     const auto& all = loaded->commands;
@@ -311,6 +312,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(tagged->orders.size() == 1);
     CHECK(tagged->repeat);
     CHECK(tagged->toggleRepeat);   // save format 11
+    CHECK(tagged->hold);
     const auto* leader = lastCommand<cmd::SetFleetLeader>(all);
     REQUIRE(leader);
     CHECK(leader->fleet == FleetId{46u});

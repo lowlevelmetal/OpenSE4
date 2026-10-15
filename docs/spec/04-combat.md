@@ -1211,7 +1211,7 @@ command exists). The only ways to disengage are:
 - **Design statistics** (confirmed: binary). A design keeps four counters: Number
   Constructed, Number Lost, Number Scrapped and Enemy Tonnage Destroyed (In Service is
   constructed − lost − scrapped). There is no kill counter. A vehicle that self-destructs
-  counts as scrapped, not lost, and so does a colony ship that founds a colony (spec 03 §8;
+  counts as scrapped, not lost (a drone group records nothing; spec 03 §15), and so does a colony ship that founds a colony (spec 03 §8;
   confirmed: binary, 2026-10-14). Units killed count as lost for their design as they die, and
   so do units jettisoned from cargo (spec 03 §8). When a ship or base is destroyed by damage
   (a battle outside the simulator, mines, storms, warp turbulence, events), the units still in

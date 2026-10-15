@@ -5608,10 +5608,12 @@ choices (inferred):
       list. The label reads "Components Available (<group>)"; the mount's name is drawn
       apart, to its right, at x 319.
     - *Names and Create Design:* the Design Name list shows every line of the name file in
-      file order, names in use included; without a file it is empty. When the race names a
-      file that cannot be opened, the designer shows a "Load Error" box saying so and naming
-      the file, and the list is empty (confirmed: binary, 2026-10-14; ours since then, in our
-      own words, when the designer opens; when the box comes is inferred). A design without a name
+      file order, names in use included; without a file it is empty. The list reads the name
+      file each time the Design Name list window opens, from the designer's Design Name
+      button, and only then: when the empire has a names file set that cannot be opened, a
+      "Load Error" box says so and names the file (confirmed: binary, 2026-10-15; not at
+      startup, not when the designer opens, not when a name is proposed). Ours since then, in
+      our own words, showing the box instead of the empty list (inferred). A design without a name
       holds the words "Design Name" in its box, so a design made without typing is named
       "Design Name", and an erased name is accepted as empty. Create Design (the button keeps
       that caption when editing) refuses a design with any warning in a box titled "Design
@@ -6173,8 +6175,9 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      **Answer** (confirmed: binary, 2026-10-14; spec 03 §8 Set Patrol): only when the route
      ends. In a turn-based game the points are only appended while the player picks; the click
      on the object's own sector closes the route, Repeat goes on, and only then does the list
-     run, from its first order. Since 2026-10-14 our client keeps the points until then and
-     gives them in one command (`MainWindow::finishPatrol`).
+     run, from its first order. Since 2026-10-14 our client appends each point held
+     (`cmd::SetOrders::hold`, `cmd::OrderTagged::hold`, save format 11), so nothing runs
+     before the route closes (`MainWindow::addPatrolPoint`, `finishPatrol`).
 117. **Held keys.** Which of the main window's keys repeat while held, and does End Turn?
      Ours repeats only the selection cycles and the movement log's single step (§3).
 118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is

@@ -114,7 +114,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
 
     EmpireOrders orders{EmpireId{1u}, 42, {}};
     auto& c = orders.commands;
-    c.push_back(cmd::SetOrders{VehicleId{1u}, FleetId{2u}, {order, Order{}}, true, {}, true});   // an own list (format 10)
+    c.push_back(cmd::SetOrders{VehicleId{1u}, FleetId{2u}, {order, Order{}}, true, {}, true, true});   // an own list (format 10), held (11)
     c.push_back(cmd::CreateFleet{"Strike Group", {VehicleId{3u}, VehicleId{4u}}, Location{SystemId{1u}, Sector{2, 3}}});
     c.push_back(cmd::JoinFleet{FleetId{5u}, VehicleId{6u}});
     c.push_back(cmd::LeaveFleet{VehicleId{7u}});
@@ -176,7 +176,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     c.push_back(cmd::FireOn{VehicleId{41u}});
     c.push_back(cmd::SetEmail{"someone@example.org"});
     c.push_back(cmd::EnterSector{{}, {}, {SystemId{32u}, Sector{5, 6}}, true, {VehicleId{42u}, VehicleId{43u}}});
-    c.push_back(cmd::OrderTagged{{VehicleId{44u}, VehicleId{45u}}, {Order{OrderKind::MoveTo, {SystemId{1u}, Sector{2, 3}}}}, true, true});
+    c.push_back(cmd::OrderTagged{{VehicleId{44u}, VehicleId{45u}}, {Order{OrderKind::MoveTo, {SystemId{1u}, Sector{2, 3}}}}, true, true, true});
     c.push_back(cmd::SetFleetLeader{FleetId{46u}, VehicleId{47u}});
     // A mod's order (docs/sdk/rules.md "Orders"), its arguments as the SDK writes them.
     c.push_back(cmd::ModCommand{"test.mod", "boost", VehicleId{48u}, {}, {}, {}, R"({"power":2,"note":"x"})"});

@@ -406,10 +406,35 @@ TEST_CASE("ship windows: the Scrap window's order, status and sums") {
     const Vehicle* b = s.vehicle(bId);
     const Vehicle* c = s.vehicle(cId);
     std::vector<const Vehicle*> list{b, a, c};
-    shipui::sortScrapList(s, list, false);   // by name, case ignored, then design
+    shipui::sortScrapList(r, s, list, false);   // by name, case ignored, then design
     CHECK(list == std::vector<const Vehicle*>{c, a, b});
-    shipui::sortScrapList(s, list, true);    // by class, then name
+    shipui::sortScrapList(r, s, list, true);    // by class, then name
     CHECK(list == std::vector<const Vehicle*>{c, b, a});
+    // The class key counts letter case ("Zulu" before "alpha"); a unit group has no
+    // class and comes first (spec 03 §19 Q84, confirmed: binary).
+    const DesignId lower = frigate(s, r, me, "alpha", {});
+    const VehicleId dId = addTestVehicle(s, r, lower, where).id;
+    const DesignId sat = [&] {
+        Design x;
+        x.owner = me;
+        x.name = "Aardvark";
+        x.hull = hullIndex(r, "Test Satellite Hull");
+        return addDesign(s, std::move(x));
+    }();
+    const VehicleId gId = addTestVehicle(s, r, sat, where).id;
+    const Vehicle* d = s.vehicle(dId);
+    const Vehicle* g = s.vehicle(gId);
+    a = s.vehicle(aId);
+    b = s.vehicle(bId);
+    c = s.vehicle(cId);
+    std::vector<const Vehicle*> classes{d, a, g, b, c};
+    shipui::sortScrapList(r, s, classes, true);
+    REQUIRE(classes.size() == 5);
+    CHECK(classes[0] == g);
+    CHECK(classes[1] == c);   // "Alpha": Able, bravo
+    CHECK(classes[2] == b);
+    CHECK(classes[3] == a);   // "Zulu"
+    CHECK(classes[4] == d);   // "alpha" after "Zulu"
     // Status is the last selected vehicle's; the sums count only while their button is lit.
     s.vehicle(aId)->status = VehicleStatus::Mothballed;
     const shipui::ScrapWindowState mixed = shipui::scrapWindowState(r, s, me, {b, a});

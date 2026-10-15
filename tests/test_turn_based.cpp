@@ -1132,8 +1132,24 @@ TEST_CASE("simultaneous: an order to tagged vehicles is only appended to each li
     CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{two, one}, {}, false, true})));
     CHECK(w.v(two).repeatOrders);
     CHECK_FALSE(w.v(one).repeatOrders);
-    // No orders and no Repeat to switch: nothing to do.
-    CHECK(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {}})));
+    // No orders and no Repeat to switch: nothing changes (in a turn-based game the group runs).
+    CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {}})));
+    CHECK(w.v(one).orders.size() == 3);
+}
+
+TEST_CASE("turn-based: orders given held run only at the list's next run") {
+    // Set Patrol's points while the route is picked (spec 03 §8, confirmed: binary).
+    Duel d;
+    resumeTurnBased(d.r(), d.s());
+    const Location start = d.w.v(d.runner).location;
+    cmd::SetOrders held{d.runner, {}, {moveTo(d.a, 9, 0)}, false};
+    held.hold = true;
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, held)));
+    CHECK(d.w.v(d.runner).location == start);
+    REQUIRE(d.w.v(d.runner).orders.size() == 1);
+    // The next order given runs the whole list.
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::SetOrders{d.runner, {}, {moveTo(d.a, 9, 0), moveTo(d.a, 9, 1)}, false})));
+    CHECK(d.w.v(d.runner).location != start);
 }
 
 TEST_CASE("turn-based: tagged orders and a fleet's new leader replay from an order file as they were given") {

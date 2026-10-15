@@ -298,10 +298,16 @@ The accuracy pass of 2026-10-14 (spec 03 settled from the complete listing) clos
   orders go into every list; Repeat Orders and a patrol's end switch the first one's Repeat
   alone; Sentry clears every tagged list when the first one's starts with a Sentry
   (`cmd::OrderTagged`, `toggleRepeat` from save format 11).
-- **Set Patrol** runs nothing until the route is closed: the client keeps the points and
-  gives them at once with Repeat on (`MainWindow::finishPatrol`). Ours: Esc or another order
-  gives the points picked so far as plain moves, and the order list shows them only once the
-  route is closed.
+- **Set Patrol** runs nothing until the route is closed: each point is appended held
+  (`cmd::SetOrders::hold`, save format 11) and closing the route switches Repeat on and runs
+  the list (`MainWindow::finishPatrol`). Ours: Esc cancels the pick as another order or the
+  turn's end does, leaving the points as plain moves.
+- **Plague cures**: the plague step tests only `No Plagues`, silently; a Medical Bay's cure
+  writes "Plague Cured" to the curing empire and the owner (`economy::curePlague`).
+- **Population** moves race by race in the stored order, the owner's race no first
+  (`loadCargo`, `dropCargo`).
+- **The Scrap window's Order By Class** sorts by the design name with letter case counting,
+  unit groups first (`sortScrapList`).
 - **Windows**: Launch \ Recover Units lists the colonies and launchers with cargo space in
   object order (`launchCarriers`); a missing design names file gives "Load Error"; the
   Weapons Report writes each export file on its own and opens a weapon's report on a right
@@ -318,7 +324,7 @@ What stays different, as an option:
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | More in item reports (client Options → OpenSE4, `ClassicSettings::reportExtras`) | Off by default, as the original. On: the Component Report adds OpenSE4's lines after the original's: the component's group, its limit per vehicle, the technology it requires and a mount's to-hit modifier | The original's lines only (spec 06 §1.2) | L |
-| Explain failed orders (`TurnContext::explainFailedOrders`; client Options → OpenSE4, server `--explain-failed-orders`) | Off by default, as the original. On: the failures the original passes over (no route, an unset waypoint, a warp point gone or closed to fighters or neutrals, a battle on entering a sector, a Drop with nothing to drop...) give a box in the player's turn of a turn-based game, else an "Unable to <order>" entry; it acts on the turns the computer with the setting carries out | Silent: the list is cleared and nothing is said (spec 03 §8) | L |
+| Explain failed orders (`TurnContext::explainFailedOrders`; client Options → OpenSE4, server `--explain-failed-orders`) | Off by default, as the original. On: the failures the original passes over (no route, an unset waypoint, a warp point gone or closed to fighters or neutrals, a battle on entering a sector, a Drop with nothing to drop...) give a box in the player's turn of a turn-based game, else an "Unable to <order>" entry, and OpenSE4's notes come back (a Sentry ended, a pursuit's target gone, orders cleared after a warp, an Attack with no movement left, an Explore, Resupply or Repair with nowhere to go); it acts on the turns the computer with the setting carries out | Silent: the list is cleared and nothing is said (spec 03 §8) | L |
 
 ## Combat (spec 04)
 

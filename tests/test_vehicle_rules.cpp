@@ -501,7 +501,9 @@ TEST_CASE("vehicle rules: a Medical Bay cures a plague as the ship passes, step 
     CHECK(w.v(doctor).location.sector.x >= 9);
     CHECK(w.s.colony(sick)->plagueLevel == 0);
     CHECK(w.s.colony(allyWorld)->plagueLevel == 0);   // an ally's colony too
-    CHECK(w.logged(kA, "Plague on"));
+    // "Plague Cured" in Events, to the curing empire and to the colony's owner.
+    CHECK(w.logged(kA, "Plague Cured"));
+    CHECK(w.logged(kB, "Plague Cured"));
 
     // Too weak a bay cures nothing; the supply step looks again.
     w.s.colony(sick)->plagueLevel = 4;
@@ -554,4 +556,67 @@ TEST_CASE("vehicle rules: an order to tagged vehicles is worked out once, for th
     REQUIRE(apply(w.rules(), w.s, kA, cmd::OrderTagged{{empty, full}, {Order{OrderKind::Colonize, {}, target}}}).ok);
     CHECK(w.v(empty).orders.front().kind == OrderKind::LoadCargo);
     CHECK(w.v(full).orders == w.v(empty).orders);
+}
+
+// ---- The analyst's answers to our questions (2026-10-15) ---------------------------------------------
+
+TEST_CASE("vehicle rules: population moves in the stored order of its races, the owner's race no first") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId world = w.planet(a, {4, 4});
+    Colony& c = w.colony(world, kA, 0);
+    const int64_t room = maxPopulation(r, w.s, c);
+    c.population = {{kB, room - 3}};   // room for 3 more
+    const VehicleId ship = w.spawn(w.ship(kA, "Hauler", 2, {"Test Cargo Bay"}), at(a, 4, 4));
+    w.v(ship).cargo.population = {{kB, 2}, {kA, 4}};
+    w.order(ship, byKind(OrderKind::DropCargo, CargoKind::Population));
+    w.move();
+    // The ship's first entry (another race) goes first, then the owner's up to the room left.
+    CHECK(w.v(ship).cargo.totalPopulation() == 3);
+    REQUIRE(w.v(ship).cargo.population.size() == 1);
+    CHECK(w.v(ship).cargo.population[0].race == kA);
+
+    // Loading takes the colony's races in their stored order, leaving it 1M of its total.
+    Colony& from = *w.s.colony(world);
+    from.population = {{kB, 3}, {kA, 50}};
+    w.v(ship).cargo.population.clear();
+    const int64_t mass = r.setting("Population Mass", 5);
+    const int64_t hold = vehicleCargoCapacity(r, w.s, w.v(ship)) / mass;   // millions the bay holds
+    REQUIRE(hold >= 4);
+    w.order(ship, byKind(OrderKind::LoadCargo, CargoKind::Population));
+    w.move();
+    REQUIRE_FALSE(w.v(ship).cargo.population.empty());
+    CHECK(w.v(ship).cargo.population[0].race == kB);
+    CHECK(w.v(ship).cargo.population[0].millions == 3);
+}
+
+TEST_CASE("vehicle rules: a self-destructed drone group records nothing in its design's statistics") {
+    World w;
+    const SystemId a = w.system("A");
+    const DesignId droneDesign = w.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});
+    const VehicleId drone = w.spawn(droneDesign, at(a, 6, 6));
+    w.order(drone, Order{OrderKind::SelfDestruct});
+    w.move();
+    CHECK(w.s.vehicle(drone) == nullptr);
+    CHECK(w.s.design(droneDesign).scrapped == 0);
+    CHECK(w.s.design(droneDesign).lost == 0);
+    CHECK(w.logged(kA, "Vehicle Self-Destructed"));
+}
+
+TEST_CASE("vehicle rules: a unit group whose maximum fell during its action keeps what the action left it") {
+    // Spec 03 §6.3 step 4 (confirmed: binary): the points come back after an
+    // action only when they are not above the current maximum; a fighter
+    // group that ran out of supply on its step keeps 0 and stops for the turn.
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId wasp = w.design(kA, "Wasp", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
+    const VehicleId group = w.spawn(wasp, at(a, 0, 6));
+    REQUIRE(vehicleMaxMovement(r, w.s, w.v(group)) == 3);
+    w.v(group).supply = movement::moveSupplyCost(r, w.s, w.v(group));   // one step's worth
+    w.order(group, moveTo(w.s.vehicle(group)->location.system, 9, 6));
+    w.move();
+    CHECK(w.v(group).location == at(a, 1, 6));   // one step, then stopped
+    CHECK(w.v(group).supply == 0);
 }

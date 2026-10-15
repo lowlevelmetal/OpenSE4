@@ -650,6 +650,7 @@ template <class Ar>
 void io(Ar& ar, cmd::SetOrders& c) {
     fields(ar, c.vehicle, c.fleet, c.orders, c.repeat, c.planet);
     if (formatVersion(ar) >= 10) fields(ar, c.ownList);   // format 9 had no own-list orders
+    if (formatVersion(ar) >= 11) fields(ar, c.hold);      // format 10 ran every list given at once
 }
 template <class Ar>
 void io(Ar& ar, cmd::CreateFleet& c) {
@@ -742,7 +743,7 @@ template <class Ar> void io(Ar& ar, cmd::FireOn& c) { fields(ar, c.vehicle); }
 template <class Ar>
 void io(Ar& ar, cmd::OrderTagged& c) {
     fields(ar, c.vehicles, c.orders, c.repeat);
-    if (formatVersion(ar) >= 11) fields(ar, c.toggleRepeat);   // format 10 had no Repeat Orders for tagged vehicles
+    if (formatVersion(ar) >= 11) fields(ar, c.toggleRepeat, c.hold);   // format 10 had no Repeat Orders for tagged vehicles, nor held orders
 }
 template <class Ar> void io(Ar& ar, cmd::SetFleetLeader& c) { fields(ar, c.fleet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::ModCommand& c) { fields(ar, c.mod, c.name, c.vehicle, c.fleet, c.planet, c.empire, c.args); }

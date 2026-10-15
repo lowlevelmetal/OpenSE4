@@ -1695,7 +1695,7 @@ TEST_CASE("economy: plague kills a fixed amount by level until prevented or cure
     populationTurn(*r, s);
     CHECK(home.plagueLevel == 0);
     CHECK(home.totalPopulation() < before);
-    CHECK(logged(s, kMe, "cured"));
+    CHECK(logged(s, kMe, "Plague Cured"));
 
     // The loss comes from the races in their stored order.
     home.facilities.clear();
@@ -1706,11 +1706,13 @@ TEST_CASE("economy: plague kills a fixed amount by level until prevented or cure
     CHECK(home.population[0].millions <= 20);
     CHECK(home.population[1].millions == 100);
 
-    // No Plagues: cured the next time it would strike, with no loss.
+    // No Plagues: cured the next time it would strike, with no loss and no entry.
     giveTrait(*r, s, kMe, "Immune");
+    s.empire(kMe).log.clear();
     populationTurn(*r, s);
     CHECK(home.plagueLevel == 0);
     CHECK(home.population[1].millions == 100);
+    CHECK_FALSE(logged(s, kMe, "Plague Cured"));
 }
 
 TEST_CASE("economy: cargo above the capacity stays until the planet loses population to plague") {

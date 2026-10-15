@@ -137,17 +137,20 @@ void unmothballVehicle(TurnContext& ctx, Vehicle& v) {
 
 void selfDestructVehicle(TurnContext& ctx, Vehicle& v) {
     GameState& s = ctx.state;
-    perDesign(ctx.rules, s, v, [&](DesignId d, int n) { s.design(d).scrapped += n; });
-    // "Vehicle Self-Destructed" or "Group Self-Destructed", a Construction
-    // entry from the Demolition Minister, with no mood (spec 03 §15,
-    // confirmed: binary). As Fire On's entries do, a satellite group or a
-    // minefield is a group and a drone group a vehicle (inferred); the words
-    // are ours.
+    // "Vehicle Self-Destructed" for a ship, base or drone group, "Group
+    // Self-Destructed" for a minefield or satellite group (a fighter group
+    // never self-destructs), a Construction entry from the Demolition
+    // Minister, with no mood (spec 03 §15, confirmed: binary; the words are
+    // ours). A ship or base adds 1 to its design's Number Scrapped and shows
+    // its design's picture, a group each living unit and its kind's picture;
+    // a drone group records nothing and has no picture of its own.
     const VehicleType type = vehicleType(ctx.rules, s, v);
+    const bool drone = type == VehicleType::Drone;
+    if (!drone) perDesign(ctx.rules, s, v, [&](DesignId d, int n) { s.design(d).scrapped += n; });
     const bool group = type == VehicleType::Fighter || type == VehicleType::Satellite || type == VehicleType::Mine;
     ctx.log(v.owner, LogCategory::Construction, group ? "Group Self-Destructed" : "Vehicle Self-Destructed",
             std::format("The Demolition Minister reports that {} in {} has destroyed itself.", v.name, sectorText(s, v.location)), v.location,
-            logpicture::unitGroup(type, v.owner, v.design));
+            drone ? std::string{} : logpicture::unitGroup(type, v.owner, v.design));
     removeVehicle(v);
 }
 

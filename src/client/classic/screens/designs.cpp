@@ -697,12 +697,7 @@ private:
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
-        // A name file the race names that cannot be opened: a "Load Error" box
-        // naming it, and an empty list (spec 06 §7 Q94, confirmed: binary; the
-        // words are ours).
-        bool missing = false;
-        names_ = loadNameList(ui, &missing);
-        if (missing) notice_.open(std::format("Your design names file could not be opened: {}.", me.race.designNameFile), "Load Error");
+        names_ = loadNameList(ui);
 
         if (args_.design.valid() && args_.design.index() < s.designs.size()) {
             const game::Design& t = s.design(args_.design);
@@ -1024,7 +1019,16 @@ private:
         ImGui::PopStyleVar(2);
         ui.tag("create-design:name", d.at({cd::kBoxX, 135}), d.at({cd::kBoxX + cd::kBoxW - cd::kBoxH, 135 + cd::kBoxH}));
         ImGui::SetCursorScreenPos(d.at({cd::kBoxX + cd::kBoxW - cd::kBoxH, 135}));
-        if (arrowButton(ui, "##names", ArrowGlyph::Down, {cd::kBoxH, cd::kBoxH}, true)) ImGui::OpenPopup("##namelist");
+        if (arrowButton(ui, "##names", ArrowGlyph::Down, {cd::kBoxH, cd::kBoxH}, true)) {
+            // The list reads the race's name file each time it opens; a file
+            // set that cannot be opened gives a "Load Error" box naming it
+            // instead of the list (spec 06 §7 Q94, confirmed: binary; the
+            // words are ours, and not showing the empty list is inferred).
+            bool missing = false;
+            names_ = loadNameList(ui, &missing);
+            if (missing) notice_.open(std::format("Your design names file could not be opened: {}.", ui.me().race.designNameFile), "Load Error");
+            else ImGui::OpenPopup("##namelist");
+        }
         ui.tagItem("create-design:suggest");
         if (ImGui::BeginPopup("##namelist")) {
             const std::vector<std::string>& choices = nameChoices();

@@ -613,13 +613,19 @@ system is added each turn to every colony of the owner there. Negative values do
   and the colony is removed (§2).
 - A plagued colony does not grow, and each turn it adds `Planet Plagued` to its anger
   change (§4).
-- The `No Plagues` trait cures the plague the next time it would strike, with no loss.
+- The `No Plagues` trait cures the plague the next time it would strike, with no loss and no
+  log entry; this is the only test the plague step makes (confirmed: binary, 2026-10-15; ours
+  wrote a "cured" entry until then).
 - Each turn, the best `Plague Prevention - System` cures every colony of the owner in
   that system whose level is at most its Val1.
 - A Medical Bay cures plagues on your own planets and on allies' planets (Military
   Alliance or better): not in the plague step but in the depot check, after every step of
   the ship or base and in its owner's end-of-turn supply step (spec 03 §3.3; confirmed:
-  binary, 2026-10-14). Since 2026-10-14 ours follows (`movement_util.cpp` `depotCheck`).
+  binary, 2026-10-14). That cure writes "Plague Cured", category Events, to the curing
+  empire and also to the colony's owner when that is another empire; the original's other
+  cures (gifts, intelligence, events) go through it too (confirmed: binary, 2026-10-15).
+  Since 2026-10-14 ours follows (`movement_util.cpp` `depotCheck`, `economy::curePlague`,
+  whose entry is in our words; `Plague Prevention - System` writes it too, inferred).
 
 ---
 

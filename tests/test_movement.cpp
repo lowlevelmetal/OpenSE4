@@ -538,6 +538,12 @@ TEST_CASE("movement: explore picks the nearest unexplored warp point and skips c
     w.move();
     CHECK(w.v(s3).orders.empty());
     CHECK(w.v(s3).location == at(a, 6, 6));
+    // Silent in the original; OpenSE4's "Explain failed orders" writes a note (spec 03 §8).
+    CHECK_FALSE(w.logged(kA, "nothing left to explore"));
+    w.order(s3, mk(OrderKind::Explore));
+    w.explainFailedOrders = true;
+    w.move();
+    w.explainFailedOrders = false;
     CHECK(w.logged(kA, "nothing left to explore"));
 }
 
@@ -717,6 +723,7 @@ TEST_CASE("movement: resupply at own and allied depots, also when passing throug
     const SystemId la = lone.system("L");
     const VehicleId stray = lone.spawn(lone.ship(kA, "Stray", 3), at(la, 0, 0));
     lone.order(stray, mk(OrderKind::Resupply));
+    lone.explainFailedOrders = true;   // OpenSE4's note; the original says nothing (spec 03 §8)
     lone.move();
     CHECK(lone.v(stray).orders.empty());
     CHECK(lone.logged(kA, "resupply depot"));
@@ -904,6 +911,7 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         const VehicleId picket = picketAt(l, 5, 5);
         l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
         l.w.v(gunboat).movement = 0;
+        l.w.explainFailedOrders = true;   // OpenSE4's note; the original says nothing (spec 03 §8)
         l.run(false);
         CHECK(l.spy.asked.empty());
         CHECK(l.w.v(gunboat).orders.empty());
@@ -1158,11 +1166,12 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     // same action (spec 03 §6.3, §8).
     CHECK(w.v(watch).orders.empty());
     CHECK(w.v(watch).location == at(a, 10, 9));
-    CHECK(w.logged(kA, "enemy sighted"));
+    CHECK_FALSE(w.logged(kA, "enemy sighted"));   // a Sentry ends silently (spec 03 §8, confirmed: binary)
 
     // Low supplies end it too.
     const VehicleId thirsty = w.spawn(w.ship(kA, "Thirsty", 2), at(b, 3, 3));
     w.order(thirsty, mk(OrderKind::Sentry));
+    w.explainFailedOrders = true;   // OpenSE4's note of why it ended
     w.move();
     CHECK(w.v(thirsty).orders.empty());
     CHECK(w.logged(kA, "supplies low"));
@@ -4451,6 +4460,7 @@ TEST_CASE("movement: the Ship Orders options empty every member's list; a turn-b
         fuel(t.w, ship);
         t.w.give(ship, {moveTo(t.b, 4, 6)});
         TurnContext ctx{r, t.w.s, {}, {}, {}};
+        ctx.explainFailedOrders = true;   // OpenSE4's note; the original clears silently (spec 03 §6.4)
         movement::startTurn(ctx, kA);
         movement::runLive(ctx, movement::LiveMove{kA});
         CHECK(t.w.v(ship).location == at(t.b, 2, 6));

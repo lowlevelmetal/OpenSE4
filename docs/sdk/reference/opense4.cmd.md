@@ -13,7 +13,7 @@ Contents: [`set_orders`](#set_orders), [`order_tagged`](#order_tagged), [`create
 ## `set_orders`
 
 ```python
-set_orders(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, planet: Optional[Ref] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False, own_list: bool = False) -> Dict[str, Any]
+set_orders(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, planet: Optional[Ref] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False, own_list: bool = False, hold: bool = False) -> Dict[str, Any]
 ```
 
 Replaces the order list of a vehicle, a fleet or a colony (name one of the three). The orders that start the new list and repeat the current one are kept as they are; every order after them is expanded the moment it is given, as in the classic game: Explore becomes a move to the nearest unexplored warp point and a warp, Resupply and Repair a move to the nearest place for them, and an order aimed somewhere else gets a Move To in front of it. A colony takes only Launch Units, Recover Units, Use Facility and Convert Resources.
@@ -24,19 +24,21 @@ Replaces the order list of a vehicle, a fleet or a colony (name one of the three
 - `orders`: The new list (see Orders).
 - `repeat`: Repeat the list when it ends (false by default).
 - `own_list`: With vehicle: change only that vehicle's own list, even when it is in a fleet, as the Stellar Manipulation window does; the other members keep theirs. When false, a fleet member's orders go to its whole fleet.
+- `hold`: In a turn-based game, do not carry the list out now: it runs at its next run (the next order given without hold, or the start of the owner's next turn), as the points of a patrol route being picked. False by default.
 
 ## `order_tagged`
 
 ```python
-order_tagged(vehicles: Optional[Sequence[Ref]] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False, toggle_repeat: bool = False) -> Dict[str, Any]
+order_tagged(vehicles: Optional[Sequence[Ref]] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False, toggle_repeat: bool = False, hold: bool = False) -> Dict[str, Any]
 ```
 
 An order given to several vehicles at once, as when the player tags vehicles in a sector's list: the orders are worked out once, for the first vehicle tagged, and the same orders are added to the end of each vehicle's own list, a fleet member standing for its whole fleet. The vehicles must share a sector. In a turn-based game they then act at once as one group.
 
 - `vehicles`: The tagged vehicles, in the order they were tagged.
-- `orders`: The orders to add (may be empty with toggle_repeat).
+- `orders`: The orders to add (may be empty: then only the Repeat switches apply, and in a turn-based game the group runs).
 - `repeat`: Switch Repeat on in the first tagged vehicle's list (its fleet's lists, for a fleet member), as a patrol route that ends does; the other lists keep theirs.
 - `toggle_repeat`: Switch the first tagged vehicle's Repeat over (on when off, off when on), as Repeat Orders does with vehicles tagged.
+- `hold`: In a turn-based game, do not run the group now, as set_orders' hold.
 
 ## `create_fleet`
 

@@ -703,6 +703,7 @@ void fields(A& a, cmd::SetOrders& x) {
     a("orders", x.orders);
     a("repeat", x.repeat);
     a("own_list", x.ownList);
+    a("hold", x.hold);
 }
 template <class A>
 void fields(A& a, cmd::CreateFleet& x) {
@@ -716,6 +717,7 @@ void fields(A& a, cmd::OrderTagged& x) {
     a("orders", x.orders);
     a("repeat", x.repeat);
     a("toggle_repeat", x.toggleRepeat);
+    a("hold", x.hold);
 }
 template <class A>
 void fields(A& a, cmd::JoinFleet& x) {

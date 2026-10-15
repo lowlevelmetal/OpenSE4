@@ -168,7 +168,9 @@ public:
                               "a warp point that is gone, a battle on entering a sector, a drop with nothing\n"
                               "to drop): the list is just cleared. With this on, such a failure gives a\n"
                               "message box in a turn-based game and an \"Unable to ...\" entry in the log in\n"
-                              "a simultaneous one, for the turns this computer carries out.");
+                              "a simultaneous one, and the log notes a Sentry that ends, a target that is gone\n"
+                              "and orders cleared on meeting another empire, for the turns this computer\n"
+                              "carries out.");
         changed |= lampToggle(ui, "More in item reports", &s.reportExtras);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("The Component Report shows the original's lines. With this on it also shows\n"

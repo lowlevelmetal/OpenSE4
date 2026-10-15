@@ -124,9 +124,11 @@ int conditionsReproduction(ConditionsBand b);
 
 // ---- Plague (spec 02 §3) -------------------------------------------------------------------------
 
-// The colony's plague is cured: its level goes to 0 and the owner gets the
-// "Plague on <planet> cured" entry.
-void curePlague(TurnContext& ctx, Colony& c);
+// The colony's plague is cured: its level goes to 0, and "Plague Cured"
+// (Events) goes to `by`, the empire that cured it, and also to the colony's
+// owner when that is another empire (spec 02 §3, confirmed: binary); with no
+// `by`, to the owner. The `No Plagues` trait cures without it (plague step).
+void curePlague(TurnContext& ctx, Colony& c, EmpireId by = {});
 
 // ---- Mood (spec 02 §4) ------------------------------------------------------------------------
 

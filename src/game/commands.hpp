@@ -34,6 +34,10 @@ struct SetOrders {           // replaces the order list (vehicle, fleet or plane
     // window's order, spec 06 §1.3). Otherwise a fleet member's orders go to
     // its fleet (spec 03 §8).
     bool ownList = false;
+    // A turn-based game does not carry the list out now: it runs at the
+    // list's next run (Set Patrol's points while the route is picked, spec
+    // 03 §8). Save format 11.
+    bool hold = false;
 };
 // A new fleet (spec 03 §9, confirmed: binary). The Fleet Transfer window's
 // form names no members: an empty fleet at `location`, which the window then
@@ -66,6 +70,9 @@ struct OrderTagged {
     std::vector<Order> orders;
     bool repeat = false;
     bool toggleRepeat = false;
+    // As cmd::SetOrders::hold: a turn-based game does not run the group now
+    // (save format 11).
+    bool hold = false;
 };
 struct JoinFleet { FleetId fleet; VehicleId vehicle; };
 struct LeaveFleet { VehicleId vehicle; };

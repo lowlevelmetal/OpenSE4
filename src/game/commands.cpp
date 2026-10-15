@@ -290,7 +290,6 @@ struct Applier {
     // first one's list, or its fleet's lists at the location. The checks
     // come first, so the command changes every list or none.
     R operator()(const cmd::OrderTagged& c) {
-        if (c.orders.empty() && !c.toggleRepeat) return R::fail("No orders given");
         if (c.vehicles.empty()) return R::fail("No vehicles tagged");
         std::optional<Location> where;
         for (VehicleId id : c.vehicles) {

@@ -130,9 +130,10 @@ bool plague(TurnContext& ctx, Colony& c) {
         c.plagueLevel = 0;
         return true;
     }
-    // No Plagues cures it the next time it would strike, with no loss.
+    // No Plagues cures it the next time it would strike, with no loss and no
+    // entry (spec 02 §3, confirmed: binary).
     if (r.hasTrait(s.empire(c.owner).race, "No Plagues")) {
-        curePlague(ctx, c);
+        c.plagueLevel = 0;
         return true;
     }
     const int64_t base = plagueBase(c.plagueLevel);
@@ -447,10 +448,15 @@ void applySystemAbilities(TurnContext& ctx, EmpireId e) {
     }
 }
 
-void curePlague(TurnContext& ctx, Colony& c) {
+void curePlague(TurnContext& ctx, Colony& c, EmpireId by) {
     c.plagueLevel = 0;
-    ctx.log(c.owner, LogCategory::Events, std::format("Plague on {} cured", ctx.state.galaxy.object(c.planet).name), {},
-            locationOf(ctx.state.galaxy, c.planet), "PlagueCured");
+    // "Plague Cured", in the Events category (spec 02 §3, confirmed: binary;
+    // the words are ours), to the empire that cured it and to the owner.
+    const EmpireId curer = by.valid() ? by : c.owner;
+    const std::string text = std::format("{} is free of the plague.", ctx.state.galaxy.object(c.planet).name);
+    const Location where = locationOf(ctx.state.galaxy, c.planet);
+    ctx.log(curer, LogCategory::Events, "Plague Cured", text, where, "PlagueCured");
+    if (c.owner != curer) ctx.log(c.owner, LogCategory::Events, "Plague Cured", text, where, "PlagueCured");
 }
 
 } // namespace opense4::game::economy
