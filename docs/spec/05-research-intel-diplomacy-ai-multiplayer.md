@@ -651,7 +651,7 @@ up the trade chain [M].
     Partnership, the current treaty included; never War or None, so peace after a war is
     Non-Intercourse or better.
   - Break Treaty only from Non-Aggression up. Declare War is not offered while already at
-    war (OpenSE4's list, inferred: question 80).
+    war (confirmed: binary, question 80).
   - Propose Trade and every demand and request whatever the treaty, war included.
   - Gift and Tribute only with the game option for gifts; Want a gift and Want a tribute
     whatever it says.
@@ -682,17 +682,47 @@ up the trade chain [M].
   - Comm Channels: only when the receiver has no contact with the named empire; the two
     are then set to treaty None, without a first-contact check or entry.
 - **Select Package's lists** (confirmed: binary): Systems lists every system the player has
-  explored, on both sides, with no "Any"; Star Charts the same systems, on both sides; Units
-  the ships carrying units (loaded transports); the Treaty tab every treaty but "no contact",
-  None and the current one, War included. "Any" entries (an item the other side chooses)
-  are offered only on the side asked for, and only for a planet, a technology area, a ship,
-  a unit transport and a star chart. The Technology tab is dim when the game does not allow
-  technology trades. Resources are chosen with x10000 and x100000 toggles; our client
-  differs: the amounts are typed in, in steps of 1,000. Our client lists our own colonies,
-  technology areas, ships and the empires we have met on the side we give, and the
-  recipient's colonies in systems we have explored and its ships we see on the side we ask
-  for. The side we ask for of Comm Channels lists the empires the recipient has met and we
-  have not (inferred: question 80).
+  explored, on both sides, with no "Any"; Star Charts the same systems, on both sides; the
+  Treaty tab every treaty but "no contact", None and the current one, War included. "Any"
+  entries (an item the other side chooses) are offered only on the side asked for, first in
+  the list, for six kinds: a planet, a technology area, a ship, a unit transport, a star chart
+  and a comm channel. Per tab (corrected 2026-10-14, complete listing, questions 80 b and c):
+  - Planets: our colonies on the side we give; on the side asked for, the recipient's
+    colonies that we see now (a colony whose cloak beats our detection is left out), sorted,
+    after "Any Planet".
+  - Technology: our areas with a level of at least 1 on the side we give; on the side asked
+    for, every area we can see (requirements met, allowed, racial and unique checks), maxed
+    ones included, after "Any Tech Area"; both alphabetical. The tab is dim when the game
+    does not allow technology trades.
+  - Ships: ours (not unit groups); theirs that we see, after "Any Ship".
+  - Units: on the side we give, our ships and bases that carry units; on the side asked
+    for, every ship and base of the recipient that we see, loaded or not (we cannot see
+    their cargo), after "Any Unit Transport".
+  - Comm Channels: both sides list the same empires, the living empires **we** are in
+    contact with, other than us and the recipient; "Any Comm Channel" comes first on the
+    side asked for.
+
+  **Quantities** (confirmed: binary). Each package line has an item and a number of steps,
+  at most 250. A resource line holds one resource, a step being 1,000 of it, and reads
+  "Minerals - 5000". A click on a resource adds 1 step, 10 with the x10000 toggle lit or
+  Shift held, 100 with x100000 (x10000 is tested first, then x100000, then Shift). A click
+  that would take a line past 250 fills it to exactly 250 and starts a new line of the same
+  resource with the rest; the add walks every line of that resource in package order, and
+  when two of them have room (possible only after a removal) each gets the click (a quirk).
+  A click on an "Any" row adds one step to its line ("Any Planet - 2"), with the same limit
+  and split. A click on a package line takes off the step in force (the toggles and Shift)
+  while the Resources tab shows, 1 on any other tab; when that is at least what the line
+  holds, the line goes; any other line goes at the first click. When a package is carried
+  out, each resource line moves the smaller of its amount and what the giver holds at that
+  moment and logs its own pair of entries.
+
+  Since 2026-10-14 ours follows (`packageChoices`, `addPackageClick`, `takePackageClick`,
+  `packageLines` in `empire_logic.cpp`; `screens/communicate.cpp`); a click on a specific
+  item already in the package does nothing (inferred). Until then our client typed the
+  amounts in, merged the three resources into one item, added each "Any" as a line of its
+  own, listed the recipient's colonies in every system we had explored (cloaked ones
+  included) and only its loaded transports, and on the side asked for of Comm Channels the
+  empires the recipient had met and we had not, with no "Any".
 - **Borders**: each empire publicly claims systems, and claims may overlap. The AI uses
   claims to compute anger.
 - **History window** (confirmed: binary): each human player's history is a file of dated
@@ -4925,6 +4955,13 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     colonies, areas and ships does each side list (ours: our own on the side we give; the
     recipient's colonies in systems we have explored, the areas we can see and the ships we
     see on the side we ask for)?
+    **Answer** (confirmed: binary, the 2026-10-14 accuracy pass): (a) Declare War is offered
+    only when the two are not at war, as ours. (b) Both sides list the living empires we are in
+    contact with, other than us and the recipient, with "Any Comm Channel" first on the side
+    asked for (the 2026-10-11 audit's "no Any" came from the truncated export). (c) As §3.4
+    "Select Package's lists" now gives: ours matched for Technology and Ships; Planets lists
+    the recipient's colonies we see now, sorted. Since 2026-10-14 ours follows
+    (`packageChoices`).
 81. **Ships at the limit.** The original's queues take a ship or base at the ship limit;
     the limit is met when one is built, and the item then waits, paid for again each turn
     (spec 02 §6.5). Our computer players place no ship or base while the empire is at its

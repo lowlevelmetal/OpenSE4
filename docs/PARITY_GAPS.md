@@ -925,8 +925,6 @@ remains different:
 | Communicate's pickers (`screens/communicate.cpp`) | The type, treaty, empire, system and planet are drop-down lists in the window; a package type opens Select Package at once, which returns with Done | Choosing a type opens its pickers at once; cancelling one returns to Start Again | L (cosmetic) |
 | Communicate's demands and requests | Listed flat with the other types | Behind a "Demand / Request / Warn" entry that switches the list to its 16 types | L (cosmetic) |
 | Communicate's answers for a message opened from the Log's Send Reply | OpenSE4's Accept, Refuse, Counter and Reply buttons, the first three lit only for the newest recent message (as the portrait's) | Answers only from the portrait | L (OpenSE4's addition, kept) |
-| Select Package's resources | Typed in, in steps of 1,000 | x10000 and x100000 toggles | L (OpenSE4's, kept) |
-| Select Package's Comm Channels on the side asked for | The empires the recipient has met and we have not (inferred, spec 05 Q80) | Not described | L |
 | History's lists | Our empire, every empire we know and every empire the record names, each with OpenSE4's founding line and statistics lines; a galaxy map under the list | The empires that appear in the history file | L (OpenSE4's additions, kept) |
 | The Empires window's extra lines | After the original's: race, player, since, last war, anger value, "Inbox: N waiting"; trade of the maximum, what is shared; who pays whom | The original's lines only | None (OpenSE4's additions, kept) |
 

@@ -151,22 +151,61 @@ bool packageTabEnabled(const game::GameOptions& o, PackageTab t);
 // side we give (`give`) or the side we ask for; an "Any" placeholder (an item
 // whose id is left invalid) comes first where the original offers one:
 // - Systems: every system we have explored, on both sides; no "Any".
-// - Planets: our colonies; theirs in systems we have explored, after "Any".
+// - Planets: our colonies; theirs that we see now (a colony whose cloak beats
+//   our detection left out), sorted by name, after "Any".
 // - Technology (only with technology trades allowed): the areas we hold a
-//   level in; the areas we can see or hold, after "Any".
+//   level in; every area we can see, maxed ones included, after "Any"; both
+//   in alphabetical order.
 // - Ships: our ships, bases and other vehicles that are not units; theirs that
 //   we see, after "Any".
-// - Units: the ships carrying units (loaded transports), ours or theirs that
-//   we see, after "Any".
+// - Units: our ships and bases carrying units (loaded transports); every ship
+//   and base of theirs that we see, loaded or not, after "Any".
 // - Star Charts: every system we have explored, on both sides; "Any" on the
 //   side we ask for.
 // - Treaty: packageTreaties.
-// - Comm Channels: the empires we have met; on the side we ask for, the
-//   empires they have met and we have not (inferred: spec 05 open question
-//   on the original's list). No "Any".
+// - Comm Channels: on both sides, the living empires we are in contact with
+//   other than us and the recipient; "Any" first on the side we ask for.
 // Resources are typed in, so their tab lists nothing.
 std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::GameState& s, game::EmpireId me, game::EmpireId them,
                                               PackageTab tab, bool give);
+
+// Select Package's lines (spec 05 §3.4, confirmed: binary). Each line has an
+// item and a number of steps: a resource line holds one resource, a step
+// being 1,000 of it; an "Any" line holds that many of its kind ("Any Planet -
+// 2"); every other line one item. A line holds at most kMaxPackageSteps.
+inline constexpr int kMaxPackageSteps = 250;
+inline constexpr int64_t kPackageStepAmount = 1000;
+struct PackageLine {
+    game::PackageItem item;  // a resource line: the resource's amount is the line's (steps × 1,000)
+    int steps = 1;
+};
+// The steps a click adds or takes off: 10 with the x10000 toggle lit or
+// Shift held, 100 with x100000 (x10000 is tested first, then x100000, then
+// Shift), else 1.
+int packageClickSteps(bool x10000, bool x100000, bool shift);
+// The resource row a click on `res` adds: a line item of that resource alone.
+game::PackageItem resourceRow(game::Resource res);
+// A click on a resource row or an "Any" row adds `steps` (spec 05 §3.4,
+// confirmed: binary): every line of the same kind and value with room gets
+// them, in package order (a quirk: two such lines, possible only after a
+// removal, both grow); a line that would pass kMaxPackageSteps is filled to it
+// and the rest starts a new line; with no line with room, a new line. Any
+// other item is added once (OpenSE4's: a second click on it does nothing; a
+// treaty replaces the side's treaty).
+void addPackageClick(std::vector<PackageLine>& lines, const game::PackageItem& row, int steps);
+// A click on a package line: a resource or "Any" line loses `steps`, or goes
+// when that is at least what it holds; any other line goes.
+void takePackageClick(std::vector<PackageLine>& lines, size_t line, int steps);
+// The package's lines from its items (resource items split into one line per
+// resource, at most kMaxPackageSteps each; consecutive identical "Any" items
+// merged), and back (a resource line becomes one item, an "Any" line as many
+// items as it has steps).
+std::vector<PackageLine> packageLines(const std::vector<game::PackageItem>& items);
+std::vector<game::PackageItem> packageItems(const std::vector<PackageLine>& lines);
+// Whether two package sides hold the same items in the same order.
+bool samePackage(const std::vector<game::PackageItem>& a, const std::vector<game::PackageItem>& b);
+// A line's text: "Minerals - 5000", "Any Planet - 2", else packageItemText.
+std::string packageLineText(const game::Rules& r, const game::GameState& s, const PackageLine& line);
 
 // ---- Research -------------------------------------------------------------------------------
 

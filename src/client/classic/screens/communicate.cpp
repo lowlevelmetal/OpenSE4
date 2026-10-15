@@ -41,18 +41,6 @@ bool sameItem(const PackageItem& a, const PackageItem& b) {
     return false;
 }
 
-void addItem(std::vector<PackageItem>& side, const PackageItem& item) {
-    for (PackageItem& p : side)
-        if (sameItem(p, item)) {
-            if (item.kind == PackageItem::Kind::Resources) p.resources += item.resources;
-            else if (item.kind == PackageItem::Kind::Treaty) p.treaty = item.treaty;
-            // Any placeholders may repeat (ask for two planets of their choice).
-            else if (isAnyItem(item)) side.push_back(item);
-            return;
-        }
-    side.push_back(item);
-}
-
 const game::DiplomaticMessage* findMessage(const game::GameState& s, game::MessageId id) {
     if (!id.valid()) return nullptr;
     for (const auto& m : s.messages)
@@ -305,13 +293,13 @@ private:
             const float h = ImGui::GetContentRegionAvail().y - ui.px(34);
             if (n.offer) {
                 beginList(ui, "##give", ImVec2(both ? half : 0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-                packageList(ui, "We give", draft_.offer, true);
+                packageList(ui, "We give", draft_.offer, true, true);
                 endList(ui);
             }
             if (n.request) {
                 if (both) ImGui::SameLine();
                 beginList(ui, "##take", ImVec2(0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-                packageList(ui, "We ask for", draft_.request, true);
+                packageList(ui, "We ask for", draft_.request, true, false);
                 endList(ui);
             }
         } else if (answered) {
@@ -443,26 +431,50 @@ private:
         if (auto_ && draft_.planet != before) fillText(ui);
     }
 
-    // A package side; clicking an item removes it when editable.
-    void packageList(UiContext& ui, const char* title, std::vector<PackageItem>& items, bool editable) {
+    // The lines of the draft's side we give (`give`) or ask for, kept while
+    // the window edits them: two lines of one kind keep their boundary. They
+    // are read again from the draft when it changed elsewhere (a counter, a
+    // new type, Clear Package).
+    std::vector<PackageLine>& linesOf(bool give) {
+        std::vector<PackageLine>& lines = give ? offerLines_ : requestLines_;
+        const std::vector<PackageItem>& side = give ? draft_.offer : draft_.request;
+        if (!samePackage(packageItems(lines), side)) lines = packageLines(side);
+        return lines;
+    }
+    void storeLines(bool give) { (give ? draft_.offer : draft_.request) = packageItems(give ? offerLines_ : requestLines_); }
+
+    // The steps a click adds or takes off: by the x10000 and x100000 toggles
+    // or Shift (spec 05 §3.4, confirmed: binary).
+    int clickSteps() const { return packageClickSteps(x10000_, x100000_, ImGui::GetIO().KeyShift); }
+
+    // A package side, line by line. Editable (`give` names the side): a click
+    // on a line takes a step off a resource or "Any" line, the current step
+    // while Select Package shows its Resources tab and 1 otherwise, and
+    // removes any other line (spec 05 §3.4, confirmed: binary).
+    void packageList(UiContext& ui, const char* title, std::vector<PackageItem>& items, bool editable, bool give = true) {
         heading(ui, title);
         if (items.empty()) {
             ImGui::TextColored(kTextDim, editable ? "Nothing yet (Edit Package)" : "Nothing");
             return;
         }
-        std::optional<size_t> remove;
-        for (size_t i = 0; i < items.size(); ++i) {
+        const std::vector<PackageLine> shown = editable ? linesOf(give) : packageLines(items);
+        std::optional<size_t> clicked;
+        for (size_t i = 0; i < shown.size(); ++i) {
             ImGui::PushID(int(i));
-            const std::string text = packageItemText(ui.rules(), ui.state(), items[i]);
+            const std::string text = packageLineText(ui.rules(), ui.state(), shown[i]);
             if (editable) {
-                if (ImGui::Selectable(text.c_str())) remove = i;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to remove");
+                if (ImGui::Selectable(text.c_str())) clicked = i;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to take it off");
             } else {
                 ImGui::BulletText("%s", text.c_str());
             }
             ImGui::PopID();
         }
-        if (remove) items.erase(items.begin() + std::ptrdiff_t(*remove));
+        if (clicked) {
+            const bool resourcesTab = mode_ == Mode::Package && tab_ == PackageTab::Resources;
+            takePackageClick(linesOf(give), *clicked, resourcesTab ? clickSteps() : 1);
+            storeLines(give);
+        }
     }
 
     // What the original's window would not send (spec 06 §4.2, confirmed:
@@ -575,6 +587,7 @@ private:
                 case K::Technology: return "Any technology (they choose)";
                 case K::Vehicle: return tab == PackageTab::Units ? "Any unit transport (they choose)" : "Any ship (they choose)";
                 case K::StarChart: return "Any star chart (they choose)";
+                case K::CommChannel: return "Any comm channel (they choose)";
                 default: return "Any (they choose)";
             }
         }
@@ -631,7 +644,7 @@ private:
         ImGui::SameLine();
         ImGui::TextColored(kTextDim, "(click to add)");
         if (tab_ == PackageTab::Resources) {
-            resourceInput(ui, side);
+            resourceRows(ui);
         } else {
             const auto list = packageChoices(ui.rules(), s, ui.session.player(), target_, tab_, giveSide_);
             if (list.empty()) ImGui::TextColored(kTextDim, "Nothing available.");
@@ -640,43 +653,45 @@ private:
                 const bool present = !isAnyItem(list[i]) && std::any_of(side.begin(), side.end(), [&](const PackageItem& p) {
                     return sameItem(p, list[i]) && (p.kind != PackageItem::Kind::Treaty || p.treaty == list[i].treaty);
                 });
-                if (ImGui::Selectable(choiceLabel(ui, tab_, giveSide_, list[i]).c_str(), present) && !present) addItem(side, list[i]);
+                // An "Any" row adds one more of its kind to its line on each click.
+                if (ImGui::Selectable(choiceLabel(ui, tab_, giveSide_, list[i]).c_str(), present) && !present) {
+                    addPackageClick(linesOf(giveSide_), list[i], 1);
+                    storeLines(giveSide_);
+                }
                 ImGui::PopID();
             }
         }
         endList(ui);
         ImGui::SameLine();
         beginList(ui, "##current", ImVec2(0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-        packageList(ui, giveSide_ ? "We give" : "We ask for", side, true);
+        packageList(ui, giveSide_ ? "We give" : "We ask for", side, true, giveSide_);
         endList(ui);
         ImGui::TextColored(kTextDim, "Items the other side is asked to choose (\"Any\") must be filled in before a trade can be accepted.");
     }
 
-    void resourceInput(UiContext& ui, std::vector<PackageItem>& side) {
+    // The resources: a click on one adds 1,000 of it, 10,000 with x10000 lit
+    // or Shift held, 100,000 with x100000; a line holds at most 250,000, more
+    // starting a new line (spec 05 §3.4, confirmed: binary).
+    void resourceRows(UiContext& ui) {
         static constexpr std::array<game::Resource, 3> kRes{game::Resource::Minerals, game::Resource::Organics, game::Resource::Radioactives};
-        ImGui::TextColored(kTextDim, "In steps of 1,000.");
-        for (size_t i = 0; i < 3; ++i) {
+        for (size_t i = 0; i < kRes.size(); ++i) {
             ImGui::PushID(int(i));
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(std::string(game::displayName(kRes[i])).c_str());
-            ImGui::SameLine(ui.px(110));
-            ImGui::SetNextItemWidth(ui.px(160));
-            const int64_t step = 1000, fast = 10000;
-            ImGui::InputScalar("##amount", ImGuiDataType_S64, &amounts_.v[i], &step, &fast);
-            amounts_.v[i] = std::max<int64_t>(0, amounts_.v[i] / 1000 * 1000);
+            if (ImGui::Selectable(std::string(game::displayName(kRes[i])).c_str())) {
+                addPackageClick(linesOf(giveSide_), resourceRow(kRes[i]), clickSteps());
+                storeLines(giveSide_);
+            }
             ImGui::PopID();
         }
+        ImGui::Spacing();
+        ImGui::Checkbox("x10000", &x10000_);
+        ImGui::SameLine();
+        ImGui::Checkbox("x100000", &x100000_);
+        if (x10000_ || x100000_) ImGui::TextColored(kTextDim, "A click adds %s.", x10000_ ? "10,000" : "100,000");
+        else ImGui::TextColored(kTextDim, "A click adds 1,000 (Shift: 10,000).");
         if (giveSide_) {
             ImGui::TextColored(kTextDim, "We have:");
             ImGui::SameLine();
             resources(ui, ui.me().stockpile, true);
-        }
-        if (ImGui::Button("Add To Package", ImVec2(ui.px(160), ui.px(24))) && !amounts_.isZero()) {
-            PackageItem i;
-            i.kind = PackageItem::Kind::Resources;
-            i.resources = amounts_;
-            addItem(side, i);
-            amounts_ = {};
         }
     }
 
@@ -851,7 +866,8 @@ private:
     std::string answerText_;
     PackageTab tab_ = PackageTab::Resources;
     bool giveSide_ = true;
-    game::Resources amounts_;
+    std::vector<PackageLine> offerLines_, requestLines_;
+    bool x10000_ = false, x100000_ = false;
     bool showOffer_ = false;
     bool confirm_ = false;
     bool closeNow_ = false;
