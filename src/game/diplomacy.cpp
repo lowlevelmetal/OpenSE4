@@ -530,8 +530,8 @@ bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b) 
 void transferColony(GameState& s, ObjectId planet, EmpireId to) {
     Colony* c = s.colony(planet);
     if (!c || !validEmpire(s, to) || c->owner == to) return;
+    // Only the owner changes: a capital stays a capital (spec 02 §2, confirmed: binary).
     c->owner = to;
-    c->homeworld = false;
     // The queue is cleared as Clear Queue clears it: the old owner's items and
     // waypoint go, emergency mode and its counter stay (spec 02 §6.4, confirmed: binary).
     economy::clearQueue(c->queue);

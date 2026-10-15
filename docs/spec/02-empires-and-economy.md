@@ -414,6 +414,16 @@ Trim values, since some have trailing spaces.
   planets, §9), and a planet that rebels and founds a new empire, are **capitals**: their
   anger can never rise above 80, so a capital never riots (confirmed: binary). Ordinary
   colonies are not capitals.
+- **The capital mark belongs to the colony** (confirmed: binary; corrected 2026-10-14,
+  complete listing). It is written only when a colony is created, copied, loaded or set up
+  as a new colony (the starting planets, colonization, a rebellion). A change of owner
+  (capture in ground combat, a treaty or package transfer, an intelligence project) changes
+  only the owner and leaves the mark as it was. So a captured or ceded capital stays a
+  capital for its new owner: its anger is at most 80, it never riots, and whatever else
+  reads the mark still sees it (the computer players value a capital far above other
+  planets, spec 05 §7.4). Since 2026-10-14 ours follows (`combat_ground.cpp`
+  `capturePlanet` and `diplomacy::transferColony` keep `Colony::homeworld`); before, both
+  cleared it.
 - **No single homeworld marker** (confirmed: binary). Three separate things play that
   part:
   - the capital flag above;

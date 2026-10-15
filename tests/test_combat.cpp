@@ -1933,7 +1933,7 @@ TEST_CASE("combat: ground combat captures a planet") {
     const Colony* after = s.colony(planet);
     REQUIRE(after != nullptr);
     CHECK(after->owner == ar.a);
-    CHECK_FALSE(after->homeworld);
+    CHECK(after->homeworld);  // a captured capital stays a capital (spec 02 §2, confirmed: binary)
     // The queue gets the clear of a treaty transfer: the items, On Hold, Repeat
     // Build and the waypoint go; emergency mode and its counter stay, so slow
     // mode carries over to the captor (spec 02 §6.4, confirmed: binary).

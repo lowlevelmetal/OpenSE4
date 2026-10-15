@@ -356,9 +356,9 @@ void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
     const SystemId sys = s.galaxy.object(c.planet).system;
     const std::string name = s.galaxy.object(c.planet).name;
     // The captor takes the planet with its facilities, stored units and
-    // population; its surviving troops join the cargo (spec 04 §13).
+    // population; its surviving troops join the cargo (spec 04 §13). Only the
+    // owner changes: a capital stays a capital (spec 02 §2, confirmed: binary).
     c.owner = captor;
-    c.homeworld = false;
     // Its queue gets the clear of a treaty or package transfer: the items, their
     // progress, On Hold, Repeat Build and the automatic waypoint go; emergency
     // mode and its counter stay, so slow mode carries over (spec 02 §6.4,

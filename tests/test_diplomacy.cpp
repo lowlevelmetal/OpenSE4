@@ -669,6 +669,7 @@ TEST_CASE("diplomacy: surrender and independence") {
     // next destruction check (spec 05 §6).
     CHECK(s.empire(kA).alive);
     CHECK(s.colony(homeA)->owner == kB);
+    CHECK(s.colony(homeA)->homeworld);  // only the owner changes: a capital stays one (spec 02 §2, confirmed: binary)
     for (const Vehicle& v : s.vehicles) CHECK(v.owner != kA);
     CHECK(s.empire(kB).stockpile == bBefore + Resources{100, 200, 300});
     CHECK(s.empire(kA).stockpile == Resources{});

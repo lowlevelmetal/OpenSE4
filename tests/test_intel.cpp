@@ -502,6 +502,7 @@ TEST_CASE("intel: a rebel planet breaks away 25 %, joins the source 18.75 %, sta
         } else if (owner == kA) {
             ++joined;
             CHECK(out.applied);
+            CHECK(s.colony(home)->homeworld);  // a capital stays one under its new owner (spec 02 §2)
             CHECK_FALSE(hasMood(ctx, kB, "Homeworld Lost"));  // no happiness event (spec 02 §2)
             CHECK_FALSE(hasMood(ctx, kB, "Any Planet Lost"));
             CHECK(s.empire(kA).hasExplored(s.galaxy.object(home).system));
