@@ -162,6 +162,14 @@ public:
         heading(ui, "OpenSE4");
         changed |= movementSpeedRow(ui, s);
         changed |= shipMovementRows(ui, s);
+        // The original keeps the tags whatever single object is selected (spec 06 §2.5).
+        changed |= lampToggle(ui, "Clear tags when selecting a ship elsewhere", &s.clearTagsElsewhere);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The original keeps the tagged ships through the ship and fleet buttons and the\n"
+                              "Gotos, so the next order still goes to the tagged group while another ship's\n"
+                              "report is shown. With this on, selecting a ship or planet in another sector\n"
+                              "clears the tags. A click on a sector, the colony buttons and Shift+C always\n"
+                              "clear them.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

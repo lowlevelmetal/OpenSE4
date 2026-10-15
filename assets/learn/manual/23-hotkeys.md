@@ -88,7 +88,7 @@ moves are being played, these keys are ignored.
 | `Ctrl+F`, `Ctrl+D` | Next, previous fleet |
 | `Ctrl+C`, `Ctrl+X` | Next, previous colony |
 | `Shift+click` in the list of a sector | Tag a ship (a ship in a fleet tags the fleet), so that one order goes to every tagged ship |
-| `Shift+A`, `Shift+C` | Tag all your ships in the selected sector, clear the tags |
+| `Shift+A`, `Shift+C` | Tag all your ships in the selected sector, clear the tags (a click on a sector clears them too; the ship and fleet keys keep them) |
 | `Esc` | Cancel picking a place; otherwise clear the selection |
 
 ## Display

@@ -345,7 +345,11 @@ void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
     ++selections_;
     const bool sameSector = sector_ && *sector_ == v->location.sector && shown_ == v->location.system;
     clearSelection();
-    if (!sameSector) tagged_.clear();
+    // The tags stay: only Shift+C and a sector's selection clear them, so
+    // after a ship or fleet button or a Goto the next order still goes to the
+    // tagged group (spec 06 §2.5, confirmed: binary). OpenSE4's option
+    // "Clear tags when selecting a ship elsewhere" clears them here.
+    if (!sameSector && settings().clearTagsElsewhere) tagged_.clear();
     shown_ = v->location.system;
     sector_ = v->location.sector;
     vehicle_ = id;
@@ -355,8 +359,10 @@ void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
 void MainWindow::selectPlanet(UiContext& ui, game::ObjectId p) {
     ++selections_;
     const game::SpaceObject& o = ui.state().galaxy.object(p);
+    const bool sameSector = sector_ && *sector_ == o.sector && shown_ == o.system;
     clearSelection();
-    tagged_.clear();
+    // A Goto to a planet keeps the tags too (as selectVehicle).
+    if (!sameSector && settings().clearTagsElsewhere) tagged_.clear();
     shown_ = o.system;
     sector_ = o.sector;
     object_ = p;
@@ -1652,7 +1658,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;
     // The Fleet Report has no tabs: its body takes the whole panel.
-    const bool fleetOnly = vehicle_ && tagged_.empty() && fleet_ && s.fleet(*fleet_) && s.vehicle(*vehicle_);
+    const bool fleetOnly = vehicle_ && fleet_ && s.fleet(*fleet_) && s.vehicle(*vehicle_);
     const float bodyH = fleetOnly ? geo.reportPanel.size().y : tabsY - 1;
     // The report body scrolls above the tabs; the portrait, flag and name reach over the frame rail above it.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
@@ -1664,9 +1670,12 @@ void MainWindow::reportPanel(UiContext& ui) {
     const bool modPanels = modReport(ui, false);
     if (modPage_ && modPanels) {
         (void)modReport(ui, true);
-        if (vehicle_ && tagged_.empty() && !fleetOnly) tabsFor = true;
-        if (object_ && tagged_.empty() && !vehicle_) tabsFor = planetTabs = true;
-    } else if (vehicle_ && tagged_.empty()) {
+        if (vehicle_ && !fleetOnly) tabsFor = true;
+        if (object_ && !vehicle_) tabsFor = planetTabs = true;
+    } else if (vehicle_) {
+        // The selected object's report, while tags exist too: the ship and
+        // fleet buttons and the Gotos keep them (spec 06 §2.5), and the
+        // orders still go to the tagged group, which taggedNote says.
         if (const game::Vehicle* v = s.vehicle(*vehicle_)) {
             if (const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr) {
                 // One of the player's fleets: the Fleet Report fills the panel
@@ -1685,7 +1694,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 tabsFor = true;
             }
         }
-    } else if (object_ && tagged_.empty()) {
+    } else if (object_) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
         if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
             if (const auto item = planetReport(ui, *object_, tab_)) openItem(ui, *item);
@@ -1709,8 +1718,8 @@ void MainWindow::reportPanel(UiContext& ui) {
             image(ui, objectSprite(ui, o), {36, 36});
             ImGui::SameLine();
             if (ImGui::Selectable(objectName(s, id, me).c_str(), false, 0, ImVec2(0, rowH))) {
+                // The tags stay (spec 06 §2.5): a row of the list is no sector's selection.
                 clearSelection();
-                tagged_.clear();
                 if (o.system == shown_) sector_ = o.sector;
                 object_ = id;
                 reportFromList_ = true;
@@ -1776,9 +1785,10 @@ void MainWindow::reportPanel(UiContext& ui) {
     } else if (shown_.valid() && !emptyReport_) {
         systemReport(ui, shown_);
     }
+    if (single && !tagged_.empty()) taggedNote(ui, fleetOnly);
     ImGui::PopClipRect();
     ImGui::EndChild();
-    if (reportFromList_ && single && tagged_.empty()) {
+    if (reportFromList_ && single) {
         // Back to the list of everything in the sector: the up-arrow button of
         // DetailUp.bmp, one 33x21 cell flush with the report's top right
         // corner, at (257,0) of the 290x361 report; its rows are normal, under
@@ -1812,7 +1822,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     }
     // OpenSE4's MOD button, while mods' panels apply: beside the up-arrow's place.
     if (modPanels) {
-        const bool arrow = reportFromList_ && single && tagged_.empty();
+        const bool arrow = reportFromList_ && single;
         if (modPageButton(ui, geo.reportPanel.min + Vec2{arrow ? 222.0f : 255.0f, 0})) modPage_ = !modPage_;
     }
     if (tabsFor) {
@@ -2145,6 +2155,26 @@ void MainWindow::aiNotesInReport(UiContext& ui, std::string_view kind, int64_t i
         if (i > 0) script::reportItem("report-note:" + about[i - 1].text, ui.at({min.x, y}), ui.at({min.x + width, y + heights[i]}));
         y += heights[i];
     }
+}
+
+void MainWindow::taggedNote(UiContext& ui, bool fleetOnly) {
+    // OpenSE4's own (what the original draws over the report while tags exist
+    // is not known, spec 06 §7 Q124): a line over the bottom of the report's
+    // body, above the tabs, that the orders go to the tagged group and not to
+    // the object shown.
+    const Rect& panel = geo.reportPanel;
+    const float bottom = panel.min.y + (fleetOnly ? panel.size().y : panel.size().y - 31) - 3;
+    const std::string text = std::format("{} tagged: the next order goes to them. Shift+C clears the tags.", tagged_.size());
+    ImFont* font = ui.fonts.regular ? ui.fonts.regular : ImGui::GetFont();
+    const float size = ui.fontPx(kTextSize);
+    const float width = panel.size().x - 12;
+    const float height = font->CalcTextSizeA(size, FLT_MAX, ui.px(width - 8), text.c_str()).y / ui.k();
+    const Vec2 min{panel.min.x + 4, bottom - height - 6};
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(ui.at(min), ui.at({min.x + width, bottom}), IM_COL32(0, 0, 0, 225));
+    dl->AddRect(ui.at(min), ui.at({min.x + width, bottom}), IM_COL32(0, 224, 0, 255));
+    dl->AddText(font, size, ui.at({min.x + 4, min.y + 3}), IM_COL32(0, 224, 0, 255), text.c_str(), nullptr, ui.px(width - 8));
+    script::reportItem(std::format("tagged:{}", tagged_.size()), ui.at(min), ui.at({min.x + width, bottom}));   // input scripts: the tag count
 }
 
 void MainWindow::playerFailureNotice(UiContext& ui) {

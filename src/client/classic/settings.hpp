@@ -64,6 +64,13 @@ struct ClassicSettings {
     // summary at its end, in place of its empty weapon grid (Combat Replay
     // Options; the original has no such list, spec 06 §7 Q39). Off by default.
     bool replayEvents = false;
+    // Options, under OpenSE4: "Clear tags when selecting a ship elsewhere".
+    // The original keeps the tags through the ship, fleet and colony buttons'
+    // and the Gotos' selections of one object, so the next order still goes
+    // to the tagged group (spec 06 §2.5); with this on, selecting one object
+    // in another sector clears them, as OpenSE4 did before 2026-10-15. Off
+    // by default.
+    bool clearTagsElsewhere = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

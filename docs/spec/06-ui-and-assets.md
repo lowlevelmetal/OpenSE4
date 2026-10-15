@@ -1003,6 +1003,14 @@ each group still square by square, the view going at once to where the last of t
 groups ran, and starts a replayed day's entries together, each vehicle's in turn
 (`shipMovementRows` in `screens/settings_screen.cpp`; `ship_glides.hpp`, `movement_replay.hpp`).
 
+**OpenSE4's tags option** (an OpenSE4 option, since 2026-10-15). Under the ship movement
+lamps, "Clear tags when selecting a ship elsewhere", off by default, kept with this computer's
+settings (`clearTagsElsewhere`, `clear_tags_elsewhere` in `classic_settings.toml`). Off, the
+tags last as the original keeps them (§2.5 "What clears the tags"); on, selecting one object
+(by a ship or fleet button or a Goto) in another sector than the one selected before clears
+them, so the next order goes to the object shown (`OptionsScreen` in
+`screens/settings_screen.cpp`, `MainWindow::selectVehicle`, `selectPlanet`).
+
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
 in brackets.
@@ -2187,6 +2195,20 @@ fleets expanded; every left-click on a sector clears the tags, on the same secto
 (confirmed: binary). The orders a tagged group can take are in §2.8, and how the tagged
 vehicles carry an order out is spec 03 §8 "Tagged vehicles".
 
+**What clears the tags** (confirmed: binary; corrected 2026-10-15, complete listing). Only
+Shift+C and a selection of a sector: a left-click on a sector, the colony buttons (they select
+the colony's sector, §2.3), the re-selection after an order to the group, the report's
+up-arrow, the Log's Goto to a location and the game's own re-selections. The ship cycle (Space,
+Ctrl+N, Ctrl+B, the top selector), the fleet cycle, a click on a row of the list and the Gotos
+that select one object (Ships\Units, Planets, Colonies) keep the tags while the panel shows the
+new object's report, and an order given then goes to the tagged group: the order takes the
+first tagged object before the selection (§2.8). What the panel draws over the report while
+tags exist was not traced (§7 Q124). Since 2026-10-15 ours follows (`MainWindow::selectVehicle`,
+`selectPlanet`): the object's report shows, with a line of ours over its foot that the next
+order goes to the tagged group (`MainWindow::taggedNote`). OpenSE4's option "Clear tags when
+selecting a ship elsewhere" (§1.9, off by default) clears the tags when the object selected
+stands in another sector than the one selected before, as ours did until then.
+
 **Fleets in the list** (confirmed: binary; observed, spec 07 session 7). The list holds the
 objects of the sector that the player sees, except that each of the player's own fleets is
 one row: its members in the sector stand as one entry (the first of them in the system's
@@ -2431,9 +2453,10 @@ All of this subsection is (confirmed: binary).
 - The four movement-log buttons are lit in every simultaneous game, whatever is
   selected, and always dim in turn-based games.
 - Every other button depends only on the object whose report the right panel shows, or
-  on the tagged group. All are dim when nothing is selected; when the panel shows a list
-  of several objects, a system report, a star, a storm or a warp point; and when the
-  object belongs to another empire.
+  on the tagged group, which comes first: while tags exist the buttons are the group's,
+  whatever report the panel shows (§2.5 "What clears the tags"). All are dim when nothing
+  is selected; when the panel shows a list of several objects, a system report, a star, a
+  storm or a warp point; and when the object belongs to another empire.
 - A hotkey runs its order only when that order's button is lit. The exception is the
   four movement-log keys (Ctrl+P, Ctrl+O, Ctrl+I, Ctrl+U), which start the replay
   without checking their buttons (§7 Q51).
@@ -6254,3 +6277,12 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      system report; at a turn's start the next object's selection makes its own sector current
      again. Watching the original after a Move To within a system would settle it. Our client
      keeps the current sector where it was when a move order runs (inferred).
+
+**The accuracy pass of 2026-10-15 (the interface).** Implementing the interface's findings left
+these open:
+
+124. **The report while tags exist.** The ship and fleet buttons and the Gotos keep the tags
+     while the panel shows the new object's report, and the next order goes to the tagged group
+     (§2.5 "What clears the tags", confirmed: binary). Does the panel mark the tags then (the
+     tagged count, the group, nothing)? Ours writes a line of its own over the report's foot,
+     "N tagged: the next order goes to them. Shift+C clears the tags." (inferred).

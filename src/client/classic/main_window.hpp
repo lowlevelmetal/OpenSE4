@@ -239,6 +239,10 @@ private:
     void aiNotesOverlay(UiContext& ui);
     void aiNotesInReport(UiContext& ui, std::string_view kind, int64_t id, const std::vector<game::VehicleId>* members = nullptr);
     std::vector<ShownNote> notes_;   // this frame's, while the view is on
+    // While tags exist and the report of one object is shown (the ship and
+    // fleet buttons and the Gotos keep the tags, spec 06 §2.5): a line over
+    // the report's foot saying that the orders go to the tagged group.
+    void taggedNote(UiContext& ui, bool fleetOnly);
     // The notice of computer players that failed: the newest failure, with
     // Details (Computer Player Errors) and Dismiss; `failuresSeen_` were dismissed.
     void playerFailureNotice(UiContext& ui);

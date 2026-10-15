@@ -1001,6 +1001,15 @@ What remains different:
 | Opening Set Construction Queue from Construction Queues | Marks the object changed only when something is changed there | Marks it as the window opens | L (which minister flags a switched player's copy carries) |
 | Ships\Units' fleet rows | Move and Supplies over the members at the location (ours) | Not described | none |
 
+The accuracy pass of 2026-10-15 on the interface (spec 06 §1.1, §1.3, §1.9, §2.3, §2.5, §2.9, §3,
+§3.4, §7 Q93, Q113, Q115, Q124) brought the main window and a few windows in line with the
+complete listing: the tags last until Shift+C or a sector's selection. OpenSE4's additions
+there became options, off by default:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Tags across selections (`MainWindow::selectVehicle`, `selectPlanet`, `taggedNote`) | The original's rule; a line over the report says the next order goes to the tagged group (ours, Q124). OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options) clears them when a ship or fleet button or a Goto selects an object in another sector | The ship and fleet buttons and the Gotos keep the tags; the next order goes to the tagged group | none (an option) |
+
 ## Computer player (spec 05 §7)
 
 The four AI_Settings movement flags become the computer empire's own Ship Movement and
