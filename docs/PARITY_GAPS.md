@@ -99,6 +99,18 @@ choice) and refuses a new conversion for a colony without a converter (OpenSE4 c
 Q56). A cloaked colony keeps building at its normal rate; only its yard stops (§6.1), and its
 emergency counter moves twice a turn (§6.4).
 
+On 2026-10-14 the accuracy recheck of spec 02 on the complete listing found 20 differences,
+closed the same day: a planet is "lost" to its owner's mood only when its people die out, by
+the built-in colony type "Homeworld" (§2); the capital mark stays with a planet that changes
+hands (§2); a rebel empire copies its former owner's waiting happiness events (§4, spec 05
+Q82); an Emotionless colony riots by its anger band (§4); the Planetary Minister's mood
+reports, the riot entry only with people, and the negative change limit as stored (§4); Add
+Type refuses a queue type name already listed (§6.4); the RacialTraits.txt checks (§1.6);
+the first maintenance victims and their Misc entries (§7); the ship limit message once per
+turn and the built mark before units are placed (§6.5); a click on a design beyond our
+technology does nothing (spec 06 §1.8.3). No row remains; where the original's place of a
+mood report was not read is §13 Q57.
+
 ## Vehicles, movement and logistics (spec 03)
 
 Design names are unique in the whole game (`uniqueDesignName`; the original allows duplicates
@@ -486,7 +498,9 @@ Generation, empire placement, starting planets and stockpile, the setup option l
 racial point costs, sight and stellar manipulation follow the specs as settled on
 2026-09-30 (`generate.cpp`, `setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). Every
 starting planet is a capital of colony type "Homeworld", and the home system is recorded
-when the game is created (`Empire::homeSystem`). A new game and Quick Start are
+when the game is created (`Empire::homeSystem`). Since 2026-10-14 a starting planet gets the
+planet size's plain maximum population, its values through the value clamp, and the
+facilities the original scores best (spec 02 §9). A new game and Quick Start are
 turn-based. Maps are saved and loaded in our own format ([MAPS.md](MAPS.md),
 `map_file.hpp`) with starting points placed first; the game keeps the points a later Save
 Map writes (`GameState::startingPoints`). Since 2026-10-14 the original's map files and

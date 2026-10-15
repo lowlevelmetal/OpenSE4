@@ -629,8 +629,9 @@ system is added each turn to every colony of the owner there. Negative values do
   Our engine follows this since 2026-10-13 (`cmd::AbandonPlanet` with `scrapFacilities`,
   `OrderKind::Abandon`, movement's `abandon`): it used to abandon at once in both turn
   styles after scrapping the facilities one command at a time, and always wrote the entry.
-  The percentage is worked out once, before the first facility goes (inferred, spec 03 §19
-  Q84), and the empire's history keeps an entry either way (OpenSE4's).
+  The percentage is worked out once, before the first facility goes, and every facility is
+  scrapped with it (confirmed: binary, 2026-10-14, complete listing; spec 03 §19 Q84 said
+  "inferred"); the empire's history keeps an entry either way (OpenSE4's).
 
 **Death and defence**
 - Bombardment kills 1M for every `Damage Points To Kill One Population` points of damage.
