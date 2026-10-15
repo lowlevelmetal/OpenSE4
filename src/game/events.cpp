@@ -1347,8 +1347,16 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::PoliticsFakeMessages: {
-            // A declaration of war sent in the target's name, and it takes
-            // effect: the two are at War (confirmed: binary).
+            // An ordinary Declare War from the target to the third empire,
+            // Demanding, with a line of text, carried out by the normal
+            // message processing: the two are at War, and the third empire
+            // logs it as a political message from the target, dated with the
+            // date of the attacker's end-of-turn processing (the advanced date
+            // in a simultaneous game), so that it counts as the newest message
+            // from the target in the answer window (spec 05 §2.3, §3.4,
+            // confirmed: binary). In a simultaneous game it is also queued with
+            // the target's outgoing messages and delivered again at the next
+            // turn's message step.
             if (!victim || !living(s, t.other)) return out;
             DiplomaticMessage m;
             m.id = MessageId{s.nextMessageId++};
@@ -1357,9 +1365,14 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             m.sentTurn = s.turn;
             m.type = MessageType::DeclareWar;
             m.tone = 2;
-            m.delivered = m.answered = true;
+            m.text = std::format("The {} declares war on the {}.", empireFullName(*victim), empireFullName(s.empire(t.other)));
             s.messages.push_back(m);
-            diplomacy::declareWar(ctx, t.empire, t.other);
+            diplomacy::deliverMessage(ctx, m.id, score::fileDate(s));
+            if (s.options.simultaneous) {
+                DiplomaticMessage again = m;
+                again.id = MessageId{s.nextMessageId++};
+                s.messages.push_back(again);
+            }
             out.actual = 1;
             break;
         }

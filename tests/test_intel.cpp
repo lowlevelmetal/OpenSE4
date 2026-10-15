@@ -694,6 +694,61 @@ TEST_CASE("intel: political operations") {
     CHECK(hasLog(s, kC, "War Declared"));
 }
 
+TEST_CASE("intel: a faked declaration of war is an ordinary political message from the target, dated now (spec 05 §2.3, §3.4)") {
+    for (const bool simultaneous : {false, true}) {
+        CAPTURE(simultaneous);
+        GameState s = newPoliticsGame();
+        s.options.simultaneous = simultaneous;
+        s.turn = 6;
+        setContact(s, kA, kB);
+        setContact(s, kA, kC);
+        setContact(s, kB, kC);
+        TurnContext ctx = context(s);
+        // B's gift to C, waiting for C's answer.
+        DiplomaticMessage gift;
+        gift.to = kC;
+        gift.type = MessageType::Gift;
+        PackageItem cash;
+        cash.kind = PackageItem::Kind::Resources;
+        cash.resources = {1000, 0, 0};
+        gift.offer = {cash};
+        REQUIRE(apply(politicsRules(), s, kB, cmd::SendMessage{gift}).ok);
+        diplomacy::deliverMessages(ctx);
+        REQUIRE(diplomacy::newestMessage(s, kC, kB, s.turn)->type == MessageType::Gift);
+        // A fakes B's declaration of war on C, at A's end-of-turn processing.
+        effects::Target t = target(kB, kA);
+        t.other = kC;
+        Rng rng(2);
+        REQUIRE(effects::apply(ctx, Effect::PoliticsFakeMessages, t, 1, rng).applied);
+        CHECK(s.empire(kB).relation(kC).treaty == Treaty::War);
+        // Dated with the processing's date (advanced in a simultaneous game);
+        // C logs it as a message from B; it is now the newest from B, so the
+        // gift can no longer be answered.
+        const uint32_t today = simultaneous ? s.turn + 1 : s.turn;
+        const DiplomaticMessage* fake = diplomacy::newestMessage(s, kC, kB, today);
+        REQUIRE(fake);
+        CHECK(fake->type == MessageType::DeclareWar);
+        CHECK(fake->dated == today);
+        CHECK(fake->tone == 2);
+        CHECK_FALSE(fake->text.empty());
+        bool logged = false;
+        for (const LogEntry& l : s.empire(kC).log) logged = logged || (l.title == "Message" && l.message == fake->id);
+        CHECK(logged);
+        // In a simultaneous game a copy waits in B's outgoing messages for the
+        // next message step; none in a turn-based game.
+        const auto waiting = std::count_if(s.messages.begin(), s.messages.end(), [](const DiplomaticMessage& m) { return !m.delivered; });
+        CHECK(waiting == (simultaneous ? 1 : 0));
+        if (simultaneous) {
+            ++s.turn;
+            diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+            int declarations = 0;
+            for (const DiplomaticMessage& m : s.messages) declarations += m.from == kB && m.to == kC && m.type == MessageType::DeclareWar ? 1 : 0;
+            CHECK(declarations == 2);
+            CHECK(std::none_of(s.messages.begin(), s.messages.end(), [](const DiplomaticMessage& m) { return !m.delivered; }));
+        }
+    }
+}
+
 TEST_CASE("intel: espionage reports") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
