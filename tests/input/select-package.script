@@ -1,0 +1,43 @@
+# Select Package's lines (spec 05 §3.4, confirmed: binary; docs/BUILDING.md "Input scripts"), on
+# a training game of our own (tests/input/learn-intel: another empire met at the start):
+# - a click on a resource adds 1,000 of it, 10,000 with x10000 lit; a click on its line takes the
+#   step in force off, the whole line when that is at least what it holds;
+# - on the side asked for, the Comm Channels tab starts with "Any Comm Channel", and a second
+#   click on it makes its line "Any Comm Channel - 2"; a click on that line takes one off.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-intel --training=intel --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 10
+assert { empires_met = 1 }
+click tag:command:empires
+wait-window empires
+click item:##portrait in=empires
+wait-window communicate
+# A trade opens Select Package at once.
+click tag:communicate:message-type
+wait-for tag:communicate:message-type:propose-trade
+click tag:communicate:message-type:propose-trade
+wait-for item:Minerals in=communicate
+click item:Minerals in=communicate
+wait-for item:"Minerals - 1000" in=communicate
+click item:x10000 in=communicate
+click item:Minerals in=communicate
+wait-for item:"Minerals - 11000" in=communicate
+screenshot package-resources.png
+# The line loses the step in force (10,000), then, at 1,000 left, goes.
+click item:"Minerals - 11000" in=communicate
+wait-for item:"Minerals - 1000" in=communicate
+click item:"Minerals - 1000" in=communicate
+wait-gone item:"Minerals - 1000" in=communicate
+# The side asked for: "Any Comm Channel" first; twice makes one line of two.
+click item:"We ask for" in=communicate
+click item:"Comm Channels" in=communicate
+wait-for item:"Any comm channel (they choose)" in=communicate
+click item:"Any comm channel (they choose)" in=communicate
+click item:"Any comm channel (they choose)" in=communicate
+wait-for item:"Any Comm Channel - 2" in=communicate
+screenshot package-any.png
+click item:"Any Comm Channel - 2" in=communicate
+wait-for item:"Any Comm Channel" in=communicate
+assert-absent item:"Any Comm Channel - 2" in=communicate

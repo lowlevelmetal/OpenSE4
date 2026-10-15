@@ -329,6 +329,9 @@ struct TurnResult {
 };
 
 // Processes one full turn: applies orders, runs every phase, advances the date.
+// A simultaneous game marked completed (GameState::lastTurn) can still be
+// processed: its turns skip every start-of-turn step and every end-of-turn
+// processing (spec 05 §6); one that is over (gameOver) processes nothing.
 // In a turn-based game it plays the rest of the game turn instead: every
 // player's turn from the one in progress to the last, each player's orders
 // carried out at its turn (without the Attack Sector question: orders given
@@ -343,7 +346,8 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
 // construction, repair, foreign designs last seen more than 50 turns ago
 // forgotten (step 12), supply, storage cap, system-wide abilities and
 // training, its vehicles' came-from sectors reset (step 16), ground combat,
-// and the log pruned to this turn's entries. The destruction check
+// and the log pruned to this turn's entries. Nothing at all once the game is
+// marked completed (GameState::lastTurn, spec 05 §6). The destruction check
 // is the caller's: processTurn runs it right after; a turn-based game runs it
 // at the end of the empire's next turn start.
 void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers);
@@ -375,11 +379,22 @@ void applyOrders(const Rules& r, GameState& s, const EmpireOrders& orders, std::
 // year), the victory check and the event step run, and the per-turn flags
 // are cleared, as in a simultaneous turn. A victory check that is met makes
 // the next game turn the last (GameState::lastTurn): every player plays it,
-// and when it ends the game is over, before anything else runs. Computer
+// with no computer player or minister acting, no movement given back, no
+// orders run at a turn's start and no end-of-turn processing, and when it
+// ends the game is over, before anything else runs (spec 05 §6). Computer
 // players take their turns in sequence the same way. GameState::playerTurn
 // records whose turn it is.
 
 inline bool turnBased(const GameState& s) { return !s.options.simultaneous; }
+
+// Whether the game is decided, for OpenSE4's automated runs (the SDK's
+// matches and tests): over (GameState::gameOver), or a simultaneous game
+// whose victory check was met (GameState::lastTurn). The original's host may
+// go on processing such a game, its turns only reading orders and messages,
+// moving, fighting and running the checks and events (spec 05 §6), and ours
+// may too; a turn-based game in its last turn is not decided until that turn
+// ends.
+inline bool gameDecided(const GameState& s) { return s.gameOver || (!turnBased(s) && s.lastTurn); }
 
 // Who plays the human empires' turns in resumeTurnBased and endPlayerTurn.
 struct LiveOptions {

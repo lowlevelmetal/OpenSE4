@@ -324,7 +324,9 @@ Value EffectRunner::run(std::string_view name, const Value& raw) {
         const EmpireId x = a.empire(s, "empire"), y = a.empire(s, "other");
         if (x == y) a.refuse("other", "an empire has no treaty with itself");
         if (!s.empire(x).relation(y).contact) a.refuse("the two empires have not met");
-        game::diplomacy::setTreaty(ctx, x, y, a.named<game::Treaty>("treaty"));
+        // As a treaty signed: an accepted proposal's enactment (its happiness
+        // events, a new subject's other treaties dropped).
+        game::diplomacy::signTreaty(ctx, x, y, a.named<game::Treaty>("treaty"));
         return Value();
     }
     if (name == "log") {

@@ -272,16 +272,124 @@ TEST_CASE("diplomacy: refusals, counter-proposals and forged acceptances") {
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::NonAggression);
 
-    // An acceptance of something never proposed changes nothing.
+    // An Accept Treaty enacts the treaty it names, proposed or not (spec 05
+    // §3.4, confirmed: binary); here a minister's, which no window checks.
     nextTurn(s);
     DiplomaticMessage forged;
     forged.to = kA;
     forged.type = MessageType::AcceptTreaty;
     forged.treaty = Treaty::Partnership;
     forged.inReplyTo = MessageId{12345u};
-    REQUIRE(apply(politicsRules(), s, kB, cmd::SendMessage{forged}).ok);
+    REQUIRE(apply(politicsRules(), s, kB, cmd::SendMessage{forged, true}).ok);
     diplomacy::deliverMessages(ctx);
-    CHECK(s.empire(kA).relation(kB).treaty == Treaty::NonAggression);
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::Partnership);
+}
+
+TEST_CASE("diplomacy: only the newest recent message from an empire can be answered (spec 05 §3.4)") {
+    GameState s = newPoliticsGame();
+    s.options.simultaneous = false;  // turn-based: the window's one-turn case
+    setContact(s, kA, kB);
+    setContact(s, kB, kC);
+    TurnContext ctx = context(s);
+    // C (a higher number than B) proposes, then sends a General message: only
+    // the newest counts, whatever its type.
+    const MessageId proposal = send(s, kC, kB, MessageType::ProposeTreaty, Treaty::NonAggression);
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    const MessageId chat = send(s, kC, kB, MessageType::General);
+    diplomacy::deliverMessages(ctx);
+    CHECK(diplomacy::newestMessage(s, kB, kC, s.turn)->id == chat);
+    CommandResult res = apply(politicsRules(), s, kB, cmd::AnswerMessage{proposal, true, {}});
+    CHECK_FALSE(res.ok);
+    CHECK(res.error == "Only the newest recent message from that empire can be answered");
+    // A counter-proposal needs a recent proposal as the newest message too.
+    DiplomaticMessage counter;
+    counter.to = kC;
+    counter.type = MessageType::CounterTreaty;
+    counter.treaty = Treaty::NonAggression;
+    CHECK_FALSE(apply(politicsRules(), s, kB, cmd::SendMessage{counter}).ok);
+
+    // A (a lower number than B) proposes: in a turn-based game its message is
+    // recent only on the date it was sent (dated after the date − 1).
+    nextTurn(s);
+    const MessageId fromA = send(s, kA, kB, MessageType::ProposeTreaty, Treaty::NonAggression);
+    diplomacy::deliverMessages(ctx);
+    CHECK(diplomacy::newestMessage(s, kB, kA, s.turn)->id == fromA);
+    nextTurn(s);
+    CHECK(diplomacy::newestMessage(s, kB, kA, s.turn) == nullptr);
+    CHECK_FALSE(apply(politicsRules(), s, kB, cmd::AnswerMessage{fromA, true, {}}).ok);
+    // From a higher number, two dates: C's chat of two turns ago is gone too.
+    CHECK(diplomacy::newestMessage(s, kB, kC, s.turn) == nullptr);
+    // Simultaneous games have no one-turn case.
+    s.options.simultaneous = true;
+    CHECK(diplomacy::newestMessage(s, kB, kA, s.turn)->id == fromA);
+    // An answer counts as the turn's message to that empire.
+    REQUIRE(apply(politicsRules(), s, kB, cmd::AnswerMessage{fromA, false, {}}).ok);
+    CHECK(s.empire(kB).relation(kA).messageSentThisTurn);
+    CHECK(apply(politicsRules(), s, kB, cmd::AnswerMessage{fromA, true, {}}).error == "Only one message per empire per turn");
+}
+
+TEST_CASE("diplomacy: an accepted package is the proposer's newest offer, looked up by the processing's date test (spec 05 §3.4)") {
+    GameState s = newPoliticsGame();   // simultaneous
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    s.empire(kA).stockpile = {0, 0, 0};
+    s.empire(kB).stockpile = {9000, 0, 0};
+    auto turnTo = [&](uint32_t t) {
+        s.turn = t;
+        for (Empire& e : s.empires)
+            for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
+    };
+    // A player's gift, from its orders of turn 4: the host's processing of
+    // turn 4 dates it 4. A accepts in its orders of turn 5; the processing of
+    // the players' messages looks for an offer dated exactly 4: carried out.
+    turnTo(4);
+    MessageId gift = send(s, kB, kA, MessageType::Gift, Treaty::None, {resources(1000, 0, 0)});
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    turnTo(5);
+    answer(s, kA, gift, true);
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1000);
+
+    // A computer player's gift, sent at the start-of-turn step of turn 5's
+    // processing: dated with the advanced date, 6. Accepted in the orders of
+    // turn 6, the lookup for an offer dated exactly 5 finds nothing (medium
+    // confidence); accepted again in the orders of turn 7 it is found.
+    gift = sendUnchecked(s, kB, kA, MessageType::Gift);
+    for (DiplomaticMessage& m : s.messages)
+        if (m.id == gift) m.offer = {resources(1000, 0, 0)};
+    diplomacy::deliverMessages(ctx, 6, diplomacy::MessageLookup::Exact);
+    turnTo(6);
+    answer(s, kA, gift, true);
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1000);
+    turnTo(7);
+    answer(s, kA, gift, true);
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 2000);
+
+    // A computer player accepting at the start-of-turn step (the advanced
+    // date 9, exact mode): an offer dated exactly 9 − 2 = 7, a player's from
+    // its orders of turn 7.
+    turnTo(7);
+    gift = send(s, kA, kB, MessageType::Gift, Treaty::None, {resources(500, 0, 0)});
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::PreviousTurn);
+    turnTo(8);
+    REQUIRE(apply(politicsRules(), s, kB, cmd::AnswerMessage{gift, true, {}, true}).ok);
+    diplomacy::deliverMessages(ctx, 9, diplomacy::MessageLookup::Exact);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1500);
+
+    // The packages carried out are the newest offer's, whatever the answer
+    // copied; and a newer message of another kind leaves nothing to carry out.
+    turnTo(10);
+    const MessageId small = send(s, kB, kA, MessageType::Gift, Treaty::None, {resources(100, 0, 0)});
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::Window);
+    turnTo(11);
+    answer(s, kA, small, true);
+    for (DiplomaticMessage& m : s.messages)
+        if (!m.delivered) m.request = {resources(7000, 0, 0)};  // the reply's copy: ignored
+    diplomacy::deliverMessages(ctx, std::nullopt, diplomacy::MessageLookup::Window);
+    CHECK(s.empire(kA).stockpile[Resource::Minerals] == 1600);
 }
 
 TEST_CASE("diplomacy: break treaty and declare war are immediate") {
@@ -294,18 +402,22 @@ TEST_CASE("diplomacy: break treaty and declare war are immediate") {
     send(s, kA, kB, MessageType::BreakTreaty);
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kB).relation(kA).treaty == Treaty::None);
-    CHECK(hasMood(ctx, kB, "New Treaty None"));
+    // Only an accepted treaty raises a happiness event (spec 05 §3.2, confirmed: binary).
+    CHECK_FALSE(hasMood(ctx, kA, "New Treaty None"));
+    CHECK_FALSE(hasMood(ctx, kB, "New Treaty None"));
 
     nextTurn(s);
     send(s, kB, kA, MessageType::DeclareWar);
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::War);
     CHECK(s.empire(kA).relation(kB).lastWarTurn == static_cast<int32_t>(s.turn));
-    CHECK(hasMood(ctx, kA, "New Treaty War"));
+    CHECK_FALSE(hasMood(ctx, kA, "New Treaty War"));
+    CHECK_FALSE(hasMood(ctx, kB, "New Treaty War"));
     CHECK(hasLog(s, kA, "War Declared"));
 
-    // Breaking a war is not a way to make peace. The player's window offers
-    // Break Treaty only from Non-Aggression up (spec 06 §4.2).
+    // The player's window offers Break Treaty only from Non-Aggression up
+    // (spec 06 §4.2), but a Break Treaty processed at War ends the war: both
+    // sides go to None (spec 05 §3.2, confirmed: binary).
     nextTurn(s);
     DiplomaticMessage breakWar;
     breakWar.to = kA;
@@ -313,7 +425,8 @@ TEST_CASE("diplomacy: break treaty and declare war are immediate") {
     CHECK(apply(politicsRules(), s, kB, cmd::SendMessage{breakWar}).error == "There is no treaty to break");
     sendUnchecked(s, kB, kA, MessageType::BreakTreaty);
     diplomacy::deliverMessages(ctx);
-    CHECK(s.empire(kA).relation(kB).treaty == Treaty::War);
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::None);
+    CHECK(s.empire(kB).relation(kA).treaty == Treaty::None);
 }
 
 TEST_CASE("diplomacy: subjugation breaks the subject's other treaties") {
@@ -337,6 +450,8 @@ TEST_CASE("diplomacy: subjugation breaks the subject's other treaties") {
     CHECK(hasLog(s, kC, "Treaty Broken"));
     CHECK(hasMood(ctx, kA, "New Treaty Subjugated (Dom)"));
     CHECK(hasMood(ctx, kB, "New Treaty Subjugated (Sub)"));
+    // The dropped treaty raises no happiness event (spec 05 §3.2, confirmed: binary).
+    CHECK_FALSE(hasMood(ctx, kC, "New Treaty None"));
 
     // A proposal may name the dominant side.
     nextTurn(s);
@@ -398,6 +513,29 @@ TEST_CASE("diplomacy: subjugation breaks the subject's other treaties") {
     CHECK(diplomacy::treatyTrigger(Treaty::Protectorate, false) == "New Treaty Protectorate (Sub)");
     CHECK(diplomacy::treatyTrigger(Treaty::NonIntercourse, false) == "New Treaty Non Intercourse");
     CHECK(diplomacy::treatyTrigger(Treaty::TradeResearchAlliance, false) == "New Treaty Trade and Research");
+}
+
+TEST_CASE("diplomacy: a package's Subjugation keeps the subject's other treaties and raises the treaty events (spec 05 §3.2)") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    setContact(s, kB, kC);
+    setContact(s, kA, kC);
+    agree(s, kB, kC, Treaty::TradeAlliance);
+    TurnContext ctx = context(s);
+    // B gives A a Subjugation: A, the receiver, is the master; B keeps its
+    // Trade Alliance with C.
+    diplomacy::executePackage(ctx, kB, kA, std::vector<PackageItem>{treatyItem(Treaty::Subjugation)});
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::Subjugation);
+    CHECK(diplomacy::masterOf(s, kB) == kA);
+    CHECK(s.empire(kB).relation(kC).treaty == Treaty::TradeAlliance);
+    CHECK_FALSE(hasLog(s, kC, "Treaty Broken"));
+    CHECK(hasMood(ctx, kA, "New Treaty Subjugated (Dom)"));
+    CHECK(hasMood(ctx, kB, "New Treaty Subjugated (Sub)"));
+    // War through a package's Treaty tab is the one way to "New Treaty War".
+    diplomacy::executePackage(ctx, kC, kA, std::vector<PackageItem>{treatyItem(Treaty::War)});
+    CHECK(s.empire(kA).relation(kC).treaty == Treaty::War);
+    CHECK(hasMood(ctx, kA, "New Treaty War"));
+    CHECK(hasMood(ctx, kC, "New Treaty War"));
 }
 
 TEST_CASE("diplomacy: trade percentage across treaty changes") {
@@ -546,6 +684,7 @@ TEST_CASE("diplomacy: trades move resources, technology, ships, charts and conta
     TurnContext ctx = context(s);
     const auto beams = techArea(r, "Test Beams");
     s.empire(kA).techLevels[beams.index()] = 4;
+    const int beamsB = s.empire(kB).techLevel(beams);
     s.empire(kA).stockpile = {5000, 5000, 5000};
     s.empire(kB).stockpile = {5000, 5000, 5000};
     VehicleId scout;
@@ -570,7 +709,8 @@ TEST_CASE("diplomacy: trades move resources, technology, ships, charts and conta
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).stockpile == Resources{4000, 5500, 5000});
     CHECK(s.empire(kB).stockpile == Resources{6000, 4500, 5000});
-    CHECK(s.empire(kB).techLevel(beams) == 4);
+    // A technology item gives exactly one level (spec 05 §1.5, confirmed: binary).
+    CHECK(s.empire(kB).techLevel(beams) == beamsB + 1);
     CHECK(s.vehicle(scout)->owner == kB);
     CHECK(s.empire(kB).hasExplored(homeA));
     CHECK(diplomacy::inContact(s, kB, kC));
@@ -620,14 +760,46 @@ TEST_CASE("diplomacy: placeholders, missing items, limits") {
     s.options.allowTechTrades = false;
     const auto armor = techArea(r, "Test Armor");
     s.empire(kA).techLevels[armor.index()] = 5;
+    const int armorB = s.empire(kB).techLevel(armor);
     id = send(s, kA, kB, MessageType::Gift, Treaty::None, {tech(armor)});
     diplomacy::deliverMessages(ctx);
     nextTurn(s);
     answer(s, kB, id, true);
     diplomacy::deliverMessages(ctx);
-    CHECK(s.empire(kB).techLevel(armor) == 5);
+    CHECK(s.empire(kB).techLevel(armor) == armorB + 1);
     CHECK(diplomacy::isPlaceholder(tech({})));
     CHECK_FALSE(diplomacy::isPlaceholder(resources(1, 2, 3)));
+}
+
+TEST_CASE("diplomacy: a technology item gives one level, only in an area the receiver can see (spec 05 §1.5)") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    const auto physics = techArea(r, "Test Physics");
+    const auto missiles = techArea(r, "Test Missiles");  // needs Test Physics 2
+    const auto armor = techArea(r, "Test Armor");
+    s.empire(kA).techLevels[physics.index()] = 3;
+    s.empire(kA).techLevels[missiles.index()] = 4;
+    s.empire(kA).techLevels[armor.index()] = 6;
+    s.empire(kB).techLevels[physics.index()] = 1;
+    s.empire(kB).techLevels[missiles.index()] = 0;
+    s.empire(kB).techLevels[armor.index()] = 6;
+    diplomacy::executePackage(ctx, kA, kB, std::vector<PackageItem>{tech(missiles), tech(armor), tech(physics)});
+    // Missiles: B does not meet its requirement, so nothing; armor: B is not
+    // behind; physics: one level, not the giver's 3.
+    CHECK(s.empire(kB).techLevel(missiles) == 0);
+    CHECK(s.empire(kB).techLevel(armor) == 6);
+    CHECK(s.empire(kB).techLevel(physics) == 2);
+    CHECK(hasLog(s, kB, "New Tech Level"));
+    int useless = 0;
+    for (const LogEntry& l : s.empire(kB).log)
+        if (l.title == "Technology Received" && (l.text.ends_with("cannot make use of it yet.") || l.text.ends_with("no more advanced than ours.")))
+            ++useless;
+    CHECK(useless == 2);
+    // Now that B meets the requirement, Missiles gives one level too.
+    diplomacy::executePackage(ctx, kA, kB, std::vector<PackageItem>{tech(missiles)});
+    CHECK(s.empire(kB).techLevel(missiles) == 1);
 }
 
 TEST_CASE("diplomacy: surrender and independence") {
@@ -663,8 +835,30 @@ TEST_CASE("diplomacy: surrender and independence") {
     const SystemId homeSystemC = s.galaxy.object(homeworld(s, kC).planet).system;
     s.empire(kA).knowledge.explored[homeSystemC.index()] = 1;
     s.empire(kA).researchPool = 900;
+    // A's ships in a fleet; a plague on A's homeworld, and B a No Plagues race.
+    std::vector<VehicleId> shipsA;
+    const auto firstA = std::find_if(s.vehicles.begin(), s.vehicles.end(), [](const Vehicle& v) { return v.owner == kA; });
+    REQUIRE(firstA != s.vehicles.end());
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kA && v.location == firstA->location) shipsA.push_back(v.id);
+    REQUIRE_FALSE(shipsA.empty());
+    Fleet fleet;
+    fleet.owner = kA;
+    fleet.members = shipsA;
+    fleet.leader = shipsA.front();
+    fleet.location = s.vehicle(shipsA.front())->location;
+    const FleetId fleetA = s.addFleet(fleet).id;
+    for (VehicleId v : shipsA) s.vehicle(v)->fleet = fleetA;
+    s.colony(homeA)->plagueLevel = 2;
+    s.empire(kB).race.traits.push_back(traitIndex(r, "Test Machine Folk"));
     send(s, kA, kB, MessageType::Surrender);
     diplomacy::deliverMessages(ctx);
+    // Each ship leaves its fleet as it changes owner: B gets them in no fleet
+    // (spec 05 §3.4, confirmed: binary); A's fleet is left empty.
+    for (VehicleId v : shipsA) CHECK_FALSE(s.vehicle(v)->fleet.valid());
+    for (const Fleet& f : s.fleets) CHECK(f.owner != kB);
+    // A No Plagues race cures a plagued colony it receives at once.
+    CHECK(s.colony(homeA)->plagueLevel == 0);
     // Everything passes, but the empire lives on, owning nothing, until its
     // next destruction check (spec 05 §6).
     CHECK(s.empire(kA).alive);
@@ -1068,7 +1262,7 @@ TEST_CASE("diplomacy: a completed package logs one entry per item, receiver firs
     const LogEntry* useless = findLog(s, kA, "Technology Received");
     REQUIRE(useless);
     CHECK(useless->target == LogGoto::Research);
-    CHECK(useless->text.find("nothing") != std::string::npos);
+    CHECK(useless->text.ends_with("It is no more advanced than ours."));
     CHECK(std::binary_search(s.empire(kA).claimedSystems.begin(), s.empire(kA).claimedSystems.end(), homeB));
     CHECK(s.empire(kB).claimedSystems.empty());
     // The charts: explored, no warp links copied; Goto the system, no sector.

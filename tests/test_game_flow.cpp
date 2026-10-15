@@ -73,7 +73,7 @@ std::vector<std::string> names(const std::vector<classic::FileEntry>& files) {
 
 } // namespace
 
-TEST_CASE("game flow: a turn-based victory shows Victory at each human's last turn, then nothing but Game Completed") {
+TEST_CASE("game flow: a turn-based victory shows Victory at each human's last turn, then nothing but Game Completed; a simultaneous one at every turn") {
     // Spec 05 §6 (confirmed: binary): the victory check marks the game
     // completed and every player plays one more game turn, the humans after
     // the Victory ending; when it wraps the game is over.
@@ -91,8 +91,18 @@ TEST_CASE("game flow: a turn-based victory shows Victory at each human's last tu
     s.playerTurn = PlayerTurn{};
     CHECK(classic::finaleKinds(s, kA, SessionKind::Hotseat).empty());
     CHECK(classic::finaleKinds(s, EmpireId{}, SessionKind::NetworkClient).empty());
-    // A simultaneous game's victory ends it at once (today's behaviour, spec 05 open question).
+    // A simultaneous game marked completed goes on: the Victory ending shows
+    // at every turn a player opens (spec 05 §6, Q79, confirmed: binary).
     GameState sim = newGame(true, true);
+    sim.lastTurn = true;
+    CHECK(classic::finaleKinds(sim, kA, SessionKind::Local) == std::vector<FinaleKind>{FinaleKind::Victory});
+    classic::FinaleWatch simWatch;
+    CHECK(simWatch.update(sim, kA, SessionKind::Local) == std::vector<FinaleKind>{FinaleKind::Victory});
+    CHECK(simWatch.update(sim, kA, SessionKind::Local).empty());   // nothing between turn starts
+    ++sim.turn;
+    CHECK(simWatch.update(sim, kA, SessionKind::Local) == std::vector<FinaleKind>{FinaleKind::Victory});
+    // One a mod's ending made over shows it too.
+    sim.lastTurn = false;
     sim.gameOver = true;
     CHECK(classic::finaleKinds(sim, kA, SessionKind::Local) == std::vector<FinaleKind>{FinaleKind::Victory});
 }

@@ -419,7 +419,7 @@ Years are stored in turns (tenths of a year). **(confirmed: binary)**
 | bool, int | Peace condition on; turns | `peace`, `peaceTurns` |
 | int | Consecutive peaceful turns so far | `GameState::peacefulTurns` |
 | bool, int | Delay before conditions count on; turns | `delay`, `delayTurns` |
-| bool | Game completed (a condition was met): a turn-based game plays one more game turn, and the next wrap ends it (spec 05 §6) | `GameState::lastTurn` in a turn-based game, `gameOver` in a simultaneous one; written as `gameOver` or `lastTurn` |
+| bool | Game completed (a condition was met): a turn-based game plays one more game turn, and the next wrap ends it; a simultaneous game goes on, every start- and end-of-turn step skipped (spec 05 §6) | `GameState::lastTurn` in both turn styles (since 2026-10-14; a simultaneous game read `gameOver` before); written as `gameOver` or `lastTurn` |
 
 OpenSE4 keeps the three year counts in turns too (since save format 10), so they come
 across exactly.
@@ -1291,8 +1291,8 @@ memory between turns and have no source are a loss on import (§7.6).
 | `combats` | Not in the file; optionally minimal records from the log's battle details | Battle details of the log entries (§3.6.11) |
 | `nextVehicleId`, `nextFleetId`, `nextMessageId`, `arrivals` | Derive from the imported lists | — |
 | `peacefulTurns` | Victory block counter | Same |
-| `gameOver` | Victory "game completed", in a simultaneous game | "Game completed" when `gameOver` or `lastTurn` |
-| `lastTurn` | Victory "game completed", in a turn-based game (spec 05 §6) | See `gameOver` |
+| `gameOver` | Victory "game completed" (a turn-based game whose last turn is over, a mod's ending) | "Game completed" when `gameOver` or `lastTurn` |
+| `lastTurn` | Victory "game completed", in both turn styles (spec 05 §6) | See `gameOver` |
 | `winner` | Not stored: derive from the victory rules, else invalid | — |
 | `playerTurn.empire` | Current player (turn-based games) | Current player (simultaneous games: the empire count, as in the simultaneous sample, observed) |
 | `playerTurn.started` | Not stored: true (the original saves within a player's turn, inferred) | Not stored: a human current player's turn that has not started is started on a copy first (§12) |

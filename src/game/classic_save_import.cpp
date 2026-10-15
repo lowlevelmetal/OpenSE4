@@ -351,9 +351,9 @@ private:
         w.delayTurns = v.delayTurns;
         s_.peacefulTurns = static_cast<uint32_t>(std::max(0, v.peacefulTurns));
         // The completed mark (spec 05 §6): a turn-based game is in its last
-        // turn, which every player still plays; a simultaneous game is over.
-        if (s_.options.simultaneous) s_.gameOver = v.completed;
-        else s_.lastTurn = v.completed;
+        // turn, which every player still plays; a simultaneous game goes on
+        // as long as its host processes turns.
+        s_.lastTurn = v.completed;
     }
 
     // ---- Systems and stellar objects (§3.5, §3.8) -------------------------------------------------------

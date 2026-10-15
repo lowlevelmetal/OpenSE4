@@ -45,8 +45,9 @@ std::string_view finaleArgName(FinaleKind k);
 // turn-based game the engine's mark from the moment its turn came up,
 // PlayerTurn::loseEnding, the empire destroyed by then; in a simultaneous
 // game as it is, the engine marking it dead when that turn ends); then
-// Victory when the game is over, or in a turn-based game's last turn
-// (GameState::lastTurn); then Conquered when every other empire is dead
+// Victory when the game is over, or marked completed (GameState::lastTurn: a
+// turn-based game's last turn, every later turn of a simultaneous game);
+// then Conquered when every other empire is dead
 // (followed by the question whether to play on). Without a player, only
 // Victory. Nothing once a turn-based game's last turn is over: the client's
 // Game Completed box comes instead.
@@ -61,6 +62,7 @@ std::vector<std::string> finalePictures(const ruleset::Settings& data, FinaleKin
 // player or, in a turn-based game, a new active empire; and the first call)
 // update() returns the endings due that were not already due at that
 // player's previous start of a turn, in order; nothing between turn starts.
+// A simultaneous game marked completed shows its Victory at every turn.
 class FinaleWatch {
 public:
     std::vector<FinaleKind> update(const game::GameState& s, game::EmpireId player, SessionKind kind);

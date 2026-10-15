@@ -1089,12 +1089,21 @@ struct Applier {
     R operator()(const cmd::AnswerMessage& c) {
         auto it = std::find_if(s.messages.begin(), s.messages.end(), [&](const DiplomaticMessage& m) { return m.id == c.message; });
         if (it == s.messages.end() || it->to != e || !it->delivered) return R::fail("No such message");
-        if (it->answered) return R::fail("Already answered");
+        const bool player = emp().kind == PlayerKind::Human && !c.minister;
+        // A player answers as the original's window lets it (spec 05 §3.4,
+        // spec 06 §1.5, confirmed: binary): only the newest recent message
+        // from that empire, and only when nothing has gone to that empire
+        // this turn. A computer player or minister follows its own answer
+        // window (§7.4). An earlier answer is no bar: the original keeps no
+        // "answered" mark (`answered` is bookkeeping only).
+        if (player && diplomacy::newestMessage(s, e, it->from, s.turn) != &*it)
+            return R::fail("Only the newest recent message from that empire can be answered");
+        if (player && emp().relation(it->from).messageSentThisTurn) return R::fail("Only one message per empire per turn");
         // Nor accept one (spec 05 §3.2, confirmed: binary; checked as in SendMessage).
-        if (c.accept && (it->type == MessageType::ProposeTreaty || it->type == MessageType::CounterTreaty) && emp().kind == PlayerKind::Human &&
-            !c.minister && diplomacy::isSubjugated(s, e))
+        if (c.accept && (it->type == MessageType::ProposeTreaty || it->type == MessageType::CounterTreaty) && player && diplomacy::isSubjugated(s, e))
             return R::fail("Subjugated races cannot accept treaties");
         it->answered = true;
+        if (player) emp().relation(it->from).messageSentThisTurn = true;
         DiplomaticMessage reply;
         reply.id = MessageId{s.nextMessageId++};
         reply.from = e;
@@ -1102,7 +1111,11 @@ struct Applier {
         reply.sentTurn = s.turn;
         reply.inReplyTo = it->id;
         reply.text = c.text;
+        // An Accept Treaty enacts the treaty it names (spec 05 §3.4,
+        // confirmed: binary): the window fills it from the proposal, with the
+        // dominant side a proposal may name (OpenSE4's).
         reply.treaty = it->treaty;
+        if (it->type == MessageType::ProposeTreaty || it->type == MessageType::CounterTreaty) reply.thirdEmpire = it->thirdEmpire;
         reply.offer = it->request;  // what they asked us for is what we now give
         reply.request = it->offer;
         switch (it->type) {

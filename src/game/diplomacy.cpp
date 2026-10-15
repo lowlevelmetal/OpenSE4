@@ -129,14 +129,18 @@ DiplomaticMessage* repliedTo(GameState& s, const DiplomaticMessage& reply, std::
     return o;
 }
 
-void acceptTreaty(TurnContext& ctx, const DiplomaticMessage& proposal) {
-    // The proposer is the master of a Subjugation/Protectorate unless the
-    // proposal names the dominant side in `thirdEmpire` (inferred).
-    EmpireId master = proposal.from;
-    if (proposal.thirdEmpire == proposal.from || proposal.thirdEmpire == proposal.to) master = proposal.thirdEmpire;
-    // An accepted proposal makes no treaty entry: its "Message" entry is all
-    // (spec 06 §7 Q70, confirmed: binary).
-    setTreaty(ctx, proposal.from, proposal.to, proposal.treaty, master == proposal.from, TreatyEntry::None);
+// An Accept Treaty message enacts the treaty it names between its sender
+// and its recipient; nothing checks that the recipient proposed it (spec 05
+// §3.4, confirmed: binary). The window fills it from the proposal it
+// answers (cmd::AnswerMessage). The recipient, who proposed it, is the
+// master of a Subjugation or Protectorate (§3.2), unless the message names
+// the dominant side in `thirdEmpire` (OpenSE4's, inferred). An accepted
+// proposal makes no treaty entry: its "Message" entry is all (spec 06 §7
+// Q70, confirmed: binary).
+void acceptTreaty(TurnContext& ctx, const DiplomaticMessage& accept) {
+    EmpireId master = accept.to;
+    if (accept.thirdEmpire == accept.from || accept.thirdEmpire == accept.to) master = accept.thirdEmpire;
+    signTreaty(ctx, accept.to, accept.from, accept.treaty, master == accept.to, TreatyEntry::None);
 }
 
 // Carries out an accepted trade, gift or tribute (spec 06 §7 Q70, spec 05
@@ -183,7 +187,18 @@ void grantIndependence(TurnContext& ctx, const DiplomaticMessage& m) {
     addHistory(s, m.to, m.from, std::format("The {} granted {} its independence", nameOf(s, m.from), planet), locationOf(s.galaxy, m.planet));
 }
 
-void receive(TurnContext& ctx, DiplomaticMessage& stored) {
+// The offer an acceptance carries out (spec 05 §3.4, confirmed: binary):
+// the proposer's newest message to the accepter, found with the delivery's
+// date test, when it is of one of `kinds`; its packages are the ones moved,
+// whatever the reply copied.
+std::optional<DiplomaticMessage> offerAccepted(const GameState& s, const DiplomaticMessage& accept, uint32_t date, MessageLookup lookup,
+                                               std::initializer_list<MessageType> kinds) {
+    const DiplomaticMessage* o = newestMessage(s, accept.from, accept.to, date, lookup);
+    if (!o || std::find(kinds.begin(), kinds.end(), o->type) == kinds.end()) return std::nullopt;
+    return *o;
+}
+
+void receive(TurnContext& ctx, DiplomaticMessage& stored, uint32_t date, MessageLookup lookup) {
     GameState& s = ctx.state;
     const DiplomaticMessage m = stored;
     const std::string sender = nameOf(s, m.from);
@@ -204,9 +219,7 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
         if (LogEntry* entry = logGoto(ctx.log(m.to, LogCategory::Politics, "Message", text, std::nullopt, logpicture::race(m.from)), LogGoto::Empires))
             entry->message = m.id;
     };
-    const DiplomaticMessage* answered = findMessage(s, m.inReplyTo);
-    const bool package = m.type == MessageType::AcceptTrade || m.type == MessageType::AcceptGift ||
-                         (m.type == MessageType::AcceptDemand && answered && answered->type == MessageType::CounterTrade);
+    const bool package = m.type == MessageType::AcceptTrade || m.type == MessageType::AcceptGift;
     if (!package) messageEntry();
 
     // A counter-proposal answers the message it counters.
@@ -215,43 +228,37 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
 
     switch (m.type) {
         case MessageType::AcceptTreaty:
-            if (const DiplomaticMessage* o = repliedTo(s, m, {MessageType::ProposeTreaty, MessageType::CounterTreaty})) acceptTreaty(ctx, *o);
+            repliedTo(s, m, {MessageType::ProposeTreaty, MessageType::CounterTreaty});  // bookkeeping only
+            acceptTreaty(ctx, m);
             break;
         case MessageType::AcceptTrade:
-            if (const DiplomaticMessage* o = repliedTo(s, m, {MessageType::ProposeTrade, MessageType::CounterTrade})) {
-                const DiplomaticMessage copy = *o;
-                acceptPackage(ctx, copy);
-            }
+            repliedTo(s, m, {MessageType::ProposeTrade, MessageType::CounterTrade});  // bookkeeping only
+            if (const auto o = offerAccepted(s, m, date, lookup, {MessageType::ProposeTrade, MessageType::CounterTrade})) acceptPackage(ctx, *o);
             break;
         case MessageType::AcceptGift:
-            if (const DiplomaticMessage* o = repliedTo(s, m, {MessageType::Gift, MessageType::Tribute})) {
-                const DiplomaticMessage copy = *o;
-                acceptPackage(ctx, copy);
-            }
+            repliedTo(s, m, {MessageType::Gift, MessageType::Tribute});  // bookkeeping only
+            if (const auto o = offerAccepted(s, m, date, lookup, {MessageType::Gift, MessageType::Tribute})) acceptPackage(ctx, *o);
             break;
         case MessageType::AcceptDemand:
-            // Answering a counter-proposal produces an Accept Demand reply.
-            if (DiplomaticMessage* o = repliedTo(s, m, {MessageType::CounterTreaty, MessageType::CounterTrade})) {
-                const DiplomaticMessage copy = *o;
-                if (copy.type == MessageType::CounterTreaty) acceptTreaty(ctx, copy);
-                else acceptPackage(ctx, copy);
-            } else {
-                repliedTo(s, m, {MessageType::DemandGift, MessageType::DemandTribute, MessageType::DemandSurrender,
-                                 MessageType::DemandRemoveShips, MessageType::DemandRemoveColonies, MessageType::DemandLeavePlanet,
-                                 MessageType::RequestStopHostilities, MessageType::RequestBreakTreaty, MessageType::RequestDeclareWar,
-                                 MessageType::RequestMakePeace, MessageType::RequestSupport, MessageType::RequestAttackEmpire,
-                                 MessageType::RequestAttackPlanet, MessageType::DemandStopEspionage, MessageType::DemandStopSabotage,
-                                 MessageType::DemandStopAttacks, MessageType::General});
-            }
+            // Nothing is carried out: only the AI acts on a demand it accepts
+            // (spec 05 §3.4, §7.4). A counter-proposal is accepted with Accept
+            // Treaty or Accept Trade.
+            repliedTo(s, m, {MessageType::DemandGift, MessageType::DemandTribute, MessageType::DemandSurrender, MessageType::DemandRemoveShips,
+                             MessageType::DemandRemoveColonies, MessageType::DemandLeavePlanet, MessageType::RequestStopHostilities,
+                             MessageType::RequestBreakTreaty, MessageType::RequestDeclareWar, MessageType::RequestMakePeace,
+                             MessageType::RequestSupport, MessageType::RequestAttackEmpire, MessageType::RequestAttackPlanet,
+                             MessageType::DemandStopEspionage, MessageType::DemandStopSabotage, MessageType::DemandStopAttacks,
+                             MessageType::General});
             break;
         case MessageType::RefuseTreaty: repliedTo(s, m, {MessageType::ProposeTreaty, MessageType::CounterTreaty}); break;
         case MessageType::RefuseTrade: repliedTo(s, m, {MessageType::ProposeTrade, MessageType::CounterTrade}); break;
         case MessageType::RefuseGift: repliedTo(s, m, {MessageType::Gift, MessageType::Tribute}); break;
-        case MessageType::BreakTreaty: {
-            const Treaty current = s.empire(m.from).relation(m.to).treaty;
-            if (current != Treaty::War && current != Treaty::None) setTreaty(ctx, m.from, m.to, Treaty::None);
+        case MessageType::BreakTreaty:
+            // Both sides go to None whatever the treaty, War included: only
+            // the window keeps a player from sending it below Non-Aggression
+            // (spec 05 §3.2, confirmed: binary).
+            setTreaty(ctx, m.from, m.to, Treaty::None);
             break;
-        }
         case MessageType::DeclareWar: declareWar(ctx, m.from, m.to); break;
         case MessageType::Surrender:
             // With Allow Surrender off a Surrender message does nothing at all (spec 05 §7.4, confirmed: binary).
@@ -292,9 +299,9 @@ bool treatyEnactedWith(const GameState& s, const LogEntry& l, EmpireId other) {
     return l.title == "Treaty Enacted" && l.text.starts_with(std::format("Our treaty with the {} is now ", nameOf(s, other)));
 }
 
-void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
+bool setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
     GameState& s = ctx.state;
-    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || t >= Treaty::Count) return;
+    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || t >= Treaty::Count) return false;
     const bool dominance = t == Treaty::Subjugation || t == Treaty::Protectorate;
     const bool aDom = dominance && aDominant;
     const bool bDom = dominance && !aDominant;
@@ -304,7 +311,7 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     // confirmed: binary).
     Relation& ra = s.empire(a).relation(b);
     Relation& rb = s.empire(b).relation(a);
-    if (ra.treaty == t && ra.dominant == aDom && rb.dominant == bDom) return;
+    if (ra.treaty == t && ra.dominant == aDom && rb.dominant == bDom) return false;
     const Treaty old = ra.treaty;
     ra.treaty = rb.treaty = t;
     ra.dominant = aDom;
@@ -324,8 +331,6 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     // trade (spec 05 §3.3, confirmed: binary).
     if (!(treatyTradesResources(old) && treatyTradesResources(t))) ra.tradeTurns = rb.tradeTurns = 0;
 
-    ctx.mood(a, std::string(treatyTrigger(t, aDom)));
-    ctx.mood(b, std::string(treatyTrigger(t, bDom)));
     auto role = [&](bool dom) { return !dominance ? std::string{} : dom ? std::string(" We are the dominant partner.") : std::string(" We are the subordinate partner."); };
     // Treaties enacted, lost or subjugations: Goto opens Empires (spec 06 §7 Q41).
     // A package's treaty is "Treaty Enacted" (spec 06 §7 Q70); an accepted
@@ -344,21 +349,38 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     };
     addHistory(s, a, b, history(b, aDom));
     addHistory(s, b, a, history(a, bDom));
+    return true;
+}
 
-    // A subject may hold no other treaty (spec 05 §3.2).
-    if (t == Treaty::Subjugation) {
-        const EmpireId subject = aDom ? b : a;
-        const EmpireId master = aDom ? a : b;
-        for (size_t i = 0; i < s.empires.size(); ++i) {
-            const EmpireId x{i};
-            if (x == subject || x == master) continue;
-            if (s.empire(subject).relation(x).treaty <= Treaty::None) continue;
-            setTreaty(ctx, subject, x, Treaty::None);
-            logGoto(ctx.log(x, LogCategory::Politics, "Treaty Broken",
-                            std::format("The {} ended its treaty with us on becoming a subject of the {}.", nameOf(s, subject), nameOf(s, master)),
-                            std::nullopt, logpicture::race(subject)),
-                    LogGoto::Empires);
-        }
+void enactTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
+    if (!setTreaty(ctx, a, b, t, aDominant, entry)) return;
+    // Only an accepted treaty raises the "New Treaty ..." happiness events,
+    // for both sides (spec 05 §3.2, spec 02 §4, confirmed: binary).
+    const bool dominance = t == Treaty::Subjugation || t == Treaty::Protectorate;
+    ctx.mood(a, std::string(treatyTrigger(t, dominance && aDominant)));
+    ctx.mood(b, std::string(treatyTrigger(t, dominance && !aDominant)));
+}
+
+void signTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
+    GameState& s = ctx.state;
+    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || t >= Treaty::Count) return;
+    enactTreaty(ctx, a, b, t, aDominant, entry);
+    // Accepting a Subjugation: the subject may hold no other treaty. Every
+    // treaty better than None between it and a third empire goes to None,
+    // both sides told; War and Non-Intercourse stay (spec 05 §3.2, confirmed:
+    // binary). Only the Accept Treaty message does this, never a package.
+    if (t != Treaty::Subjugation) return;
+    const EmpireId subject = aDominant ? b : a;
+    const EmpireId master = aDominant ? a : b;
+    for (size_t i = 0; i < s.empires.size(); ++i) {
+        const EmpireId x{i};
+        if (x == subject || x == master) continue;
+        if (s.empire(subject).relation(x).treaty <= Treaty::None) continue;
+        setTreaty(ctx, subject, x, Treaty::None);
+        logGoto(ctx.log(x, LogCategory::Politics, "Treaty Broken",
+                        std::format("The {} ended its treaty with us on becoming a subject of the {}.", nameOf(s, subject), nameOf(s, master)),
+                        std::nullopt, logpicture::race(subject)),
+                LogGoto::Empires);
     }
 }
 
@@ -484,11 +506,43 @@ std::string playerMessageProblem(const GameState& s, EmpireId from, const Diplom
     if (!validEmpire(s, from) || !validEmpire(s, m.to) || from == m.to) return "Invalid recipient";
     const Treaty current = s.empire(from).relation(m.to).treaty;
     auto anyItems = [](const std::vector<PackageItem>& side) { return std::any_of(side.begin(), side.end(), isPlaceholder); };
+    // The window offers an answer only to the newest recent message from that
+    // empire, of the matching type (spec 05 §3.4, confirmed: binary).
+    const DiplomaticMessage* newest = newestMessage(s, from, m.to, s.turn);
+    auto answers = [&](std::initializer_list<MessageType> kinds) {
+        return newest && std::find(kinds.begin(), kinds.end(), newest->type) != kinds.end();
+    };
+    constexpr std::string_view kNoTreatyOffer = "There is no recent treaty proposal from that empire to answer";
+    constexpr std::string_view kNoTradeOffer = "There is no recent trade offer from that empire to answer";
     switch (m.type) {
         case MessageType::ProposeTreaty:
         case MessageType::CounterTreaty:
             if (isSubjugated(s, from)) return "Subjugated races cannot propose treaties";
             if (!proposableTreaty(m.treaty)) return "Propose a treaty from Non-Intercourse to Partnership";
+            if (m.type == MessageType::CounterTreaty && !answers({MessageType::ProposeTreaty, MessageType::CounterTreaty}))
+                return std::string(kNoTreatyOffer);
+            break;
+        case MessageType::AcceptTreaty:
+            if (isSubjugated(s, from)) return "Subjugated races cannot accept treaties";
+            // The window fills in the treaty of the proposal it answers.
+            if (!answers({MessageType::ProposeTreaty, MessageType::CounterTreaty})) return std::string(kNoTreatyOffer);
+            if (m.treaty != newest->treaty) return "Accept the treaty that was proposed";
+            break;
+        case MessageType::RefuseTreaty:
+            if (!answers({MessageType::ProposeTreaty, MessageType::CounterTreaty})) return std::string(kNoTreatyOffer);
+            break;
+        case MessageType::AcceptTrade:
+        case MessageType::RefuseTrade:
+            if (!answers({MessageType::ProposeTrade, MessageType::CounterTrade})) return std::string(kNoTradeOffer);
+            break;
+        case MessageType::AcceptGift:
+        case MessageType::RefuseGift:
+            if (!answers({MessageType::Gift, MessageType::Tribute})) return "There is no recent gift or tribute from that empire to answer";
+            break;
+        case MessageType::AcceptDemand:
+        case MessageType::RefuseDemand:
+            if (!newest || newest->type < MessageType::DemandGift || newest->type > MessageType::DemandStopAttacks)
+                return "There is no recent demand or request from that empire to answer";
             break;
         case MessageType::BreakTreaty:
             if (current < Treaty::NonAggression) return "There is no treaty to break";
@@ -498,6 +552,7 @@ std::string playerMessageProblem(const GameState& s, EmpireId from, const Diplom
             break;
         case MessageType::ProposeTrade:
         case MessageType::CounterTrade:
+            if (m.type == MessageType::CounterTrade && !answers({MessageType::ProposeTrade, MessageType::CounterTrade})) return std::string(kNoTradeOffer);
             if (m.offer.empty() || m.request.empty()) return "A trade needs items on both sides";
             if (anyItems(m.offer)) return "A trade offer cannot contain unspecified \"Any\" items";
             break;
@@ -537,6 +592,15 @@ void transferColony(GameState& s, ObjectId planet, EmpireId to) {
     economy::clearQueue(c->queue);
     c->minister = false;
     explore(s, to, s.galaxy.object(planet).system);
+}
+
+void handOverColony(const Rules& r, GameState& s, ObjectId planet, EmpireId to) {
+    const Colony* c = s.colony(planet);
+    if (!c || !validEmpire(s, to) || c->owner == to) return;
+    transferColony(s, planet, to);
+    // A race with `No Plagues` cures a plagued colony it receives at once,
+    // silently (spec 05 §3.4, confirmed: binary).
+    if (Colony* now = s.colony(planet); now && r.hasTrait(s.empire(to).race, "No Plagues")) now->plagueLevel = 0;
 }
 
 void transferVehicle(GameState& s, VehicleId id, EmpireId to) {
@@ -597,19 +661,23 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
             }
             case PackageItem::Kind::Technology: {
                 if (!item.tech.valid() || item.tech.index() >= r.data().techAreas.size()) break;
-                // No game option is tested here (Allow Technology Gifts
-                // included). The data is of no use when the receiver cannot
-                // gain a level in the area (its racial and unique checks) or
-                // the giver is not ahead of it.
+                // Exactly one level, and only in an area the receiver can see
+                // (its requirements met, allowed in the game, its racial and
+                // unique checks) where the giver is ahead of it; otherwise the
+                // data is of no use. No game option is tested here (spec 05
+                // §1.5, confirmed: binary).
                 const std::string& area = r.tech(item.tech).name;
-                const int level = std::min(s.empire(giver).techLevel(item.tech), r.tech(item.tech).maxLevel);
-                const bool useful = research::canGainLevel(r, s, s.empire(receiver), item.tech) && level > s.empire(receiver).techLevel(item.tech);
-                entry(receiver, "Technology Received",
-                      std::format("The {} has sent us its data on {}.{}", giverName, area, useful ? "" : " It teaches us nothing we can use."),
-                      LogGoto::Research);
+                const Empire& taker = s.empire(receiver);
+                const int level = taker.techLevel(item.tech);
+                const bool visible = research::canGainLevel(r, s, taker, item.tech) && r.meets(taker, r.tech(item.tech).requirements);
+                const bool ahead = s.empire(giver).techLevel(item.tech) > level;
+                const std::string_view why = !visible ? " Our scientists cannot make use of it yet."
+                                             : !ahead ? " It is no more advanced than ours."
+                                                      : "";
+                entry(receiver, "Technology Received", std::format("The {} has sent us its data on {}.{}", giverName, area, why), LogGoto::Research);
                 entry(giver, "Technology Transfered", std::format("We have sent the {} our data on {}.", receiverName, area), LogGoto::Research);
                 // A level gained then makes its usual Research entries.
-                research::grantLevel(ctx, receiver, item.tech, level, "trade");
+                if (visible && ahead) research::grantLevel(ctx, receiver, item.tech, level + 1, "trade");
                 break;
             }
             case PackageItem::Kind::Planet: {
@@ -619,7 +687,7 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
                 // The receiver learns the designs of the units in the planet's
                 // cargo (spec 05 §8 "Design knowledge", confirmed: binary).
                 for (const UnitStack& u : c->cargo.units) learnForeign(s, receiver, u.design);
-                transferColony(s, item.planet, receiver);
+                handOverColony(r, s, item.planet, receiver);
                 const Location where = locationOf(s.galaxy, item.planet);
                 const std::string& planet = s.galaxy.object(item.planet).name;
                 entry(receiver, "Planet Received", std::format("The {} has handed {} over to us.", giverName, planet), LogGoto::Location, where);
@@ -659,8 +727,11 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
                 // The package names the dominant side of a Subjugation or
                 // Protectorate in `empire`; by default the receiver (inferred).
                 // Both parties log "Treaty Enacted" (spec 06 §7 Q70).
+                // It is enacted as an accepted treaty (happiness events for
+                // both) but a Subjugation drops none of the subject's other
+                // treaties (spec 05 §3.2, confirmed: binary).
                 const EmpireId master = item.empire == giver ? giver : receiver;
-                setTreaty(ctx, receiver, giver, item.treaty, master == receiver, TreatyEntry::Enacted);
+                enactTreaty(ctx, receiver, giver, item.treaty, master == receiver, TreatyEntry::Enacted);
                 break;
             }
             case PackageItem::Kind::CommChannel: {
@@ -703,17 +774,16 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     if (!s.options.allowSurrender) return;
     // Every object passes, and every system where one lies becomes explored
     // for the recipient; no other map knowledge passes.
+    // Each object goes through the ordinary change of owner: a ship first
+    // leaves its fleet and loses its orders, so the recipient gets the ships
+    // in no fleet and the surrendering empire's fleets are left empty (spec
+    // 05 §3.4, confirmed: binary).
     for (auto& c : s.colonies)
-        if (c && c->owner == from) transferColony(s, c->planet, to);
-    for (Fleet& f : s.fleets)
-        if (f.owner == from) f.owner = to;  // its members' copies of its orders are cleared below
-    for (Vehicle& v : s.vehicles)
-        if (v.owner == from) {
-            v.owner = to;
-            v.orders.clear();
-            v.repeatOrders = false;
-            explore(s, to, v.location.system);
-        }
+        if (c && c->owner == from) handOverColony(r, s, c->planet, to);
+    std::vector<VehicleId> vehicles;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == from) vehicles.push_back(v.id);
+    for (VehicleId id : vehicles) transferVehicle(s, id, to);
     // The minerals, organics and radioactives pass; research and intelligence points do not.
     Empire& loser = s.empire(from);
     s.empire(to).stockpile += max(loser.stockpile, Resources{});
@@ -756,21 +826,38 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
 
 // ---- Turn phases ------------------------------------------------------------------------------------
 
-void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date) {
+const DiplomaticMessage* newestMessage(const GameState& s, EmpireId reader, EmpireId from, uint32_t date, MessageLookup mode) {
+    if (!validEmpire(s, reader) || !validEmpire(s, from) || reader == from) return nullptr;
+    // The cut-off: D − 2, or D − 1 in a turn-based game when the sender's
+    // number is lower than the reader's (spec 05 §3.4, confirmed: binary).
+    const int64_t d = date;
+    const int64_t cut = d - (!s.options.simultaneous && from.value < reader.value ? 1 : 2);
+    const DiplomaticMessage* newest = nullptr;
+    for (const DiplomaticMessage& m : s.messages) {
+        if (m.from != from || m.to != reader || !m.delivered) continue;
+        const int64_t dated = m.dated;
+        const bool passes = mode == MessageLookup::PreviousTurn ? dated == d - 1 : mode == MessageLookup::Exact ? dated == cut : dated > cut;
+        if (passes) newest = &m;  // the last one in the reader's log wins
+    }
+    return newest;
+}
+
+void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date, MessageLookup lookup) {
     GameState& s = ctx.state;
     std::vector<MessageId> lost;
     const size_t n = s.messages.size();
+    const uint32_t today = date.value_or(s.turn);
     for (size_t i = 0; i < n; ++i) {
         if (s.messages[i].delivered) continue;
         s.messages[i].delivered = true;
-        s.messages[i].dated = date.value_or(s.turn);
+        s.messages[i].dated = today;
         const DiplomaticMessage& m = s.messages[i];
         if (!living(s, m.from) || !living(s, m.to) || m.from == m.to) {
             lost.push_back(m.id);
             continue;
         }
         if (!answerable(m.type)) s.messages[i].answered = true;
-        receive(ctx, s.messages[i]);
+        receive(ctx, s.messages[i], today, lookup);
         if (ctx.hooks) {
             // A mod's event (hooks.hpp): the message reached its empire.
             HookArgs a;

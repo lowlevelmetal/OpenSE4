@@ -148,10 +148,12 @@ bool galaxyAtPeace(const GameState& s);
 // The victory check (spec 05 §6, confirmed: binary). `date` is in turns
 // since 2400.0, already advanced for this turn. Before the "After X years"
 // qualifier's date nothing is checked and the peace counter stands still.
-// Meeting a condition ends the game without naming a winner: a turn-based
-// game plays one more game turn, its last (GameState::lastTurn, confirmed:
-// binary), and a simultaneous game is over at once (GameState::gameOver;
-// spec 05 open question 79). GameState::winner is set to the best score
+// Meeting a condition ends the game without naming a winner: it sets the
+// completed mark (GameState::lastTurn, confirmed: binary). A turn-based game
+// plays one more game turn, its last; a simultaneous game goes on as long as
+// the host processes turns, skipping every start- and end-of-turn step (spec
+// 05 §6, question 79). Once marked, the check only moves the peace counter.
+// GameState::winner is set to the best score
 // (ties to the lower empire number, neutral empires excluded) for the
 // game-over screen (OpenSE4 choice, inferred).
 void checkVictory(TurnContext& ctx, uint32_t date);

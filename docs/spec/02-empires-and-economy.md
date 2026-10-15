@@ -324,7 +324,10 @@ change to anger in tenths of a percent: positive means angrier.
 
 How the game uses each record value is in §4 (confirmed: binary). In short:
 - The five planet events at the top are empire-wide. So are the `New Treaty …` values,
-  unless Game Setup's Team Mode is on (§4).
+  unless Game Setup's Team Mode is on (§4). A `New Treaty …` event comes only from an
+  accepted treaty: an Accept Treaty message, or a Treaty item of a package carried out; a
+  declaration of war, a broken treaty and every other direct change log none (spec 05
+  §3.2, confirmed: binary).
 - `Any Ship Lost` is counted from every "ship lost in system" event and `Any Ship
   Constructed` from every ship built; both are empire-wide.
 - Battles are logged per sector: the colonies of that system get the `… in System` value,

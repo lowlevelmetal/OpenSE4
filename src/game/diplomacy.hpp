@@ -17,8 +17,31 @@ struct TurnContext;
 namespace opense4::game::diplomacy {
 
 // Messages are kept this many turns after they were sent, so replies can
-// refer to them and the UI can show recent history (inferred).
+// refer to them and the UI can show recent history (inferred). Only the
+// newest recent one from an empire can be answered (newestMessage).
 inline constexpr uint32_t kMessageLifetime = 10;
+
+// ---- Answers (spec 05 §3.4 "Answers", confirmed: binary) ---------------------------------------
+
+// How the newest political message from an empire is looked up: the
+// original's one finder, with three date tests. D is the date the lookup
+// runs at (a GameState::turn number, as DiplomaticMessage::dated).
+enum class MessageLookup : uint8_t {
+    // The Communicate window and message processing: dated strictly after D −
+    // 2, or after D − 1 in a turn-based game when the sender's player number
+    // is lower than the reader's.
+    Window,
+    // Processing for an empire the computer plays at a simultaneous turn's
+    // start-of-turn step (no orders of its own): dated exactly that cut-off.
+    Exact,
+    // Processing of the players' messages at a simultaneous turn's start,
+    // before the date advances: dated exactly D − 1.
+    PreviousTurn,
+};
+// The newest delivered message from `from` to `reader` that passes the date
+// test of `mode` at date `date`, whatever its type: the last one in the
+// reader's log. nullptr when there is none.
+const DiplomaticMessage* newestMessage(const GameState& s, EmpireId reader, EmpireId from, uint32_t date, MessageLookup mode = MessageLookup::Window);
 
 // ---- Turn phases -------------------------------------------------------------------------------
 
@@ -29,8 +52,11 @@ inline constexpr uint32_t kMessageLifetime = 10;
 // and after each computer player's and minister's orders (step 4: their
 // messages take effect as they are sent). Each delivered message is dated
 // `date` (DiplomaticMessage::dated; by default GameState::turn): a
-// simultaneous turn passes the advanced date for step 4.
-void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt);
+// simultaneous turn passes the advanced date for step 4. An accepted trade,
+// gift or tribute carries out the packages of the proposer's newest message
+// to the accepter, looked up with `lookup` at that date, only when it is the
+// matching offer (spec 05 §3.4, confirmed: binary).
+void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt, MessageLookup lookup = MessageLookup::Window);
 // The first-contact check in one system (spec 05 §3.1, confirmed: binary):
 // every pair of living empires that have not both met the other, that each
 // detect an object of the other in `sys` now (a vehicle or a colony there
@@ -83,9 +109,22 @@ void treatyStep(TurnContext& ctx, EmpireId e);
 enum class TreatyEntry : uint8_t { NewTreaty, None, Enacted };
 // Sets a treaty on both sides: dominance for Subjugation/Protectorate
 // (`aDominant`: a is the master), treaty turn, last war turn, trade reset
-// below trade level, "New Treaty ..." mood events and the log entries
-// `entry` names. A subject's other treaties are broken.
-void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// below trade level, the log entries `entry` names and the history lines.
+// No happiness event: Break Treaty, Declare War, the treaties a new subject
+// drops and every other direct change raise none (spec 05 §3.2, confirmed:
+// binary). False when nothing changed.
+bool setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// The original's routine that enacts an accepted treaty (spec 05 §3.2,
+// confirmed: binary): setTreaty, then the "New Treaty ..." happiness event
+// for each side that changed. Used by a package's Treaty item and by
+// signTreaty.
+void enactTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// An Accept Treaty message (spec 05 §3.2, §3.4, confirmed: binary):
+// enactTreaty (the message gives TreatyEntry::None: its own entry is all),
+// and for a Subjugation the subject's treaties better than None with third
+// empires fall to None, both sides told. A package's Subjugation drops
+// nothing.
+void signTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
 // The text of a "Treaty Enacted" entry about `other` (the history file finds
 // the empire by it: the entry also writes a contact line, spec 05 §3.4).
 std::string treatyEnactedText(const GameState& s, EmpireId other, Treaty t, std::string_view role = {});
@@ -155,6 +194,13 @@ void recalculateColonies(const Rules& r, GameState& s);
 // ---- Ownership transfers (packages, surrender, defection, rebellion) ---------------------------
 
 void transferColony(GameState& s, ObjectId planet, EmpireId to);
+// A colony handed over by a package, a surrender or a `Planet - Population
+// Rebel` that joins the source: transferColony, and a new owner whose race
+// has `No Plagues` cures its plague at once, silently (spec 05 §3.4, §2.3,
+// confirmed: binary).
+void handOverColony(const Rules& r, GameState& s, ObjectId planet, EmpireId to);
+// A vehicle changes hands: it leaves its fleet, loses its orders and its
+// minister mark, and its system becomes explored for the new owner.
 void transferVehicle(GameState& s, VehicleId vehicle, EmpireId to);
 // Moves package items from `giver` to `receiver` (spec 05 §3.4, spec 06 §7
 // Q70, confirmed: binary), in package order, each item making its own log

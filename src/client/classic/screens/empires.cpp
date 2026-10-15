@@ -15,6 +15,7 @@
 
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
+#include "game/turn.hpp"
 #include "game/query.hpp"
 #include "game/score.hpp"
 
@@ -733,10 +734,11 @@ public:
                                                              "Statistics are shown for us and empires at Non-Aggression or better.",
                                                              "Every empire's statistics are public in this game."};
         ImGui::PushTextWrapPos(0.0f);
-        // Once the game is decided every score shows (score::scoreVisible): over, or a turn-based game's last turn.
+        // Once the game is decided every score shows (score::scoreVisible): over, or marked completed.
         const bool decided = s.gameOver || s.lastTurn;
         ImGui::TextColored(kTextDim, "%s", s.gameOver  ? "The game is over: every score is shown."
-                                           : decided ? "This is the game's last turn: every score is shown."
+                                           : decided ? (game::turnBased(s) ? "This is the game's last turn: every score is shown."
+                                                                           : "The game is complete: every score is shown.")
                                                      : kDisplay[size_t(std::clamp(s.options.scoreDisplay, 0, 2))]);
         ImGui::PopTextWrapPos();
 
@@ -1089,8 +1091,9 @@ public:
         ImGui::TextColored(kTextDim, "%s", any ? "Checked at the end of every turn; the first condition met ends the game."
                                              : "None set: nothing ends the game automatically.");
         if (s.gameOver || s.lastTurn) {
-            ImGui::TextColored(kTextWarn, "%s", s.gameOver ? "The game is over; the Scores window shows the final ranking."
-                                                           : "A condition is met: this is the last turn. The Scores window shows the ranking.");
+            ImGui::TextColored(kTextWarn, "%s", s.gameOver           ? "The game is over; the Scores window shows the final ranking."
+                                                : game::turnBased(s) ? "A condition is met: this is the last turn. The Scores window shows the ranking."
+                                                                     : "A condition is met: the game is complete. The Scores window shows the ranking.");
             if (validEmpire(s, s.winner)) {
                 ImGui::SameLine();
                 ImGui::TextColored(kTextWarn, "Best score:");

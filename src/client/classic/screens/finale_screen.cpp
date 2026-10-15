@@ -8,6 +8,7 @@
 #include "client/classic/finale.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
+#include "game/turn.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -105,11 +106,19 @@ private:
         const game::GameState& s = ui.state();
         switch (k) {
             case FinaleKind::Victory: {
-                // A turn-based game plays one more game turn, its last (spec 05 §6).
-                std::string t = !s.gameOver && s.lastTurn
-                                    ? "A victory condition has been met. This is the last turn of the game: play it as usual, and when every "
-                                      "player has played it the game is over. The Scores window shows how every empire stands."
-                                    : "A victory condition has been met, so this game has ended. The Scores window shows how every empire finished.";
+                // The victory check marked the game completed (spec 05 §6): a
+                // turn-based game plays one more game turn, its last, and a
+                // simultaneous game may go on, nothing produced any more.
+                std::string t;
+                if (s.gameOver)
+                    t = "A victory condition has been met, so this game has ended. The Scores window shows how every empire finished.";
+                else if (game::turnBased(s))
+                    t = "A victory condition has been met. This is the last turn of the game: your ships move with the movement they have "
+                        "left, nothing is produced or researched any more, and when every player has played it the game is over. The Scores "
+                        "window shows how every empire stands.";
+                else
+                    t = "A victory condition has been met: the game is complete. The Scores window shows how every empire stands. More turns "
+                        "may still be played, but no empire produces, researches or builds any more, and the computer players do nothing.";
                 if (s.winner.valid() && s.winner.index() < s.empires.size()) t += std::format(" The best score belongs to the {}.", s.empire(s.winner).name);
                 return t;
             }

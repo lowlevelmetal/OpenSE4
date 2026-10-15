@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <format>
+#include <optional>
 
 namespace opense4::client::classic {
 
@@ -191,16 +192,10 @@ MessageType counterType(MessageType received) {
 }
 
 const game::DiplomaticMessage* replyableMessage(const game::GameState& s, game::EmpireId me, game::EmpireId from) {
-    if (!me.valid() || !from.valid() || me == from) return nullptr;
-    // Dated after the cut: the date − 2, or in a simultaneous game the date −
-    // 1 when the sender's number is lower than ours.
-    const int64_t cut = int64_t{s.turn} - (s.options.simultaneous && from.value < me.value ? 1 : 2);
-    const game::DiplomaticMessage* newest = nullptr;
-    for (const game::DiplomaticMessage& m : s.messages) {
-        if (m.from != from || m.to != me || !m.delivered || int64_t{m.dated} <= cut) continue;
-        if (!newest || m.dated > newest->dated || (m.dated == newest->dated && m.id.value > newest->id.value)) newest = &m;
-    }
-    return newest;
+    if (!me.valid() || !from.valid() || me == from || me.index() >= s.empires.size() || from.index() >= s.empires.size()) return nullptr;
+    // Dated after the cut: the date − 2, or in a turn-based game the date − 1
+    // when the sender's number is lower than ours (the engine's window).
+    return game::diplomacy::newestMessage(s, me, from, s.turn);
 }
 
 std::vector<MessageType> replyTypes(MessageType received) {
@@ -413,6 +408,16 @@ std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::
         if (v.owner != owner || v.count <= 0) return false;
         return give || std::find(us.knowledge.visibleVehicles.begin(), us.knowledge.visibleVehicles.end(), v.id) != us.knowledge.visibleVehicles.end();
     };
+    // The named rows from `first` on in alphabetical order, the letter case
+    // ignored (ours), after the "Any" row.
+    auto sortFrom = [&](size_t first, auto&& name) {
+        std::stable_sort(out.begin() + static_cast<std::ptrdiff_t>(first), out.end(), [&](const game::PackageItem& a, const game::PackageItem& b) {
+            const std::string x = name(a), y = name(b);
+            return std::lexicographical_compare(x.begin(), x.end(), y.begin(), y.end(), [](char p, char q) {
+                return std::tolower(static_cast<unsigned char>(p)) < std::tolower(static_cast<unsigned char>(q));
+            });
+        });
+    };
     switch (tab) {
         case PackageTab::Systems:
         case PackageTab::StarCharts: {
@@ -426,27 +431,37 @@ std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::
             }
             break;
         }
-        case PackageTab::Planets:
+        case PackageTab::Planets: {
+            // Ours; or the recipient's colonies we see now, a colony whose
+            // cloak beats our detection left out, sorted (spec 05 §3.4,
+            // confirmed: binary).
             any(K::Planet);
+            const size_t first = out.size();
             for (const auto& c : s.colonies) {
                 if (!c || c->owner != owner) continue;
-                if (!give && !us.hasExplored(s.galaxy.object(c->planet).system)) continue;
+                if (!give && (!us.hasExplored(s.galaxy.object(c->planet).system) || !game::sight::canSeeColony(r, s, me, c->planet))) continue;
                 game::PackageItem i = item(K::Planet);
                 i.planet = c->planet;
                 out.push_back(i);
             }
+            if (!give) sortFrom(first, [&](const game::PackageItem& i) { return s.galaxy.object(i.planet).name; });
             break;
+        }
         case PackageTab::Resources: break;
         case PackageTab::Technology:
             if (!s.options.allowTechTrades) break;
             any(K::Technology);
+            // Ours with a level of at least 1; or every area we can see
+            // (requirements met, allowed, racial and unique checks), maxed
+            // ones included; both alphabetical (spec 05 §3.4, confirmed: binary).
             for (uint32_t a = 0; a < r.data().techAreas.size(); ++a) {
                 const ruleset::TechAreaId id{a};
-                if (give ? us.techLevel(id) <= 0 : !r.techVisible(s, us, id) && us.techLevel(id) == 0) continue;
+                if (give ? us.techLevel(id) <= 0 : !r.techVisible(s, us, id)) continue;
                 game::PackageItem i = item(K::Technology);
                 i.tech = id;
                 out.push_back(i);
             }
+            sortFrom(give ? 0 : 1, [&](const game::PackageItem& i) { return r.tech(i.tech).name; });
             break;
         case PackageTab::Ships:
         case PackageTab::Units: {
@@ -454,7 +469,10 @@ std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::
             any(K::Vehicle);
             for (const game::Vehicle& v : s.vehicles) {
                 if (!listable(v) || game::isUnitType(game::vehicleType(r, s, v))) continue;
-                if (units && v.cargo.units.empty()) continue;
+                // Units: our ships and bases that carry units; on the side
+                // asked for every one of theirs we see, loaded or not, as we
+                // cannot see their cargo (spec 05 §3.4, confirmed: binary).
+                if (units && give && v.cargo.units.empty()) continue;
                 game::PackageItem i = item(K::Vehicle);
                 i.vehicle = v.id;
                 out.push_back(i);
@@ -469,10 +487,12 @@ std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::
             }
             break;
         case PackageTab::CommChannels:
+            // Both sides list the living empires we are in contact with, other
+            // than us and the recipient, after "Any Comm Channel" on the side
+            // asked for (spec 05 §3.4, confirmed: binary).
+            any(K::CommChannel);
             for (const game::Empire& x : s.empires) {
-                if (x.id == me || x.id == them || !x.alive) continue;
-                const bool weMet = us.relation(x.id).contact;
-                if (give ? !weMet : weMet || !s.empire(them).relation(x.id).contact) continue;
+                if (x.id == me || x.id == them || !x.alive || !us.relation(x.id).contact) continue;
                 game::PackageItem i = item(K::CommChannel);
                 i.empire = x.id;
                 out.push_back(i);
@@ -481,6 +501,169 @@ std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::
         case PackageTab::Count: break;
     }
     return out;
+}
+
+namespace {
+
+bool sameLineValue(const game::PackageItem& a, const game::PackageItem& b) {
+    using K = game::PackageItem::Kind;
+    if (a.kind != b.kind) return false;
+    switch (a.kind) {
+        case K::Resources:
+            for (game::Resource res : game::kResources)
+                if ((a.resources[res] > 0) != (b.resources[res] > 0)) return false;
+            return true;
+        case K::Technology: return a.tech == b.tech;
+        case K::Planet: return a.planet == b.planet;
+        case K::Vehicle: return a.vehicle == b.vehicle;
+        case K::StarChart:
+        case K::System: return a.system == b.system;
+        case K::Treaty: return true;  // one treaty per side
+        case K::CommChannel: return a.empire == b.empire;
+    }
+    return false;
+}
+
+bool counted(const game::PackageItem& item) { return item.kind == game::PackageItem::Kind::Resources || isAnyItem(item); }
+
+// The resource a resource line holds.
+std::optional<game::Resource> lineResource(const game::PackageItem& item) {
+    for (game::Resource res : game::kResources)
+        if (item.resources[res] > 0) return res;
+    return std::nullopt;
+}
+
+void setSteps(PackageLine& line, int steps) {
+    line.steps = steps;
+    if (line.item.kind != game::PackageItem::Kind::Resources) return;
+    if (const auto res = lineResource(line.item)) line.item.resources[*res] = int64_t{steps} * kPackageStepAmount;
+}
+
+} // namespace
+
+int packageClickSteps(bool x10000, bool x100000, bool shift) {
+    if (x10000) return 10;
+    if (x100000) return 100;
+    return shift ? 10 : 1;
+}
+
+game::PackageItem resourceRow(game::Resource res) {
+    game::PackageItem i;
+    i.kind = game::PackageItem::Kind::Resources;
+    i.resources[res] = kPackageStepAmount;
+    return i;
+}
+
+void addPackageClick(std::vector<PackageLine>& lines, const game::PackageItem& row, int steps) {
+    if (steps <= 0) return;
+    if (!counted(row)) {
+        for (PackageLine& l : lines)
+            if (sameLineValue(l.item, row)) {
+                if (row.kind == game::PackageItem::Kind::Treaty) l.item.treaty = row.treaty;
+                return;
+            }
+        lines.push_back({row, 1});
+        return;
+    }
+    bool placed = false;
+    std::optional<int> rest;
+    const size_t n = lines.size();
+    for (size_t i = 0; i < n; ++i) {
+        PackageLine& l = lines[i];
+        if (!sameLineValue(l.item, row) || l.steps >= kMaxPackageSteps) continue;
+        if (l.steps + steps <= kMaxPackageSteps) {
+            setSteps(l, l.steps + steps);
+        } else {
+            rest = l.steps + steps - kMaxPackageSteps;
+            setSteps(l, kMaxPackageSteps);
+        }
+        placed = true;
+        if (rest) break;
+    }
+    if (placed && !rest) return;
+    PackageLine fresh{row, 0};
+    setSteps(fresh, rest.value_or(steps));
+    lines.push_back(fresh);
+}
+
+void takePackageClick(std::vector<PackageLine>& lines, size_t line, int steps) {
+    if (line >= lines.size()) return;
+    PackageLine& l = lines[line];
+    if (counted(l.item) && l.steps > steps) {
+        setSteps(l, l.steps - steps);
+        return;
+    }
+    lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(line));
+}
+
+std::vector<PackageLine> packageLines(const std::vector<game::PackageItem>& items) {
+    std::vector<PackageLine> out;
+    for (const game::PackageItem& item : items) {
+        if (item.kind == game::PackageItem::Kind::Resources) {
+            for (game::Resource res : game::kResources) {
+                int64_t left = item.resources[res] / kPackageStepAmount;
+                while (left > 0) {
+                    const int steps = static_cast<int>(std::min<int64_t>(left, kMaxPackageSteps));
+                    PackageLine l{resourceRow(res), 0};
+                    setSteps(l, steps);
+                    out.push_back(l);
+                    left -= steps;
+                }
+            }
+            continue;
+        }
+        if (isAnyItem(item) && !out.empty() && isAnyItem(out.back().item) && sameLineValue(out.back().item, item) &&
+            out.back().steps < kMaxPackageSteps) {
+            ++out.back().steps;
+            continue;
+        }
+        out.push_back({item, 1});
+    }
+    return out;
+}
+
+std::vector<game::PackageItem> packageItems(const std::vector<PackageLine>& lines) {
+    std::vector<game::PackageItem> out;
+    for (const PackageLine& l : lines) {
+        const int copies = isAnyItem(l.item) ? std::max(1, l.steps) : 1;
+        for (int k = 0; k < copies; ++k) out.push_back(l.item);
+    }
+    return out;
+}
+
+bool samePackage(const std::vector<game::PackageItem>& a, const std::vector<game::PackageItem>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        const game::PackageItem& x = a[i];
+        const game::PackageItem& y = b[i];
+        if (x.kind != y.kind || x.tech != y.tech || x.planet != y.planet || x.vehicle != y.vehicle || x.system != y.system || x.treaty != y.treaty ||
+            x.empire != y.empire)
+            return false;
+        for (game::Resource res : game::kResources)
+            if (x.resources[res] != y.resources[res]) return false;
+    }
+    return true;
+}
+
+std::string packageLineText(const game::Rules& r, const game::GameState& s, const PackageLine& line) {
+    if (line.item.kind == game::PackageItem::Kind::Resources)
+        if (const auto res = lineResource(line.item)) return std::format("{} - {}000", game::displayName(*res), line.steps);
+    if (isAnyItem(line.item)) {
+        using K = game::PackageItem::Kind;
+        std::string_view name = "Any";
+        switch (line.item.kind) {
+            case K::Planet: name = "Any Planet"; break;
+            case K::Technology: name = "Any Tech Area"; break;
+            case K::Vehicle: name = "Any Ship"; break;
+            case K::StarChart: name = "Any Star Chart"; break;
+            case K::System: name = "Any System"; break;
+            case K::CommChannel: name = "Any Comm Channel"; break;
+            case K::Resources:
+            case K::Treaty: break;
+        }
+        return line.steps > 1 ? std::format("{} - {}", name, line.steps) : std::string(name);
+    }
+    return packageItemText(r, s, line.item);
 }
 
 std::string packageItemText(const game::Rules& r, const game::GameState& s, const game::PackageItem& item) {
@@ -1078,14 +1261,12 @@ bool logListsEntry(const game::GameState& s, const game::LogEntry& l) { return l
 
 int messagesAwaitingReply(const game::GameState& s, game::EmpireId me, game::EmpireId from) {
     if (!me.valid() || me.index() >= s.empires.size()) return 0;
+    // Only the newest recent message from that empire can be answered (spec
+    // 05 §3.4, confirmed: binary).
+    const game::DiplomaticMessage* m = replyableMessage(s, me, from);
+    if (!m || m->answered || !answerable(m->type)) return 0;
     const std::vector<game::LogEntry>& log = s.empire(me).log;
-    int n = 0;
-    for (const game::DiplomaticMessage& m : s.messages) {
-        if (m.from != from || m.to != me || !m.delivered || m.answered || !answerable(m.type)) continue;
-        const bool listed = std::any_of(log.begin(), log.end(), [&](const game::LogEntry& l) { return l.message == m.id && logListsEntry(s, l); });
-        if (listed) ++n;
-    }
-    return n;
+    return std::any_of(log.begin(), log.end(), [&](const game::LogEntry& l) { return l.message == m->id && logListsEntry(s, l); }) ? 1 : 0;
 }
 
 uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts) {

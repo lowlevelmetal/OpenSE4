@@ -6,6 +6,7 @@
 #include "core/log.hpp"
 #include "game/players.hpp"
 #include "game/setup.hpp"
+#include "game/turn.hpp"
 #include "script/runtime.hpp"
 #include "sdk/match.hpp"
 #include "sdk/players.hpp"
@@ -380,7 +381,7 @@ void runScenarios(const mods::Package& mod, const game::Rules& rules, uint32_t t
         std::string met;
         for (const std::string& m : s.scenario.met) met += (met.empty() ? "" : ", ") + m;
         std::string ended = "it goes on";
-        if (s.gameOver) {
+        if (game::gameDecided(s)) {
             ended = std::format("it ended: {}", s.endReason.empty() ? std::string("game over") : s.endReason);
             if (s.winner.valid()) ended += std::format(" ({} won)", s.empire(s.winner).name);
         }

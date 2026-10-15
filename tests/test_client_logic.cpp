@@ -10,6 +10,7 @@
 #include "client/classic/turn_start.hpp"
 #include "game/commands.hpp"
 #include "game/diplomacy.hpp"
+#include "game/query.hpp"
 #include "game/score.hpp"
 #include "game/turn.hpp"
 
@@ -187,10 +188,13 @@ TEST_CASE("client logic: the portrait's reply types answer the newest message in
     CHECK(replyableMessage(s, me, high)->id == ten);
     CHECK(offerView(replyableMessage(s, me, high)) == OfferView::None);
     CHECK(replyableMessage(s, high, me) == nullptr);   // nothing from us to them
-    // In a simultaneous game, from a lower player number: after the date − 1.
+    // In a turn-based game, from a lower player number: after the date − 1
+    // (spec 05 §3.4, confirmed: binary; spec 06 §1.5 had the turn style
+    // backwards until 2026-10-14).
     message(low, 9, MessageType::Tribute);
-    CHECK(replyableMessage(s, me, low) != nullptr);
     s.options.simultaneous = true;
+    CHECK(replyableMessage(s, me, low) != nullptr);
+    s.options.simultaneous = false;
     CHECK(replyableMessage(s, me, low) == nullptr);
     CHECK(replyableMessage(s, me, high) != nullptr);   // a higher number keeps two turns
     message(low, 10, MessageType::Tribute);
@@ -384,7 +388,7 @@ TEST_CASE("client logic: Select Package lists what the original lists") {
     CHECK(anyFirst(charts));
     CHECK(kinds(charts, K::StarChart));
 
-    // Planets: ours; theirs in explored systems after "Any".
+    // Planets: ours; theirs that we see now, after "Any".
     const auto ours = packageChoices(r, s, me, them, PackageTab::Planets, true);
     REQUIRE(ours.size() == 1);
     CHECK(ours[0].planet == homeworld(s, me).planet);
@@ -392,7 +396,16 @@ TEST_CASE("client logic: Select Package lists what the original lists") {
     k.explored[theirHome.index()] = 0;
     CHECK(packageChoices(r, s, me, them, PackageTab::Planets, false).size() == 1);   // "Any" alone
     k.explored[theirHome.index()] = 1;
+    // Explored is not enough: we must see the colony now (sensors there).
+    CHECK(packageChoices(r, s, me, them, PackageTab::Planets, false).size() == 1);
+    VehicleId spy;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == me && !spy.valid()) spy = v.id;
+    REQUIRE(spy.valid());
+    const Location spyWas = s.vehicle(spy)->location;
+    s.vehicle(spy)->location = locationOf(s.galaxy, homeworld(s, them).planet);
     const auto theirs = packageChoices(r, s, me, them, PackageTab::Planets, false);
+    s.vehicle(spy)->location = spyWas;
     REQUIRE(theirs.size() == 2);
     CHECK(anyFirst(theirs));
     CHECK(theirs[1].planet == homeworld(s, them).planet);
@@ -417,14 +430,22 @@ TEST_CASE("client logic: Select Package lists what the original lists") {
     const auto units = packageChoices(r, s, me, them, PackageTab::Units, true);
     REQUIRE(units.size() == 1);
     CHECK(units[0].vehicle == loaded->id);
+    // Asked for: every ship of theirs that we see, loaded or not (we cannot
+    // see their cargo), after "Any Unit Transport" (spec 05 §3.4, confirmed: binary).
     const auto askUnits = packageChoices(r, s, me, them, PackageTab::Units, false);
-    REQUIRE(askUnits.size() == 1);   // "Any" alone: the ship we see carries none
+    REQUIRE(askUnits.size() == 2);
     CHECK(isAnyItem(askUnits[0]));
+    CHECK(askUnits[1].vehicle == seen);
 
     // Technology: only with technology trades; "Any" on the side we ask for.
     CHECK(packageTabEnabled(s.options, PackageTab::Technology));
     const auto techAsk = packageChoices(r, s, me, them, PackageTab::Technology, false);
     CHECK(anyFirst(techAsk));
+    // Every area we can see, alphabetical; ours with a level, alphabetical too.
+    for (size_t i = 2; i < techAsk.size(); ++i) CHECK(r.tech(techAsk[i - 1].tech).name <= r.tech(techAsk[i].tech).name);
+    for (size_t i = 1; i < techAsk.size(); ++i) CHECK(r.techVisible(s, s.empire(me), techAsk[i].tech));
+    const auto techGive = packageChoices(r, s, me, them, PackageTab::Technology, true);
+    for (size_t i = 1; i < techGive.size(); ++i) CHECK(r.tech(techGive[i - 1].tech).name <= r.tech(techGive[i].tech).name);
     s.options.allowTechTrades = false;
     CHECK_FALSE(packageTabEnabled(s.options, PackageTab::Technology));
     CHECK(packageTabEnabled(s.options, PackageTab::Resources));
@@ -437,13 +458,18 @@ TEST_CASE("client logic: Select Package lists what the original lists") {
     CHECK(kinds(treaties, K::Treaty));
     CHECK(std::any_of(treaties.begin(), treaties.end(), [](const PackageItem& i) { return i.treaty == Treaty::War; }));
 
-    // Comm channels: the empires we have met; asked for, those they have met and we have not. No "Any".
+    // Comm channels: on both sides the living empires we are in contact with,
+    // other than us and the recipient; "Any" first on the side asked for
+    // (spec 05 §3.4 Q80(b), confirmed: binary).
     CHECK(packageChoices(r, s, me, them, PackageTab::CommChannels, true).empty());
     const auto channels = packageChoices(r, s, me, them, PackageTab::CommChannels, false);
-    REQUIRE(channels.size() == 1);
-    CHECK(channels[0].empire == third);
+    REQUIRE(channels.size() == 1);   // "Any" alone: we have met nobody else
+    CHECK(isAnyItem(channels[0]));
     holdTreaty(s, me, third, Treaty::None);
-    CHECK(packageChoices(r, s, me, them, PackageTab::CommChannels, false).empty());
+    const auto asked = packageChoices(r, s, me, them, PackageTab::CommChannels, false);
+    REQUIRE(asked.size() == 2);
+    CHECK(anyFirst(asked));
+    CHECK(asked[1].empire == third);
     const auto give = packageChoices(r, s, me, them, PackageTab::CommChannels, true);
     REQUIRE(give.size() == 1);
     CHECK(give[0].empire == third);
@@ -451,6 +477,73 @@ TEST_CASE("client logic: Select Package lists what the original lists") {
     CHECK(packageChoices(r, s, me, them, PackageTab::Resources, true).empty());
     CHECK(packageTabName(PackageTab::StarCharts) == "Star Charts");
     CHECK(packageTabName(PackageTab::CommChannels) == "Comm Channels");
+}
+
+// Select Package's lines and clicks (spec 05 §3.4, confirmed: binary).
+TEST_CASE("client logic: Select Package adds and takes off resources and \"Any\" items in steps, 250 to a line") {
+    using game::Resource;
+    CHECK(packageClickSteps(false, false, false) == 1);
+    CHECK(packageClickSteps(false, false, true) == 10);    // Shift
+    CHECK(packageClickSteps(true, false, false) == 10);
+    CHECK(packageClickSteps(false, true, false) == 100);
+    CHECK(packageClickSteps(true, true, false) == 10);     // x10000 is tested first
+    std::vector<PackageLine> lines;
+    const PackageItem minerals = resourceRow(Resource::Minerals);
+    addPackageClick(lines, minerals, 100);
+    addPackageClick(lines, minerals, 100);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines[0].steps == 200);
+    CHECK(lines[0].item.resources[Resource::Minerals] == 200'000);
+    // Past 250 the line is filled to 250 and the rest starts a new line.
+    addPackageClick(lines, minerals, 100);
+    REQUIRE(lines.size() == 2);
+    CHECK(lines[0].steps == 250);
+    CHECK(lines[1].steps == 50);
+    // Another resource has its own line; each line is its own item.
+    addPackageClick(lines, resourceRow(Resource::Organics), 1);
+    REQUIRE(lines.size() == 3);
+    const std::vector<PackageItem> items = packageItems(lines);
+    REQUIRE(items.size() == 3);
+    CHECK(items[1].resources[Resource::Minerals] == 50'000);
+    CHECK(items[2].resources[Resource::Organics] == 1'000);
+    // A click on a line takes the step off, or the whole line when the step
+    // is at least what it holds.
+    takePackageClick(lines, 0, 10);
+    CHECK(lines[0].steps == 240);
+    // The quirk: two lines of one resource with room both take a click.
+    addPackageClick(lines, minerals, 1);
+    CHECK(lines[0].steps == 241);
+    CHECK(lines[1].steps == 51);
+    takePackageClick(lines, 1, 100);
+    REQUIRE(lines.size() == 2);
+    // "Any" rows: one more of its kind on the same line, "Any Planet - 2".
+    const Rules& r = engineRules();
+    GameState s;
+    PackageItem anyPlanet;
+    anyPlanet.kind = PackageItem::Kind::Planet;
+    addPackageClick(lines, anyPlanet, 1);
+    addPackageClick(lines, anyPlanet, 1);
+    REQUIRE(lines.size() == 3);
+    CHECK(packageLineText(r, s, lines[2]) == "Any Planet - 2");
+    CHECK(packageLineText(r, s, lines[0]) == "Minerals - 241000");
+    CHECK(packageItems(lines).size() == 4);    // two "Any" items
+    takePackageClick(lines, 2, 1);
+    CHECK(packageLineText(r, s, lines[2]) == "Any Planet");
+    // The lines come back from the items, "Any" items merged.
+    const std::vector<PackageLine> again = packageLines(packageItems(lines));
+    REQUIRE(again.size() == 3);
+    CHECK(samePackage(packageItems(again), packageItems(lines)));
+    // A specific item is added once and removed by any click.
+    PackageItem treaty;
+    treaty.kind = PackageItem::Kind::Treaty;
+    treaty.treaty = Treaty::NonAggression;
+    addPackageClick(lines, treaty, 1);
+    treaty.treaty = Treaty::TradeAlliance;
+    addPackageClick(lines, treaty, 1);
+    REQUIRE(lines.size() == 4);
+    CHECK(lines[3].item.treaty == Treaty::TradeAlliance);
+    takePackageClick(lines, 3, 1);
+    CHECK(lines.size() == 3);
 }
 
 // Scores, Comparisons and Victory Conditions (spec 05 §5, spec 06 §1.5, confirmed: binary).

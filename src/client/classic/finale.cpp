@@ -58,8 +58,9 @@ std::vector<FinaleKind> finaleKinds(const game::GameState& s, game::EmpireId pla
     // simultaneous game when it owns nothing now, before it is marked dead.
     const bool lose = turnBased ? s.playerTurn.empire == player && s.playerTurn.loseEnding : game::score::ownsNothing(s, player);
     if (lose) out.push_back(FinaleKind::Lose);
-    // Victory: the game is over (simultaneous), or this is a turn-based game's last turn.
-    if (s.gameOver || (turnBased && s.lastTurn)) out.push_back(FinaleKind::Victory);
+    // Victory: the game is over, or marked completed (a turn-based game's last
+    // turn, or any turn of a simultaneous game after its check was met).
+    if (s.gameOver || s.lastTurn) out.push_back(FinaleKind::Victory);
     const bool alone = std::none_of(s.empires.begin(), s.empires.end(), [&](const game::Empire& e) { return e.id != player && e.alive; });
     if (alive && alone) out.push_back(FinaleKind::Conquered);
     return out;
@@ -85,8 +86,11 @@ std::vector<FinaleKind> FinaleWatch::update(const game::GameState& s, game::Empi
     // humans each see the Victory of the last turn).
     std::vector<FinaleKind>& before = due_[player];
     std::vector<FinaleKind> out;
+    // A simultaneous game marked completed shows its Victory ending at every
+    // turn a player opens (spec 05 §6, confirmed: binary).
+    const bool completedGoesOn = !game::turnBased(s) && s.lastTurn && !s.gameOver;
     for (FinaleKind k : due)
-        if (std::find(before.begin(), before.end(), k) == before.end()) out.push_back(k);
+        if ((k == FinaleKind::Victory && completedGoesOn) || std::find(before.begin(), before.end(), k) == before.end()) out.push_back(k);
     before = std::move(due);
     return out;
 }

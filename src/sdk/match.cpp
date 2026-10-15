@@ -213,7 +213,9 @@ std::expected<MatchResult, std::string> playMatch(const game::Rules& r, MatchSet
         if (bots) players.externals = [bots](uint32_t slot) { return bots->bot(slot); };
         Installed installed(std::move(players));
 
-        for (uint32_t played = 0; played < setup.turns && !s.gameOver; ++played) {
+        // A simultaneous game whose victory check was met could go on, every
+        // start- and end-of-turn step skipped (spec 05 §6): the match ends there.
+        for (uint32_t played = 0; played < setup.turns && !game::gameDecided(s); ++played) {
             const uint32_t turn = s.turn;
             std::vector<bool> aliveBefore;
             for (const game::Empire& e : s.empires) aliveBefore.push_back(e.alive);
@@ -246,11 +248,11 @@ std::expected<MatchResult, std::string> playMatch(const game::Rules& r, MatchSet
         }
     }
 
-    result.gameOver = s.gameOver;
+    result.gameOver = game::gameDecided(s);
     std::vector<EmpireId> living;
     for (const game::Empire& e : s.empires)
         if (e.alive) living.push_back(e.id);
-    if (s.gameOver && s.winner.valid()) {
+    if (result.gameOver && s.winner.valid()) {
         result.winner = s.winner;
         result.winnerBy = "victory";
     } else if (living.size() == 1) {
@@ -273,9 +275,9 @@ std::expected<MatchResult, std::string> playMatch(const game::Rules& r, MatchSet
             scores.push_back(script::Value(std::move(one)));
         }
         script::ValueMap details;
-        details.emplace_back("reason", script::Value(s.gameOver ? "the game is over" : "the match is over"));
+        details.emplace_back("reason", script::Value(result.gameOver ? "the game is over" : "the match is over"));
         details.emplace_back("turn", script::Value(static_cast<int64_t>(s.turn)));
-        details.emplace_back("game_over", script::Value(s.gameOver));
+        details.emplace_back("game_over", script::Value(result.gameOver));
         details.emplace_back("winner", result.winner.valid() ? script::Value(static_cast<int64_t>(result.winner.value)) : script::Value());
         details.emplace_back("won_by", script::Value(result.winnerBy));
         details.emplace_back("scores", script::Value(std::move(scores)));

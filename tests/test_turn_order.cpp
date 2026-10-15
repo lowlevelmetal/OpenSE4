@@ -145,8 +145,8 @@ TEST_CASE("turn order: the event roll comes after the victory check") {
     s.options.victory.yearsTurns = 20;   // ... and the game ends
 
     quietTurn(*r, s);
-    CHECK(s.gameOver);
-    // The event step still ran in the last turn, after the victory check.
+    CHECK(s.lastTurn);   // the game is completed (spec 05 §6)
+    // The event step still ran in the turn the check was met, after it.
     bool struck = false;
     for (const Empire& e : s.empires) {
         const size_t over = logIndex(s, e.id, "Game Over"), omen = logIndex(s, e.id, "Omen");

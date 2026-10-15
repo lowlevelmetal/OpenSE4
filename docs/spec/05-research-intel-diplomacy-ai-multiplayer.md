@@ -167,9 +167,17 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
   the new items. Tech changes come from research, gifts, trades, theft, ruins, surrender,
   Analyze and the Medium/High start.
 - **Other sources**:
-  - A Technology item in a gift, tribute or trade package gives the giver's level. It
-    helps only when the receiver's level is lower. Setup options "Allow Gifts/Tributes" and
-    "Allow Technology Gifts/Tributes/Trades" can forbid it [M].
+  - A Technology item in a gift, tribute or trade package gives the receiver **exactly one
+    level** in that area (confirmed: binary; corrected 2026-10-14, complete listing: this
+    said earlier that it gave the giver's level). The level comes only when the area is
+    visible to the receiver (its requirements are met, it is allowed in the game, and its
+    racial and unique checks pass) and the receiver's level is below the giver's; otherwise
+    nothing is gained and the receiver is told the data is of no use (it cannot understand
+    it, or it is no more advanced). The level is gained as by research, with the usual "New
+    Tech Level" entries. No game option is tested when the package is carried out; "Allow
+    Technology Gifts/Tributes/Trades" only dims the Select Package window's Technology tab
+    (§3.4). Since 2026-10-14 ours follows (`diplomacy::executePackage`); until then the
+    receiver jumped to the giver's level in one step, requirements unmet or not.
   - Subjugation does **not** pass technology to the master in the original, despite the
     treaty description; the master only sees the subject's designs (§3.2) (confirmed:
     binary).
@@ -225,8 +233,9 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
   asks for the empire only. Cancel at either step adds nothing. The target picked, or "Any",
   stays with the queued project, and the operation strikes it when the project completes
   (below). Each queued project keeps its own progress: reordering the queue moves no points
-  between two copies of a project, and a project added again starts from nothing (inferred:
-  the saved game keeps the points of each entry, spec 08 §3.6.3).
+  between two copies of a project, and a project added again starts from nothing (confirmed:
+  binary, the 2026-10-14 accuracy pass: every queued project is its own record created with no
+  progress; the saved game keeps the points of each entry, spec 08 §3.6.3).
 - **A project's box** (confirmed: binary): as Research's (spec 06 §7 Q92), with the name
   word-wrapped at the top; for a project with a second list, the specific target picked, or
   "Any Ship" and the like, on a line at y 40; at y 54, centred on x 65, "Against " followed
@@ -301,14 +310,14 @@ message at all.
 
 | Category | `Type` → effect on success |
 |---|---|
-| Ship sabotage | `Ship - Damage`: Amount damage points through the standard damage routine. `Ship - Lose Movement`: the ship loses Amount of its remaining movement points for the current turn (never below 0). Movement points are refilled when simultaneous movement starts, and in a turn-based game at the start of each player's turn before its vehicles move (§8). Intelligence runs in the attacker's end-of-turn processing and events after every player, so the loss is always refilled before the ship moves again and has no effect. `Ship - Lose Supply`: removes min(Amount, the ship's supply). `Ship - Rebel`: the ship joins the source. `Ship - Experience Change`: adds the signed Amount. `Ship - Cargo Damage`: if the ship carries anything, its whole cargo (every person and unit) is destroyed; Amount is not used, and the message shows its absolute value. `Ship - Orders Change`: mothballed ships and ships without an order list are immune; the ship leaves its fleet, its orders are cleared, and it gets one Move To a random sector of a random system of the quadrant (its own system included). |
-| Ship espionage | `Ship - Concentrations`: a report. `Ship - Construction Info`: the largest queue concentrations. `Ship Designs - Steal`, `Unit Designs - Steal`: the thief learns exactly one design of the target, the newest one of the right class (ship or base, or a unit type) that has been built at least once, or that a ship was retrofitted to (a mark kept with the design, cleared only when the design is saved again in the designer; confirmed: binary), that the thief does not know yet and that its owner can still build. It is dated as seen this turn (§8 "Design knowledge"); it does not join the thief's own designs, and nothing is copied. A specific target in the order is ignored; with no such design the operation fails. |
-| Planet sabotage | `Planet - Conditions Change`: any planet, colonized or not; the conditions become conditions + Amount / 10 on spec 02's 0–1.5 scale, kept within 0 and 1.5 (Amount is in tenths). The planet sends no notice of its own, but the record's messages go out as for any other effect: as a project, the source and the victim get theirs (with the 1-in-5 suspect line); as an event, the recipients its `Message To` names (confirmed: binary). `Planet - Value Change`: each of the three resource values changes by Amount; in finite-resource games by Amount × 1,000 when that is strictly between −500,000 and +500,000, otherwise by Amount. A result below 0 becomes 0; any other result is clamped into `Minimum/Maximum Planet Percent/Resource Value`, so a value already outside is pulled in. `Planet - Population Change`: with s = trunc(\|Amount\| / 5), the change is Amount + d, d uniform from −s to +s. A loss is taken from the population groups in list order, first group first; a gain goes only to an existing group of the owner's race, capped at the planet's maximum population (the domed maximum when domed); no group is created. The message shows the absolute change. `Planet - Population Anger Change`: needs a colony whose owner's race is not `Population Emotionless`; anger changes by Amount in whole percent, within 0 and 100 (at most 80 on a capital). `Planet - Population Rebel`: see below. `Planet - Cargo Damage`: nothing when Amount ≤ 0 or the cargo is empty; otherwise Amount damage points strike the population in the cargo first, killing Amount ÷ `Damage Points To Kill One Population` million (truncated) from the first group on; if fewer people are aboard, all die and the damage they absorbed (people × that setting) is subtracted, and the rest hits the units in the cargo as a hull-damaging hit on a unit group (spec 04 §9.4). `Planet - Facility Damage`: n = min(Amount, the number of facilities), nothing when n ≤ 0; n facilities are destroyed one at a time, each draw picking a facility kind with a chance in proportion to how many of that kind the planet had at the start (a kind with none left is drawn again); the message shows n. |
-| Planet espionage | `Planet - Info`: a full report, including cargo [H]. `Planet - Locations`. |
+| Ship sabotage | `Ship - Damage`: Amount damage points through the standard damage routine. `Ship - Lose Movement`: the ship loses Amount of its remaining movement points for the current turn (never below 0). Movement points are refilled when simultaneous movement starts, and in a turn-based game at the start of each player's turn before its vehicles move (§8). Intelligence runs in the attacker's end-of-turn processing and events after every player, so the loss is always refilled before the ship moves again and has no effect. It fails when the ship has no movement points left at that moment. `Ship - Lose Supply`: removes min(Amount, the ship's supply); it fails when that is 0 or less (no supply left, or Amount ≤ 0), and for unlimited supply. `Ship - Rebel`: the ship joins the source; a mothballed ship stays with its owner and the operation fails. The change of owner raises no happiness event, and the ship is put under minister control when the source has its newly built ships put there. `Ship - Experience Change`: adds the signed Amount; a negative Amount fails on a ship with no experience. `Ship - Cargo Damage`: if the ship carries anything, its whole cargo (every person and unit) is destroyed; Amount is not used, and the message shows its absolute value; an empty cargo fails. `Ship - Orders Change`: mothballed ships and ships without an order list are immune; the ship leaves its fleet, its orders are cleared, and it gets one Move To a random sector of a random system of the quadrant (its own system included). |
+| Ship espionage | `Ship - Concentrations`: one line added to the source message: the one system, among those the target has explored, where the target has the most ships and bases (the first such in system order), with the count; it fails when there is none. `Ship - Construction Info`: one line: the one system with the most of the target's ship-building construction queues, with the count; it fails when there is none (which queues count is question 86). `Ship Designs - Steal`, `Unit Designs - Steal`: the thief learns exactly one design of the target, the newest one of the right class (ship or base, or a unit type) that has been built at least once, or that a ship was retrofitted to (a mark kept with the design, cleared only when the design is saved again in the designer; confirmed: binary), that the thief does not know yet and that its owner can still build. It is dated as seen this turn (§8 "Design knowledge"); it does not join the thief's own designs, and nothing is copied. A specific target in the order is ignored; with no such design the operation fails. |
+| Planet sabotage | `Planet - Conditions Change`: any planet, colonized or not; the conditions become conditions + Amount / 10 on spec 02's 0–1.5 scale, kept within 0 and 1.5 (Amount is in tenths). The planet sends no notice of its own, but the record's messages go out as for any other effect: as a project, the source and the victim get theirs (with the 1-in-5 suspect line); as an event, the recipients its `Message To` names (confirmed: binary). `Planet - Value Change`: each of the three resource values changes by Amount; in finite-resource games by Amount × 1,000 when that is strictly between −500,000 and +500,000, otherwise by Amount. A result below 0 becomes 0; any other result is clamped into `Minimum/Maximum Planet Percent/Resource Value`, so a value already outside is pulled in. `Planet - Population Change`: with s = trunc(\|Amount\| / 5), the change is Amount + d, d uniform from −s to +s. A loss is taken from the population groups in list order, first group first; a gain goes only to an existing group of the owner's race, capped at the planet's maximum population (the domed maximum when domed); no group is created. The message shows the absolute change. It fails when the change drawn is exactly 0, and for a loss on a colony with less than 1 million people. `Planet - Population Anger Change`: needs a colony whose owner's race is not `Population Emotionless`; anger changes by Amount in whole percent, within 0 and 100 (at most 80 on a capital). `Planet - Population Rebel`: see below. `Planet - Cargo Damage`: it fails when the cargo is empty; with Amount ≤ 0 on a cargo that holds something it succeeds and damages nothing; otherwise Amount damage points strike the population in the cargo first, killing Amount ÷ `Damage Points To Kill One Population` million (truncated) from the first group on; if fewer people are aboard, all die and the damage they absorbed (people × that setting) is subtracted, and the rest hits the units in the cargo as a hull-damaging hit on a unit group (spec 04 §9.4). `Planet - Facility Damage`: n = min(Amount, the number of facilities), nothing when n ≤ 0; n facilities are destroyed one at a time, each draw picking a facility kind with a chance in proportion to how many of that kind the planet had at the start (a kind with none left is drawn again); the message shows n. |
+| Planet espionage | `Planet - Info`: one line added to the source message: the planet's facilities and cargo. `Planet - Locations`: one line, with no locations at all: how many systems the target spans, how many worlds it has colonized and its total population. Neither marks any system explored for the thief. |
 | Points | `Points - Change`: the target's minerals, organics and radioactives each change by Amount, never below 0. `Points - Steal`: for each of the three, min(Amount, the target's stock) moves to the source. Research and intelligence points are not touched. |
-| Projects | `Research - Steal`: the chosen area must be one where the target's level is above ours and that is neither racial nor unique; we gain exactly one level. `Research - Delete Project`, `Intel - Delete Project`: one random entry of the target's queue is removed with its progress; the latter can remove a defense project. |
+| Projects | `Research - Steal`: it fails only when the chosen area is racial or unique. Where the target's level is above ours we gain exactly one level; otherwise the operation still succeeds, without a level: the source's message gets an extra line (the target knows nothing of that technology, or we already have it), the victim gets its target message and the 1-in-5 suspect line is rolled. `Research - Delete Project`, `Intel - Delete Project`: one random entry of the target's queue is removed with its progress; the latter can remove a defense project. |
 | Politics | `Politics - Disrupt Trade`: if trade between the target and the third empire is running, its counter restarts at 0 (§3.3). `Politics - Intercept Messages`: reports the latest political message between the target and the third empire from the last two turns; with none, the operation fails. `Politics - Fake Messages`: a declaration of war is sent in the target's name to the third empire, and it takes effect: the two are at War. `Politics - Prevent Messages`: deletes the political messages of the last two turns between the two from both logs, so they are never answered; nothing is blocked afterwards. `Politics - Treaty Info`: the treaty between the two. |
-| Info | `System - Info`: the highest-numbered system that the target has explored and the thief has not becomes explored for the thief; with none, the operation fails. `Empire - Info`, `Tech Level - Info`: reports. |
+| Info | `System - Info`: the highest-numbered system that the target has explored and the thief has not becomes explored for the thief; with none, the operation fails; it is the one Info effect that explores a system. `Empire - Info`: a report. `Tech Level - Info`: one line added to the source message: up to five of the target's areas with a level, drawn at random, with their levels; it fails when the target holds no level anywhere. |
 | Defense | `Intelligence Defense`, with level = Amount (1–3). See §2.4. |
 
 - **`Planet - Population Rebel`** (confirmed: binary):
@@ -348,7 +357,20 @@ message at all.
   - A homeworld can rebel: neither a named target nor an "Any" pick excludes it.
 - **`Research - Steal` with target "Any"** (confirmed: binary): the original's automatic
   pick keeps only areas where the thief is already *ahead* of the target, so the steal that
-  follows always fails. A faithful engine reproduces this; an option may correct it.
+  follows always ends as a success without a level (corrected 2026-10-14, complete listing:
+  this said it always fails). A faithful engine reproduces this.
+- **What changed on 2026-10-14** (corrected 2026-10-14, complete listing; these readings sat
+  after finally blocks the old export lost). The failure cases above of `Ship - Rebel`
+  (mothballed), `Ship - Lose Movement`, `Ship - Lose Supply`, `Ship - Experience Change`,
+  `Planet - Population Change`, `Tech Level - Info` and `Research - Steal`, and the success of
+  `Planet - Cargo Damage` with Amount ≤ 0, were missing; a failed operation tells only the
+  source, which also decides the computer players' "Intelligence Against Us" anger (§7.3).
+  The espionage reports are lines added to the source's message, and `Ship -
+  Concentrations`, `Planet - Info` and `Planet - Locations` explore nothing. Since 2026-10-14
+  ours follows (`effects::apply` in `events.cpp`, `intel.cpp` `runAttack`). Until then ours
+  succeeded in those failure cases (a mothballed ship changed hands, raising `Any Ship Lost`
+  for its owner), failed the steal without a level and the cargo case, explored the reported
+  systems for the thief, and logged full lists in a report entry of their own.
 - **"Any" picks** (confirmed: binary) apply only two candidate checks: the inverted
   `Research - Steal` level test above, and `Change Bad Intelligence Chance - System`
   (§2.4). The handler's own checks come afterwards, on the chosen target.
@@ -433,8 +455,9 @@ ability never changes anything in the stock game.
   supply step, the start of a battle that decloaks a piece, a colony's Decloak), a logged
   event, a package's planet or vehicle and a rebellion project. Detection is worked out
   from the current positions and sensors. Every message sending of an event, a timed
-  event's start message as well as its strike, runs the check, whoever the messages reach,
-  `Message To` None included (question 57, confirmed: binary). The colony's automatic decloak at a
+  event's start message included, runs the check, whoever the messages reach, `Message To`
+  None included (question 57, confirmed: binary); a timed event's strike runs it only when
+  its picked message has a text (§4, confirmed: binary). The colony's automatic decloak at a
   recalculation is spec 01 §14 Q44 (`diplomacy::recalculateColony`, the check in the
   colony's system). In a simultaneous game a colony's Decloak makes only the acting
   empire's side of a contact (`firstContactIn` with its `onlySide`, spec 01 §14 Q44); a
@@ -479,18 +502,37 @@ up the trade chain [M].
 - **Accepting Subjugation** (confirmed: binary) drops every treaty better than None between
   the new subject and the third empires it is in contact with to None; both sides of each
   lost treaty are told. War and Non-Intercourse stay. Accepting a Protectorate breaks
-  nothing.
+  nothing. The drop belongs to the processing of the Accept Treaty message only (corrected
+  2026-10-14, complete listing): a Subjugation enacted by a Treaty item of a trade, gift or
+  tribute makes the package's receiver the master and the giver the subject, and the subject
+  keeps its other treaties. Since 2026-10-14 ours follows (`diplomacy::signTreaty` for the
+  message, `enactTreaty` for the package); until then a package's Subjugation dropped them
+  too.
 - **Consistency check** (confirmed: binary): at each empire's treaty step (§8), if the two
   sides of a pair record different treaties, both are reset to None.
 - **Break Treaty** sets both sides to None; **Declare War** sets both to War, whatever the
-  current treaty (confirmed: binary).
+  current treaty (confirmed: binary). A Break Treaty processed at War ends the war (corrected
+  2026-10-14, complete listing): only the Communicate window keeps a player from sending it
+  below Non-Aggression (§3.4); a computer player's or a network player's message is not
+  checked. Since 2026-10-14 ours follows (`diplomacy.cpp` message processing); the engine
+  still refuses a human player's Break Treaty below Non-Aggression in the command, as the
+  window does (`diplomacy::playerMessageProblem`). Until then ours ignored a Break Treaty at
+  War.
 - **Combat** (confirmed: binary, spec 04 §2): two empires fight when their treaty is below
   Non-Aggression (War, Non-Intercourse, None or no contact). Non-Aggression and every better
   treaty, Subjugation and Protectorate included, never fight. Allies never fire on each other,
   not even when two of our allies fight. Both allies defend a shared location [M].
 - **Happiness**: Trade and better are "good" treaties that please the empire. War,
   Non-Intercourse, Subjugation and Protectorate displease it [M]. Accepting a treaty raises
-  a happiness event for both sides (confirmed: binary).
+  a happiness event for both sides (confirmed: binary). Only that raises one (corrected
+  2026-10-14, complete listing): the "New Treaty ..." events come from the one routine that
+  enacts an accepted treaty, reached from an Accept Treaty message and from a Treaty item of
+  a package that is carried out. Declare War, Break Treaty, the treaties a new subject drops,
+  the per-turn consistency reset, the war of `Politics - Fake Messages`, contact loss and
+  destruction set treaties directly and raise none. So "New Treaty War" counts only when War
+  comes through a package's Treaty tab, and "New Treaty None" never comes from a Break
+  Treaty. Since 2026-10-14 ours follows (`diplomacy::enactTreaty`; `setTreaty` raises
+  none); until then every treaty change raised the event for both sides.
 - **Treaty grid** (confirmed: binary; the manual's "allied" was wrong): we see our own
   treaties, and the treaty between two other empires when we hold Non-Aggression or better
   with either of them (`Politics - Treaty Info` aside). The grid's cell layout is spec 06
@@ -521,9 +563,9 @@ up the trade chain [M].
   OpenSE4's earlier choice, which stopped a subject's treaties with third empires when they
   were set.
 - **OpenSE4 choices** [I]:
-  - A Treaty package item makes the receiver the master unless it names the giver.
-  - Break Treaty does not end a war (the window offers it only from Non-Aggression up,
-    §3.4).
+  - A Treaty package item makes the receiver the master unless it names the giver. The
+    original always makes the receiver the master (confirmed: binary), so ours matches by
+    default; naming the giver is our extension.
 
 ### 3.3 Trade and tariffs
 
@@ -577,7 +619,11 @@ up the trade chain [M].
     combat stops [H]. (confirmed: binary) It takes effect only when the game option Allow
     Surrender is on (§7.4); otherwise the message does nothing. Every object of the sender
     passes to the recipient, and every system where such an object lies becomes explored
-    for the recipient; no other map knowledge passes. The recipient receives the sender's
+    for the recipient; no other map knowledge passes. Each object goes through the ordinary
+    change of owner, which first takes a ship out of its fleet and clears its orders: the
+    recipient gets the ships in no fleet, and the surrendering empire's fleets are left empty
+    and go with it (corrected 2026-10-14, complete listing; until then ours handed the fleets
+    over whole; since then ours follows, `diplomacy::surrender`). The recipient receives the sender's
     minerals, organics and radioactives, which drop to 0; research and intelligence points
     do not pass. Designs are learned as in §8 "Design knowledge". Technology: the
     recipient gains **exactly one level** in every area where its level is lower than the
@@ -608,7 +654,7 @@ up the trade chain [M].
     Partnership, the current treaty included; never War or None, so peace after a war is
     Non-Intercourse or better.
   - Break Treaty only from Non-Aggression up. Declare War is not offered while already at
-    war (OpenSE4's list, inferred: question 80).
+    war (confirmed: binary, question 80).
   - Propose Trade and every demand and request whatever the treaty, war included.
   - Gift and Tribute only with the game option for gifts; Want a gift and Want a tribute
     whatever it says.
@@ -625,7 +671,11 @@ up the trade chain [M].
 - **Package items** (each logged on its own when carried out, spec 06 §7 Q70; confirmed:
   binary):
   - Systems: our border claim on the system passes to the receiver.
-  - Planets: transfers ownership.
+  - Planets: transfers ownership. When the receiver's race has `No Plagues`, a plagued
+    colony is cured at once, silently; the same holds for a surrender and for a `Planet -
+    Population Rebel` that joins the source (confirmed: binary). Since 2026-10-14 ours
+    follows (`diplomacy::handOverColony`); until then the plague stayed until the new owner's
+    planet step cured it, after that turn's income step.
   - Resources: in steps of 1000.
   - Technologies.
   - Ships.
@@ -635,17 +685,47 @@ up the trade chain [M].
   - Comm Channels: only when the receiver has no contact with the named empire; the two
     are then set to treaty None, without a first-contact check or entry.
 - **Select Package's lists** (confirmed: binary): Systems lists every system the player has
-  explored, on both sides, with no "Any"; Star Charts the same systems, on both sides; Units
-  the ships carrying units (loaded transports); the Treaty tab every treaty but "no contact",
-  None and the current one, War included. "Any" entries (an item the other side chooses)
-  are offered only on the side asked for, and only for a planet, a technology area, a ship,
-  a unit transport and a star chart. The Technology tab is dim when the game does not allow
-  technology trades. Resources are chosen with x10000 and x100000 toggles; our client
-  differs: the amounts are typed in, in steps of 1,000. Our client lists our own colonies,
-  technology areas, ships and the empires we have met on the side we give, and the
-  recipient's colonies in systems we have explored and its ships we see on the side we ask
-  for. The side we ask for of Comm Channels lists the empires the recipient has met and we
-  have not (inferred: question 80).
+  explored, on both sides, with no "Any"; Star Charts the same systems, on both sides; the
+  Treaty tab every treaty but "no contact", None and the current one, War included. "Any"
+  entries (an item the other side chooses) are offered only on the side asked for, first in
+  the list, for six kinds: a planet, a technology area, a ship, a unit transport, a star chart
+  and a comm channel. Per tab (corrected 2026-10-14, complete listing, questions 80 b and c):
+  - Planets: our colonies on the side we give; on the side asked for, the recipient's
+    colonies that we see now (a colony whose cloak beats our detection is left out), sorted,
+    after "Any Planet".
+  - Technology: our areas with a level of at least 1 on the side we give; on the side asked
+    for, every area we can see (requirements met, allowed, racial and unique checks), maxed
+    ones included, after "Any Tech Area"; both alphabetical. The tab is dim when the game
+    does not allow technology trades.
+  - Ships: ours (not unit groups); theirs that we see, after "Any Ship".
+  - Units: on the side we give, our ships and bases that carry units; on the side asked
+    for, every ship and base of the recipient that we see, loaded or not (we cannot see
+    their cargo), after "Any Unit Transport".
+  - Comm Channels: both sides list the same empires, the living empires **we** are in
+    contact with, other than us and the recipient; "Any Comm Channel" comes first on the
+    side asked for.
+
+  **Quantities** (confirmed: binary). Each package line has an item and a number of steps,
+  at most 250. A resource line holds one resource, a step being 1,000 of it, and reads
+  "Minerals - 5000". A click on a resource adds 1 step, 10 with the x10000 toggle lit or
+  Shift held, 100 with x100000 (x10000 is tested first, then x100000, then Shift). A click
+  that would take a line past 250 fills it to exactly 250 and starts a new line of the same
+  resource with the rest; the add walks every line of that resource in package order, and
+  when two of them have room (possible only after a removal) each gets the click (a quirk).
+  A click on an "Any" row adds one step to its line ("Any Planet - 2"), with the same limit
+  and split. A click on a package line takes off the step in force (the toggles and Shift)
+  while the Resources tab shows, 1 on any other tab; when that is at least what the line
+  holds, the line goes; any other line goes at the first click. When a package is carried
+  out, each resource line moves the smaller of its amount and what the giver holds at that
+  moment and logs its own pair of entries.
+
+  Since 2026-10-14 ours follows (`packageChoices`, `addPackageClick`, `takePackageClick`,
+  `packageLines` in `empire_logic.cpp`; `screens/communicate.cpp`); a click on a specific
+  item already in the package does nothing (inferred). Until then our client typed the
+  amounts in, merged the three resources into one item, added each "Any" as a line of its
+  own, listed the recipient's colonies in every system we had explored (cloaked ones
+  included) and only its loaded transports, and on the side asked for of Comm Channels the
+  empires the recipient had met and we had not, with no "Any".
 - **Borders**: each empire publicly claims systems, and claims may overlap. The AI uses
   claims to compute anger.
 - **History window** (confirmed: binary): each human player's history is a file of dated
@@ -682,12 +762,62 @@ up the trade chain [M].
 - **Log categories**: Construction, Research, Intelligence, Events, Politics, Combat, Misc.
 - **Log lifetime** (confirmed: binary): at the end of each empire's turn processing its log
   keeps only the entries of the last turn; the history window keeps the long record.
+- **Accept Treaty** (confirmed: binary): the treaty named in the Accept Treaty message
+  itself is enacted between its sender and its recipient at once; nothing checks that the
+  recipient proposed it, and no date, window or offer type is tested. The window fills the
+  treaty from the newest proposal, so through the window the result is the same. A
+  counter-proposal is accepted with Accept Treaty or Accept Trade; an Accept Demand carries
+  nothing out. Since 2026-10-14 ours follows (`diplomacy.cpp` message processing, `acceptTreaty`;
+  `cmd::AnswerMessage` fills the treaty from the proposal answered). Until then ours enacted
+  only a proposal the recipient really sent (an extension against forged network messages),
+  and an Accept Demand reply to a counter-proposal applied the counter.
+- **Answers** (confirmed: binary; corrected 2026-10-14, complete listing: ours let any
+  delivered, unanswered message be answered until it was dropped). One routine finds "the
+  newest political message from empire X in a log": it walks the whole log and keeps the
+  last political message sent by X that passes a date test. D is the date when it runs, and
+  the cut-off is D − 2, or D − 1 in a **turn-based** game when X's player number is lower
+  than the log owner's. The tests:
+  - *window*: dated strictly after the cut-off, so dated D − 1 or D (in that turn-based
+    case only D). The Communicate window uses it, and so does message processing unless one
+    of the two below applies;
+  - *exact*: dated exactly the cut-off. Message processing uses it for an empire the computer
+    plays at a simultaneous host's start-of-turn step (one that delivered no orders file: a
+    computer player, or a human the computer plays for);
+  - *previous turn*: dated exactly D − 1. The host uses it, before the other two, when it
+    processes the players' messages at the start of its turn processing, before the date
+    advances.
+
+  The Communicate window offers Accept, Refuse and Counter only for the newest political
+  message from that empire found by the window test, and of the matching type (a treaty
+  proposal or counter, a trade or counter, a gift, a tribute, a demand or request); an older
+  message can never be answered. The original keeps no "answered" mark, so the same message
+  may be answered again on a later turn while it is still the newest and recent. An accepted
+  trade, gift or tribute looks in the accepter's log for the proposer's newest political
+  message with the test of the moment and carries out that message's packages only when it is
+  the matching offer (Propose or Counter Trade for an Accept Trade; a Gift or Tribute for an
+  Accept Gift). Consequences: a human-to-human offer is accepted on the next turn; a computer
+  player accepts a player's offer two turns after it was sent, as its own answer window does
+  (§7.4); and a computer player's offer, dated with the advanced date, is not found when a
+  human accepts it on the next turn (nothing is carried out), only when it is accepted again
+  on the turn after (derived from the dating rules, medium confidence). In a simultaneous
+  game an acceptance processed live on a player's own machine carries out nothing; only the
+  host's processing does. Accept Treaty does no lookup (above).
+
+  Since 2026-10-14 ours follows (`diplomacy::newestMessage`, `MessageLookup`): the window and
+  `cmd::AnswerMessage` use the window test, so a human player can answer only the newest
+  recent message from an empire, once per turn per empire (an answer is that turn's message);
+  `cmd::SendMessage` refuses a human player's reply type (Accept, Refuse or Counter) unless the
+  newest recent message warrants it, and an Accept Treaty that names another treaty than that
+  proposal's (OpenSE4's: the window fills it). OpenSE4's own games process every message once,
+  at the turn processing (local and hotseat simultaneous games as a host does): turn-based
+  games use the window test when a message is sent; a simultaneous turn uses the previous-turn
+  test for the players' messages (`processTurn` step 2) and, at the start-of-turn step, the
+  exact test for an empire that gave no orders of its own and the window test for the
+  ministers of a player who did. `DiplomaticMessage::answered` is bookkeeping only.
 - **OpenSE4 choices** [I]:
-  - Replies are checked against the message they answer: an acceptance only works for a
-    proposal the recipient really sent. Accepting a counter-proposal (an Accept Demand
-    reply) applies the counter.
   - Messages are kept 10 turns after sending, then dropped, together with any message
-    whose sender or recipient is gone.
+    whose sender or recipient is gone; only the newest recent one from an empire can be
+    answered (above).
   - The history record (an extension, open question 30): each empire keeps its own dated
     list, whose lines concern itself, another empire or nobody (the General list), each with
     an optional map position. It is kept for the whole game, saved with it, and shown only to
@@ -773,7 +903,8 @@ up the trade chain [M].
   - *Strike.* The target must still exist (checked only when the event has a target
     object). The effect is applied for the empire recorded when the event was scheduled,
     and the strike message is sent whenever the message picked for it has a title, whether
-    or not the effect took. Its "Owner" recipient is that recorded empire, not the target's
+    or not the effect took; that sending runs the first-contact check only when the message
+    also has a text (§3.1, question 57). Its "Owner" recipient is that recorded empire, not the target's
     present owner. What the recorded empire changes inside each effect was not traced
     (question 85).
   - Since 2026-10-14 ours follows (`events.cpp` `trigger`, `fireDueEvents`,
@@ -879,18 +1010,44 @@ before the random event (§8) (confirmed: binary).
 binary). It announces that this is the last turn and points the players to the Scores
 window, where the ranking shows the result.
 
+**The completed mark** (confirmed: binary). The check only sets the game's "completed" mark,
+in both turn styles. Once it is set, every empire's start-of-turn step skips its ministers and
+its computer player (the AI state update, the political step and every order they give) and, in
+a turn-based game, the movement refill and the automatic carrying out of standing orders at the
+turn's start; and every empire's end-of-turn processing (§8) is skipped entirely: no player
+files, intelligence, research, income, trade, maintenance, planets, happiness, construction,
+repair, design forgetting, supply, storage cap, system abilities, ground combat or log pruning.
+The destruction check is not affected. The score display shows every empire as soon as the
+mark is set (§5; corrected 2026-10-14, complete listing: the last turn was played in full, and
+"every score shows during the last turn" was inferred).
+
 **The last turn of a turn-based game** (confirmed: binary). The check runs as each game turn
-wraps and only sets the game's "completed" mark. The game goes on for one more full game turn:
-every computer player plays its turn, and every human gets the usual sign-in, then the Victory
-ending (this is the last turn; see the Scores window), then plays that turn as usual. At the
-next wrap, before any event or turn processing, an OK box titled "Game Completed" says the game
-is over and the program exits. OpenSE4 follows this since 2026-10-14 (`GameState::lastTurn`,
-save format 10; `score::checkVictory`, `turn_based.cpp` `endGameTurn`): the completed mark is
-`lastTurn`, the next wrap sets `gameOver` before the date advances, every score shows during
-the last turn as once the game is over (`score::scoreVisible`, inferred), and the client's Game
-Completed box returns to the intro (spec 06 §1.7). The original's saved games carry the mark
-(spec 08 §3.4). A simultaneous game ends at once when a condition is met in ours (open
-question 79).
+wraps. The game goes on for one more game turn: every human gets the usual sign-in, then the
+Victory ending (this is the last turn; see the Scores window), then gives orders live, with
+whatever movement its vehicles had left (none is given back), and sends messages; the computer
+players do nothing, and nothing is produced or researched. At the next wrap, before any event
+or turn processing, an OK box titled "Game Completed" says the game is over and the program
+exits.
+
+**A simultaneous game** (confirmed: binary; question 79). The host's check sets the same mark
+(and shows the Victory ending on the host's screen when a player sits there). Nothing ends the
+game: every player who opens a later turn sees the Victory ending again, there is no "Game
+Completed" box, and the host can go on processing turns. Those turns read the orders, process
+the messages, advance the date, move ships and fight, run the destruction, contact and victory
+checks and the event step, but skip every start-of-turn and end-of-turn step. Whether the
+network host's window refuses to process turns then was not traced.
+
+OpenSE4 follows this since 2026-10-14 (`GameState::lastTurn` is the mark, save format 10;
+`score::checkVictory`, `empireEndOfTurn`, `turn_based.cpp` `startPlayerTurn` and `endGameTurn`,
+`turn.cpp` `processTurn`): in a turn-based game the next wrap sets `gameOver` before the date
+advances and the client's Game Completed box returns to the intro (spec 06 §1.7); in a
+simultaneous game the client shows the Victory ending at every turn (`FinaleWatch`), and a
+network host keeps processing turns, telling its players once that the game is complete. The
+original's saved games carry the mark in both styles (spec 08 §3.4). OpenSE4's own automated
+runs (the SDK's matches, arena and tests) stop a simultaneous game at its mark
+(`game::gameDecided`); a mod's victory condition or scenario still ends a game at once
+(`gameOver`). Until 2026-10-14 ours played the last turn in full and ended a simultaneous game
+at once.
 
 | Condition | Test (confirmed: binary) | Initial value |
 |---|---|---|
@@ -4191,13 +4348,16 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the event has a location, whoever its messages reach (inferred). To verify: does the
     start message of a timed event run the check too, and does an event whose messages
     reach nobody (`Message To` None) run it?
-    **Answer** (confirmed: binary, 2026-10-14, complete listing): every message sending of
-    an event, the start message of a timed event as well as its strike, ends with the sight
-    update and the first-contact check in the event's system, whoever the messages reach,
-    `Message To` None included. An immediate event whose effect did not take sends nothing
-    and runs no check. A timed event's start message is sent even when the record has none,
-    and its strike's message whenever the message picked has a title (§4 "Timed events in
-    detail"). Since 2026-10-14 ours follows (`events.cpp` `sendMessage`, `trigger`, `fire`).
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): yes to both. Every
+    message sending of an event, the start message of a timed event included, ends with the
+    sight update and the first-contact check in the event's system, whoever the messages
+    reach, `Message To` None included. An immediate event whose effect did not take sends
+    nothing and runs no check. A timed event's start message is sent even when the record
+    has none. Its strike's message is sent whenever the message picked has a title, whether
+    or not the effect took, and that sending runs the check (sight update, then contact in
+    the event's system) only when the message also has a text (§4 "Timed events in
+    detail"). Since 2026-10-14 ours follows (`events.cpp` `sendMessage` with its `strike`
+    mark, `trigger`, `fire`).
 58. **The order of step 2's candidates** (§7.4 "Demands the AI starts"): each system where
     the AI has a colony and sees a ship (or holds a colony) of X is a candidate that needs
     a 1-in-3 roll. OpenSE4 tries the candidate systems in system order and takes the first
@@ -4826,6 +4986,14 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     once more, the players told it is the last), and what do the players see when it ends?
     OpenSE4 ends a simultaneous game at once, as before (`score::checkVictory`): the Victory
     ending shows at the next turn's start, and the game plays no further turn (inferred).
+    **Answer** (confirmed: binary, the 2026-10-14 accuracy pass): the host's check sets the
+    same completed mark, and nothing ends the game. Every player who opens a later turn sees
+    the Victory ending again; the host can go on processing turns, which read orders, process
+    messages, advance the date, move and fight and run the checks and the event step, but skip
+    every start-of-turn and end-of-turn step (§6). There is no "Game Completed" box in
+    simultaneous play. Left open: whether the network host's window refuses to process turns
+    then. Since 2026-10-14 ours follows (§6 "A simultaneous game"; `score::checkVictory`,
+    `empireEndOfTurn`, `processTurn`); our host keeps processing turns.
 80. **Communicate's lists the 2026-10-11 audit left open** (§3.4 "What a player may send",
     "Select Package's lists"). Our client chooses, until checked in the executable:
     (a) Declare War is not offered while the two empires are already at war; does the
@@ -4835,6 +5003,13 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     colonies, areas and ships does each side list (ours: our own on the side we give; the
     recipient's colonies in systems we have explored, the areas we can see and the ships we
     see on the side we ask for)?
+    **Answer** (confirmed: binary, the 2026-10-14 accuracy pass): (a) Declare War is offered
+    only when the two are not at war, as ours. (b) Both sides list the living empires we are in
+    contact with, other than us and the recipient, with "Any Comm Channel" first on the side
+    asked for (the 2026-10-11 audit's "no Any" came from the truncated export). (c) As §3.4
+    "Select Package's lists" now gives: ours matched for Technology and Ships; Planets lists
+    the recipient's colonies we see now, sorted. Since 2026-10-14 ours follows
+    (`packageChoices`).
 81. **Ships at the limit.** The original's queues take a ship or base at the ship limit;
     the limit is met when one is built, and the item then waits, paid for again each turn
     (spec 02 §6.5). Our computer players place no ship or base while the empire is at its
@@ -4902,3 +5077,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     handler as it is: the planet and ship effects act on the target object whoever holds it
     now, and the effects on an empire's stock, queues or relations act on the recorded
     empire (`events.cpp` `fireDueEvents`, inferred). To verify in the executable.
+86. **Two details of the espionage lines** (raised 2026-10-14 by the accuracy pass, §2.3).
+    (a) `Ship - Construction Info` names the system with the most of the target's
+    "ship-building construction queues": which queues count, those that can build ships
+    or only those building one now? (b) `Tech Level - Info` draws up to five of the target's
+    areas with a level at random: can one area be drawn twice, and how many numbers does the
+    draw take? Our engine counts the queues of colonies with a space yard facility and of
+    ships and bases carrying a space yard, and draws five different areas, one number each
+    from the game's random numbers (`events.cpp`, inferred).

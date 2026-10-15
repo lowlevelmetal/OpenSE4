@@ -534,8 +534,9 @@ cultural, population-level and mood lines.
   §7.5), its tokens filled in; an Accept or Refuse Demand takes "Response Friend|Enemy YES|NO
   <demand>", Friend when the player holds Non-Aggression or better with the recipient.
 - Opened from a portrait, the window looks at the newest political message from that empire
-  that is dated after the date − 2 (in a simultaneous game, after the date − 1 when the
-  sender's player number is lower than ours), and adds the types that answer it: Accept,
+  that is dated after the date − 2 (in a turn-based game, after the date − 1 when the
+  sender's player number is lower than ours; corrected 2026-10-14, complete listing: this
+  said "simultaneous", spec 05 §3.4 "Answers"), and adds the types that answer it: Accept,
   Refuse and Counter Treaty after a Propose or Counter Treaty; Accept, Refuse and Counter
   Trade after a trade; Accept and Refuse Gift after a gift; Accept and Refuse Tribute after a
   tribute; Accept and Refuse Demand after any demand or request. A Counter Trade starts from
@@ -545,11 +546,13 @@ cultural, population-level and mood lines.
 Our client follows since 2026-10-14: the separate View and Edit buttons, a package type
 opening Select Package at once, the text from the speech pool (drawn with a random source of
 the window's own, never the game's), the answers from the portrait (sent as
-`cmd::AnswerMessage`, so only while our engine has not yet seen an answer to the message) and
-the inert portrait. Our client differs: the type, treaty, empire, system and planet are drop-down
+`cmd::AnswerMessage`, for the newest recent message only, `replyableMessage`; until the
+correction above ours had the turn style of the one-turn case backwards) and the inert
+portrait. Our client differs: the type, treaty, empire, system and planet are drop-down
 lists in the window rather than pickers opened at once, Select Package returns with Done, a
 received message opened from the Log's Send Reply shows OpenSE4's Accept, Refuse, Counter and
-Reply buttons, and the demands and requests are listed flat rather than behind a "Demand /
+Reply buttons (Accept, Refuse and Counter lit only for the newest recent message from that
+empire, as the portrait's), and the demands and requests are listed flat rather than behind a "Demand /
 Request / Warn" entry that switches the list to its 16 types (cosmetic). The Declare War and
 Surrender confirmations are OpenSE4's.
 
@@ -601,7 +604,7 @@ what is shared, shared sight and resupply; and who pays whom.
 | Movement log replay | Not a window: in simultaneous games the main window replays the host's 30-day movement (full, stepped by day, per ship, rewind) [T]. Exact behaviour: §7 Q51 (confirmed: binary). |
 | Tutorial / Scenario text window | A page of the scenario's text: title, a 128x128 picture, Previous and Next through its series; re-opened with Ctrl+H, and in the tutorial with the "T" buttons. Layout and rules in §5.6 (confirmed: binary). |
 | Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. Ours: §1.9 "Other Settings.txt keys". |
-| Game Completed | An OK box, titled "Game Completed", saying the game is over: at the first wrap of the game turn after a turn-based game's last turn (spec 05 §6), before anything of the next game turn runs (confirmed: binary). |
+| Game Completed | An OK box, titled "Game Completed", saying the game is over: at the first wrap of the game turn after a turn-based game's last turn (spec 05 §6), before anything of the next game turn runs (confirmed: binary). A simultaneous game has none: it goes on, the Victory ending shown at every turn (spec 05 §6). |
 | Progress | A small modal window, a caption centred over a dark blue gauge from 0 to 100 %: "processing the turn" while a simultaneous game's turn is processed at the host (not shown when the host runs without a window; the work counted in the number of empires × 4 + 30 steps), and "creating the galaxy" and "placing the players" while a new game starts (confirmed: binary). |
 
 **Endings that end the game** (confirmed: binary). Each of these ends the turn loop and exits
@@ -968,7 +971,9 @@ Other Settings.txt keys the client must honour (confirmed: binary):
   since 2026-10-14). The Lose ending of a turn-based game reads the engine's mark from the
   moment the turn came up (`PlayerTurn::loseEnding`); a turn-based game's last turn shows the
   Victory ending to every human at its own turn, saying it is the last turn and pointing to
-  the Scores window, where every score shows (`score::scoreVisible`, inferred).
+  the Scores window, where every score shows (`score::scoreVisible`, confirmed: binary); a
+  simultaneous game marked completed shows it at every turn a player opens, as the original
+  does (spec 05 §6, since 2026-10-14).
 - `Use Old Log Political Message Display`: the log layout (§4.1, §7 Q11).
 - `Create Log Text File for Game` is read but never used by the original: nothing to honour.
 

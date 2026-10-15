@@ -1340,6 +1340,7 @@ std::expected<void, std::string> HostSession::processTurnNow() {
         }
     // A failure inside the rules must not take the host down: keep the old turn.
     game::GameState before = *state_;
+    const bool wasCompleted = state_->lastTurn;
     game::TurnResult result;
     try {
         result = game::processTurn(rules_, *state_, list);
@@ -1368,6 +1369,12 @@ std::expected<void, std::string> HostSession::processTurnNow() {
         phase_ = HostPhase::GameOver;
         emit(EventType::GameOver, state_->winner.valid() ? std::format("{} wins", state_->empire(state_->winner).name) : std::string{}, {},
              kNoSlot, state_->winner, state_->turn);
+    } else if (state_->lastTurn && !wasCompleted) {
+        // The victory check marked the game completed. As the original's
+        // host, ours may go on processing turns, which then skip every start-
+        // and end-of-turn step (spec 05 §6, confirmed: binary).
+        emit(EventType::Info, "A victory condition is met: the game is complete. Turns may still be processed, but no empire produces, "
+                              "researches or builds any more and the computer players do nothing.");
     }
     beginTurn();
     broadcastState(false);
