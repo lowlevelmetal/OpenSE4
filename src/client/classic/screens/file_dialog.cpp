@@ -214,15 +214,15 @@ void FileDialog::browse(std::filesystem::path dir) {
     if (browsing_.has_relative_path() && !browsing_.has_filename()) browsing_ = browsing_.parent_path();   // no trailing separator
     folders_ = subfolders(browsing_);
     if (browsing_.has_relative_path()) folders_.insert(folders_.begin(), "..");
-    pickedFolder_ = -1;
     folderField_ = browsing_.string();
     folderError_.clear();
 }
 
 void FileDialog::changeDirectoryPopup(const Painter& p) {
     // "Select Directory" (confirmed: binary): a 400×500 window with a Drive
-    // box, a 300 px list of the folders (a double click opens one), the
-    // Current Directory box, OK and Cancel. The places are ours (inferred);
+    // box, a 300 px list of the folders (pressing any mouse button on a row
+    // opens that folder at once, ".." the parent), the Current Directory box,
+    // OK and Cancel; Esc cancels, Enter is OK. The places are ours (inferred);
     // typing a folder into Current Directory and the Default button are
     // OpenSE4's.
     constexpr Vec2 kSize{400, 500};
@@ -258,7 +258,7 @@ void FileDialog::changeDirectoryPopup(const Painter& p) {
             script::reportItem("##drive");   // a combo box names itself to input scripts only so
         }
 
-        // Directory: the folders here, ".." first; a double click opens one.
+        // Directory: the folders here, ".." first; a press of any button on one opens it.
         dl->AddText(body, bodySize, P(12, 66), imColor(palette::kLabel), "Directory");
         dl->AddRect(P(10, 82), P(390, 382), imColor(palette::kFrameLight), 0.0f, lw);
         ImGui::SetCursorScreenPos(P(11, 83));
@@ -269,15 +269,12 @@ void FileDialog::changeDirectoryPopup(const Painter& p) {
         for (size_t i = 0; i < folders_.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
             const ImVec2 r0 = ImGui::GetCursorScreenPos();
-            if (ImGui::InvisibleButton("##folder-row", ImVec2(rowW, p.px(18)))) pickedFolder_ = static_cast<int>(i);
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+            ImGui::InvisibleButton("##folder-row", ImVec2(rowW, p.px(18)), ImGuiButtonFlags_MouseButtonMask_);
+            if (ImGui::IsItemHovered() && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+                                           ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
                 open = folders_[i] == ".." ? browsing_.parent_path() : browsing_ / folders_[i];
             ImGui::PopID();
             script::reportItem(folders_[i]);   // input scripts find a folder by its name
-            if (pickedFolder_ == static_cast<int>(i))
-                if (Sprite grid = p.art.region("Pictures/Game/Dialogs/Rowgrid.bmp", 0, 0, int(rowW / p.k()), 18, false))
-                    rows->AddImage(ImTextureRef(static_cast<ImTextureID>(grid.tex.value)), r0, {r0.x + rowW, r0.y + p.px(18)},
-                                   {grid.uv.min.x, grid.uv.min.y}, {grid.uv.max.x, grid.uv.max.y});
             rows->PushClipRect(r0, {r0.x + rowW, r0.y + p.px(18)}, true);
             rows->AddText(body, bodySize, {r0.x + p.px(4), r0.y + p.px((18 - kTextCell) * 0.5f)}, IM_COL32_WHITE, folders_[i].c_str());
             rows->PopClipRect();
@@ -306,7 +303,10 @@ void FileDialog::changeDirectoryPopup(const Painter& p) {
 
         const float w = 121;
         ImGui::SetCursorScreenPos(P(12, 462));
-        if (classicButton(p, "OK", {w, 26})) {
+        // Enter is OK, but in the Current Directory box, where it goes to the folder typed (ours).
+        const bool enterKey = !enter && !ImGui::GetIO().WantTextInput && !ImGui::IsAnyItemActive() &&
+                              (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false));
+        if (classicButton(p, "OK", {w, 26}) || enterKey) {
             if (auto chosen = folderField_ == browsing_.string() ? std::optional<std::filesystem::path>(browsing_) : typedFolder()) {
                 directory_ = *chosen;
                 scanned_ = false;

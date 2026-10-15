@@ -1013,7 +1013,8 @@ the colony's sector as a click does; Drop Cargo asks the kind of cargo before th
 without its closing step, so Fleet Transfer then keeps an empty fleet; the sector's list writes
 "<design> Class" under the player's own ships and bases only, and sorts its stellar objects by
 owner, then name in capitals; the empire pickers list the empires by name; an enemy design's
-detail stops after its size. OpenSE4's additions there became options, off by default:
+detail stops after its size; Select Directory opens a folder as soon as a mouse button is pressed
+on it. OpenSE4's additions there became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
