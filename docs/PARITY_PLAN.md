@@ -178,6 +178,26 @@ answers are spec 03 §19 Q85 and spec 06 §7 Q120–Q122; still open are spec 05
 the parts of those answers marked inferred. The changed rules needed protocol 9
 (MULTIPLAYER.md "Protocol").
 
+### Accuracy pass on the complete listing (2026-10-14/15, done)
+With the export repaired, every routine that had lost code after its first `finally` block,
+or only its return value, was read again in the complete listing, in seven areas: the galaxy,
+setup, saved games and the command line (spec 01, spec 08, spec 05 §9); empires, the economy
+and random events (spec 02, spec 05 §4); vehicles and orders (spec 03); combat (spec 04);
+the computer players (spec 05 §7); research, intelligence, diplomacy and scores (spec 05
+§1–§3, §5, §6); and the interface (spec 06). That was about 500 routines of the triage map
+and some 300 more that they call or that call them; with them the ship movement the system
+window shows was traced and watched in the original (spec 06 §2.4, spec 07 session 8).
+About 400 rules were confirmed as OpenSE4 had them, and about 150 differences were found.
+Every one was written into the specs first ("(confirmed: binary)", or "corrected
+2026-10-14/15, complete listing" where a spec answer had been wrong) and then implemented.
+Where the original's behaviour only hides information, OpenSE4 keeps its own as an option
+under Options → OpenSE4, off by default (spec 06 §1.9 lists them). The changed rules and
+state needed save format 11 and protocol 10 (MULTIPLAYER.md "Protocol"); 0.14.x's saves
+load. What stays different is in [PARITY_GAPS.md](PARITY_GAPS.md). The new open questions
+are spec 01 §14 Q47, spec 02 §13 Q57, spec 03 §19 Q86–Q87, spec 04 §19.8 Q99–Q100, spec 05
+Q85–Q87, spec 06 §7 Q124–Q125 and spec 08 §11.1 Q30, with the points of each finding
+marked inferred.
+
 ## Next steps
 
 1. **Computer players: enemy colonies inside the territories.** The second debugger round

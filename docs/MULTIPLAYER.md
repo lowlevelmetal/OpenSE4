@@ -1134,11 +1134,20 @@ and the computer players' strategies and treaty rules (GitHub issues #13, #17, #
 spec answers corrected on 2026-10-14). A client of 0.13.0 would work out turn-based moves
 differently from the host and fall out of step, so the two releases refuse each other.
 0.13.0's saves load.
-Protocol 10 came after 0.14.1, with the save format still 10: `State` carries a turn-based
-player's own moves (`OwnMoves`: `game::MovementStep` and `game::LiveStep` lists) after the
-`resync` flag, so that a network player's own moves are shown as they were made, where
-they used to glide straight to where they ended. Protocol 10 does not play with 0.14.x.
-0.14.x's saves load.
+Protocol 10 and save format 11 came with 0.15.0, the accuracy pass on the complete listing
+(2026-10-14/15, docs/PARITY_PLAN.md). `State` carries a turn-based player's own moves
+(`OwnMoves`: `game::MovementStep` and `game::LiveStep` lists) after the `resync` flag, so
+that a network player's own moves are shown as they were made, where they used to glide
+straight to where they ended. The `State` and orders blobs carry format 11's new state: the
+fleets each empire ever created (`Empire::fleetsCreated`, which the default fleet names count
+from), orders given held (`cmd::SetOrders::hold`, `cmd::OrderTagged::hold`) and a tagged
+group's Repeat switch (`cmd::OrderTagged::toggleRepeat`), the Retrofit minister's yard
+(`cmd::Retrofit::moveFirst`), and a Construct order's world by its position in
+PlanetSize.txt (`game/serialize.hpp` lists them). The rules both sides apply changed
+throughout (combat, the economy, events, diplomacy, the computer players, movement), so a
+client of 0.14.x would fall out of step: protocol 10 does not play with 0.14.x. 0.14.x's
+saves (format 10) load; a pending Construct order of one gets its world's position from the
+data set the game is loaded with (`game::upgradeLoadedGame`).
 
 ### Save format
 

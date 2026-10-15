@@ -1109,19 +1109,19 @@ What remains different:
 | Ships\Units' fleet rows | Move and Supplies over the members at the location (ours) | Not described | none |
 
 The accuracy pass of 2026-10-15 on the interface (spec 06 §1.1, §1.3, §1.9, §2.3, §2.5, §2.9,
-§3, §3.4, §7 Q93, Q113, Q115, Q124, Q125) brought the main window and a few windows in line with
-the complete listing: the tags last until Shift+C or a sector's selection; the ship cycle goes
-on from the last ship it selected itself, its "Stop once per location" table holding only its
-own stops; the fleet cycle goes by fleet number through the fleets that can still move,
+§3, §3.4, §7 Q93, Q113, Q115, Q124, Q125) brought the main window and a few windows in line
+with the complete listing: the tags last until Shift+C or a sector's selection; the ship cycle
+goes on from the last ship it selected itself, its "Stop once per location" table holding only
+its own stops; the fleet cycle goes by fleet number through the fleets that can still move,
 selecting the first such member; the colony cycle goes by planet name, letter case counting,
 and selects the colony's sector as a click does; Drop Cargo asks the kind of cargo before the
 destination; Esc and Enter close a large window without its closing step, so Fleet Transfer
-then keeps an empty fleet, which lasts until a saved game is loaded; the sector's list writes "<design> Class" under the player's own
-ships and bases only, and sorts its stellar objects by owner, then name in capitals; the empire
-pickers list the empires by name; an enemy design's detail stops after its size; Select
-Directory opens a folder as soon as a mouse button is pressed on it; the main window counts one
-modifier key at a time, and every key repeats while held. What remains different, and OpenSE4's additions that became options,
-off by default:
+then keeps an empty fleet, which lasts until a saved game is loaded; the sector's list writes
+"<design> Class" under the player's own ships and bases only, and sorts its stellar objects by
+owner, then name in capitals; the empire pickers list the empires by name; an enemy design's
+detail stops after its size; Select Directory opens a folder as soon as a mouse button is
+pressed on it; the main window counts one modifier key at a time, and every key repeats while
+held. What remains different, and OpenSE4's additions that became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
