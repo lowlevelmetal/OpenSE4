@@ -232,7 +232,8 @@ The REA parity audit of 2026-10-11 found these about cargo and units, implemente
 - **Cargo orders by kind** (`Order::cargo`, save format 10; `movement_util.cpp`
   `CargoWhat`). Load Cargo, Drop Cargo, Launch Units Remotely and Recover Units Remotely
   name a kind of cargo and move every design of it; the main window asks for the place
-  first and the kind after (`MainWindow::chooseCargo`), and a colony's Launch and Recover
+  first and the kind after (`MainWindow::chooseCargo`; since 2026-10-15 Drop Cargo's
+  destination after the kind, `dropTo`), and a colony's Launch and Recover
   only for the kind. The original's saved games carry the kind both ways. OpenSE4's
   computer players still give these orders for one design (the classic AI's own choice),
   and orders saved before format 10 keep their design.
@@ -1007,7 +1008,7 @@ complete listing: the tags last until Shift+C or a sector's selection; the ship 
 from the last ship it selected itself, its "Stop once per location" table holding only its own
 stops; the fleet cycle goes by fleet number through the fleets that can still move, selecting
 the first such member; the colony cycle goes by planet name, letter case counting, and selects
-the colony's sector as a click does. OpenSE4's additions there became options, off by default:
+the colony's sector as a click does; Drop Cargo asks the kind of cargo before the destination. OpenSE4's additions there became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|

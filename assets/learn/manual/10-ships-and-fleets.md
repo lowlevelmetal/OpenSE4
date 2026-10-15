@@ -34,7 +34,7 @@ as *Escort 0003*; `N` renames them.
 | Clear Orders | `Del` | Remove every order. |
 | Fleet Transfer | `F` | Form fleets (below). |
 | Change Formation \ Strategy | `H` | Choose a fleet's formation and strategy. |
-| Load Cargo, Drop Cargo | `L`, `D` | Pick what (population or a kind of unit), then the sector where the ship loads or unloads it. |
+| Load Cargo, Drop Cargo | `L`, `D` | Pick the sector where the ship loads or unloads, then what (population or a kind of unit); a drop then asks which of your planets or ships there takes it. |
 | Cargo Transfer | `T` | Move cargo now ([Supply, cargo and repair](logistics#cargo)). |
 | Launch and Recover Units | `U` | Launch or pick up fighters, satellites, mines and drones now, in turn-based games ([Units](units)). |
 | Launch Units Remotely, Recover Units Remotely | `I`, `O` | Pick a kind of unit, then the sector where the ship launches or recovers it. |

@@ -309,7 +309,7 @@ OpenSE4's own choices, (inferred):
 | Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. The vehicle list holds only vehicles in no fleet that may join one, cloaked ones too; the fleet list the fleets whose location is the sector, with their members there. Create Fleet asks for a name (OK, Cancel; "Alpha Fleet" and on) and makes an empty fleet; one still empty when the window closes is deleted. Rules in spec 03 §9 (confirmed: binary). Disband Fleet and Rename Fleet are OpenSE4's own. | Order F; Combat Simulator. |
 | Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). Every holder with cargo space is listed, each with its cargo lines, a colony's population one line per race; holders with no cargo space are left out. The empire's options keep the step, Ten at first (spec 08 §3.6.7); loading from a planet quarantined by plague is refused in a message box. The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
 | Launch \ Recover Units | Two lists. Left, the carriers of the sector: the own colonies (also with nothing aboard) and the own ships and bases that can take part, each with "Can Launch:" and a line each for fighters, satellites, mines and drones (what it may still launch this turn against its rate), then the units it carries. Right, the own unit groups in space there. A click on a unit launches it from that carrier; a click on a group recovers it into the carrier selected on the left; each acts at once on exactly that holder, giving and running no order and logging nothing (spec 03 §12). Move One / Move Five / Move Ten / Move All, kept with the empire's options, Ten at first (spec 08 §3.6.7). A launch or recovery that cannot fully happen says why in a message box titled "Launch Warning" or "Recover Warning". Not available in simultaneous games. In a battle the same window opens in battle mode (§1.10.2, spec 04 §10.4) (confirmed: binary). | Order U; tactical combat orders. |
-| Location pick, then cargo-kind / unit-kind picker | Load, Drop, Launch Units Remotely and Recover Units Remotely: the sector is picked first (and for Drop its destination, §2.9); at the click a picker offers the kinds, the same whatever the selection carries: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms for Load and Drop; Fighters, Satellites, Mines, Drones for Launch; Fighters, Satellites, Drones for Recover. A colony's Launch and Recover ask only the kind: the order is given at once at the colony (spec 03 §8, confirmed: binary). | Orders L, D, I, O. |
+| Location pick, then cargo-kind / unit-kind picker | Load, Drop, Launch Units Remotely and Recover Units Remotely: the sector is picked first; at the click a picker offers the kinds (Drop then asks its destination, §2.9), the same whatever the selection carries: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms for Load and Drop; Fighters, Satellites, Mines, Drones for Launch; Fighters, Satellites, Drones for Recover. A colony's Launch and Recover ask only the kind: the order is given at once at the colony (spec 03 §8, confirmed: binary). | Orders L, D, I, O. |
 | Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). How it gives its orders: below the table (confirmed: binary). | Order B. |
 | Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked; on a colony too, the order lists the vehicles in its sector), opened with nothing selected; each row the vehicle's name, "<design> Class" and its status icons; Order By Name (the default: name with letter case ignored, then design) and Order By Class, each refilling the list and dropping the selection; Select All and Select None. Statistics: Scrap Value and Cost to Unmothball (the selection's sums, 0 unless that button is lit), Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status (the last selected vehicle's word), Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector, and two fixed note lines; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Retrofit opens Select New Design (spec 03 §14). Rules and turn styles in spec 03 §15 (confirmed: binary). Our client follows this since 2026-10-13; its Facilities tab, shown with an own colony in the sector, is OpenSE4's own (opened with `kFacilitiesTab`, for Scrap Facilities), and so are its status line and the reason a picker row gives when hovered. | Order G. |
 | View Orders | Pending orders of the selected object, read-only; with Repeat on the list ends with a "(Repeat Orders)" row (confirmed: binary). Ours adds Move Up, Move Down, Delete Order, Clear Orders and the Repeat Orders box, and shows the current order first. | Order V. |
@@ -2601,11 +2601,15 @@ asks:
 The picked object becomes the order's target: Colonize gives Load Cargo (population, when the
 ship carries none), Move To and Colonize naming that planet; Warp gives Move To and Warp
 through that warp point; Drop Cargo delivers into that object; the pursuit follows that
-object. Load, Drop, Launch Remotely and Recover Remotely then ask the kind of cargo (§1.3);
-for Drop the destination comes first and the kind after it (inferred: which of the two the
-original asks first is not known). Nothing about the target is checked when it is picked; the order's own tests run when
-it is carried out (spec 03 §8). In a turn-based game the selected vehicle's orders then run at
-once.
+object. Load, Drop, Launch Remotely and Recover Remotely ask the kind of cargo when the sector
+is clicked (§1.3). Drop asks it first and gathers its candidates after, whatever the answer:
+Cancel on the kind still shows the Pick Object window when there are several candidates, and
+then no order is given; with no candidate the kind is still asked, and nothing is given
+(confirmed: binary; corrected 2026-10-15, complete listing). Nothing about the target is
+checked when it is picked; the order's own tests run when it is carried out (spec 03 §8). In a
+turn-based game the selected vehicle's orders then run at once. Since 2026-10-15 ours asks Drop
+Cargo's kind first (`MainWindow::chooseCargo`, `dropTo`); before, it asked the destination
+first.
 
 Since 2026-10-04 our client follows (§7 Q100), the Colonize candidates included: every planet
 of the clicked sector, hidden ones too, and one alone gives the order at once (spec 03 §19
@@ -6232,7 +6236,9 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
        those with a launcher, with units aboard, and the one the window opened with.
      - *The pickers of Load, Drop, Launch and Recover Remotely.* For Drop Cargo, does the
        kind picker come before or after the Pick Object window? Ours asks the destination
-       first. Their titles and look are ours.
+       first. Their titles and look are ours. **Answer** (confirmed: binary; 2026-10-15,
+       complete listing): the kind first, then the destination, whatever the first answer
+       (§2.9). Since 2026-10-15 ours follows (`MainWindow::dropTo`).
      - *Races On Planet* for a colony of another empire: ours opened it for own colonies only.
        Settled by Q120: the original opens it for any colony, and ours does since 2026-10-14.
      - *The step bytes of the empire options* (spec 08 §3.6.7) are taken as the radio's

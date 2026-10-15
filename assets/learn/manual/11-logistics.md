@@ -45,8 +45,8 @@ list. People moved from one colony to another go straight into its population, a
 room; nothing can be taken from a planet quarantined by plague. Choose how much to move with
 `Move One`, `Move Five`, `Move Ten` (the first choice), `Move Hundred` or `Move All`: your empire
 remembers it. To have a ship (or its fleet) load or unload population or a kind of unit later,
-use the **Load Cargo** and **Drop Cargo** order buttons instead: pick the sector on the map (for
-a drop, then the planet or ship there), then the kind of cargo. They move every design of that
+use the **Load Cargo** and **Drop Cargo** order buttons instead: pick the sector on the map, then
+the kind of cargo (for a drop, then the planet or ship there). They move every design of that
 kind.
 
 When a ship's cargo space is damaged, cargo that no longer fits is lost, people first.

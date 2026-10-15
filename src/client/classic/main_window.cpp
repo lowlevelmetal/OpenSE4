@@ -713,7 +713,7 @@ std::vector<MainWindow::PickCandidate> MainWindow::pickCandidates(UiContext& ui,
     return out;
 }
 
-void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c) {
+void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c, std::optional<game::CargoKind> cargo) {
     // The picked object is the order's target; nothing about it is checked
     // now: the order's own tests run when it is carried out (spec 06 §2.9).
     switch (p) {
@@ -731,11 +731,30 @@ void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const P
             giveOrder(ui, o);
             return;
         }
-        case Pick::DropCargo:
-            // Delivered into the object picked; what to drop is asked now (inferred: after the object).
-            chooseCargo(ui, p, where, c);
+        case Pick::DropCargo: {
+            // Delivered into the object picked, of the kind asked first; a
+            // cancelled kind gives no order (spec 06 §2.9, confirmed: binary).
+            if (!cargo) return;
+            game::Order o{game::OrderKind::DropCargo, where};
+            o.cargo = *cargo;
+            o.amount = -1;
+            o.object = c.object;
+            o.vehicle = c.vehicle;
+            giveOrder(ui, o);
             return;
+        }
         default: return;
+    }
+}
+
+void MainWindow::dropTo(UiContext& ui, game::Location where, std::optional<game::CargoKind> kind) {
+    // Asked whatever the kind's answer: Cancel there still shows the Pick
+    // Object window, and then no order is given (spec 06 §2.9, confirmed: binary).
+    std::vector<PickCandidate> candidates = pickCandidates(ui, Pick::DropCargo, where);
+    switch (pickStep(candidates.size())) {
+        case PickStep::Nothing: return;   // no order, and nothing said
+        case PickStep::GiveAtOnce: givePicked(ui, Pick::DropCargo, where, candidates.front(), kind); return;
+        case PickStep::AskWhich: pickObject_ = PickObject{Pick::DropCargo, where, std::move(candidates), kind}; return;
     }
 }
 
@@ -754,8 +773,7 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             }
             [[fallthrough]];
         case Pick::Warp:
-        case Pick::Colonize:
-        case Pick::DropCargo: {
+        case Pick::Colonize: {
             std::vector<PickCandidate> candidates = pickCandidates(ui, p, where);
             if (object) std::erase_if(candidates, [&](const PickCandidate& c) { return c.object != *object; });
             switch (pickStep(candidates.size())) {
@@ -789,6 +807,7 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             return;
         }
         case Pick::LoadCargo:
+        case Pick::DropCargo:   // the kind first, then the destination (dropTo)
         case Pick::LaunchRemote:
         case Pick::RecoverRemote: chooseCargo(ui, p, where); return;
         case Pick::Callback: {
@@ -875,7 +894,7 @@ void MainWindow::drawPickObject(UiContext& ui) {
     if (picked) {
         const PickObject chosen = std::move(*pickObject_);
         pickObject_.reset();
-        givePicked(ui, chosen.pick, chosen.where, *picked);
+        givePicked(ui, chosen.pick, chosen.where, *picked, chosen.cargo);
     } else if (cancel) {
         audio().play("close");
         pickObject_.reset();
@@ -982,9 +1001,9 @@ void MainWindow::finishPatrol(UiContext& ui, bool atHome) {
 // whatever the selection carries, and the order is given for that kind (it
 // moves every design of it). A colony's Launch and Recover ask only the kind:
 // the order is given at once at the colony, and a turn-based game carries
-// out the colony's orders then. Drop Cargo asks after its destination is
-// picked (§2.9; inferred order).
-void MainWindow::chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where, PickCandidate target) {
+// out the colony's orders then. Drop Cargo asks the kind first and its
+// destination after it, whatever the first answer (§2.9, dropTo).
+void MainWindow::chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where) {
     static constexpr std::array<const char*, 4> kTitles{"Load Cargo", "Drop Cargo", "Launch Units Remotely", "Recover Units Remotely"};
     static constexpr std::array<const char*, 4> kPrompts{"Load Cargo: pick where", "Drop Cargo: pick where", "Launch Units: pick where",
                                                          "Recover Units: pick where"};
@@ -1014,14 +1033,17 @@ void MainWindow::chooseCargo(UiContext& ui, Pick p, std::optional<game::Location
     c.title = kTitles[k];
     c.note = kNotes[k];
     for (const K kind : kinds)
-        c.items.push_back({std::string(game::displayName(kind)), [this, &ui, k, kind, at = *where, target] {
+        c.items.push_back({std::string(game::displayName(kind)), [this, &ui, k, kind, at = *where, p] {
+                               if (p == Pick::DropCargo) {
+                                   dropTo(ui, at, kind);
+                                   return;
+                               }
                                game::Order o{kOrders[k], at};
                                o.cargo = kind;
                                o.amount = -1;
-                               o.object = target.object;
-                               o.vehicle = target.vehicle;
                                giveOrder(ui, o);
                            }});
+    if (p == Pick::DropCargo) c.cancelled = [this, &ui, at = *where] { dropTo(ui, at, std::nullopt); };
     chooser_ = std::move(c);
 }
 
@@ -1380,7 +1402,10 @@ void MainWindow::drawChooser(UiContext& ui) {
             ImGui::PopID();
         }
         ImGui::EndChild();
-        if (classicButton(ui, "Cancel", {180, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) close = true;
+        if (classicButton(ui, "Cancel", {180, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            close = true;
+            chosen = chooser_->cancelled;   // what follows a cancelled question (Drop Cargo's destination)
+        }
     }
     if (close) {
         audio().play("close");

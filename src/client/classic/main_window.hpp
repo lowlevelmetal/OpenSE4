@@ -98,6 +98,7 @@ private:
         std::string title;
         std::string note;
         std::vector<Choice> items;
+        std::function<void()> cancelled;   // Cancel or Esc (none: nothing more)
     };
 
     // Selection.
@@ -164,10 +165,15 @@ private:
         Pick pick = Pick::None;
         game::Location where;
         std::vector<PickCandidate> candidates;
+        std::optional<game::CargoKind> cargo;   // Drop Cargo: the kind asked first (none: cancelled, no order)
     };
     bool pursuingAttack(UiContext& ui) const;
     std::vector<PickCandidate> pickCandidates(UiContext& ui, Pick p, game::Location where) const;
-    void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c);
+    void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c, std::optional<game::CargoKind> cargo = std::nullopt);
+    // Drop Cargo once its kind was asked (or the question cancelled, `kind`
+    // none): the destination in the clicked sector, asked with Pick Object when
+    // there are several; an order only with a kind (spec 06 §2.9, confirmed: binary).
+    void dropTo(UiContext& ui, game::Location where, std::optional<game::CargoKind> kind);
     void drawPickObject(UiContext& ui);
     // Set Patrol (spec 03 §8, confirmed: binary): each point clicked appends
     // a Move To at once; a click on the object's own sector appends that one
@@ -184,8 +190,8 @@ private:
     void startLocationPick(UiContext& ui, Pick p, int slot = 0);
     void openFor(UiContext& ui, ScreenId id);   // a window about the selected vehicle, fleet or colony
     // Load / Drop Cargo, Launch / Recover Units Remotely: the place first
-    // (`where` once picked, the Drop's `target`), then the kind of cargo.
-    void chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where = std::nullopt, PickCandidate target = {});
+    // (`where` once picked), then the kind of cargo; Drop Cargo's destination after it (dropTo).
+    void chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where = std::nullopt);
     void note(UiContext& ui, std::string text);
     void hotkeys(UiContext& ui);
     void drawChooser(UiContext& ui);
