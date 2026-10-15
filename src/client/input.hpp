@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <array>
+#include <functional>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -88,10 +89,21 @@ public:
     // (never while ImGui is typing text); with `repeat`, also on the frames a
     // held key repeats.
     bool pressed(Action a, bool repeat = false) const;
+    // The main window's lookup (spec 06 §3, confirmed: binary): the held
+    // modifiers are reduced to one (oneModifier) before the key is looked up,
+    // so Ctrl+Shift+A acts as Shift+A. A chord held as it is that `taken`
+    // says some binding uses (OpenSE4's chords of two modifiers, such as
+    // Ctrl+Shift+N, and the mods' keys) is not reduced.
+    bool pressedOneModifier(Action a, bool repeat, const std::function<bool(const KeyChord&)>& taken) const;
 
 private:
     std::array<std::array<KeyChord, 2>, kActionCount> keys_;
 };
+
+// The modifiers the original's main window looks a key up with: of those held,
+// Shift alone, else Alt alone, else Ctrl alone (spec 06 §3, confirmed:
+// binary). `key` is kept.
+KeyChord oneModifier(KeyChord held);
 
 // The chord pressed this frame, if any (for "press a key" capture).
 std::optional<KeyChord> capturePressedChord();

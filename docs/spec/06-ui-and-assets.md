@@ -2644,6 +2644,14 @@ and the turn is not being ended or the movement log replayed, and an order key o
 when its button is lit (§2.8; the movement-log keys are the exception). The main window
 has no Esc or Enter binding (confirmed: binary).
 
+**One modifier at a time** (confirmed: binary; 2026-10-15, complete listing). The main window
+reduces the held modifiers to one before it looks the key up: Shift first, then Alt, then Ctrl.
+So Ctrl+Shift+A acts as Shift+A (tag all), Ctrl+Alt+digit (AltGr on many keyboards) as
+Alt+digit, and a Ctrl key pressed with Shift held does nothing. Since 2026-10-15 ours does the
+same (`Bindings::pressedOneModifier`, `oneModifier`, `MainWindow::hotkeys`); before, a binding
+took only its exact modifiers (AltGr counting as Alt). A chord that one of OpenSE4's own bindings
+or a mod's key uses as it is held, such as Ctrl+Shift+N (the AI notes view), keeps its meaning.
+
 A held key repeats: the main window acts on every key-down message the system sends, so
 holding Space keeps cycling through the ships and holding Ctrl+I keeps stepping the movement
 log's days (inferred: the usual key-down repeat, with nothing in the handlers telling a

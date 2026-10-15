@@ -2333,12 +2333,17 @@ void MainWindow::hotkeys(UiContext& ui) {
     const ImGuiIO& io = ImGui::GetIO();
     if (io.WantTextInput) return;
     const Bindings& keys = appSettings().controls.bindings;
-    auto pressed = [&](Action a) { return keys.pressed(a); };
+    // One modifier at a time (spec 06 §3, confirmed: binary): of those held,
+    // Shift, else Alt, else Ctrl counts, so Ctrl+Shift+A is Shift+A and
+    // Ctrl+Alt+digit (AltGr) Alt+digit; a chord some binding or mod key
+    // uses as it is held stays itself (OpenSE4's own, such as Ctrl+Shift+N).
+    auto taken = [&](const KeyChord& c) { return !chordUser(keys, appSettings().controls.modKeys, modActions(), c).empty(); };
+    auto pressed = [&](Action a) { return keys.pressedOneModifier(a, false, taken); };
     // A held key repeats, as the original's key-down does (spec 06 §3,
     // inferred): ours only for the selection cycles and the movement log's
     // single step, so that a held key never opens a window again, flips an
     // order twice or ends several turns.
-    auto pressedOrHeld = [&](Action a) { return keys.pressed(a, true); };
+    auto pressedOrHeld = [&](Action a) { return keys.pressedOneModifier(a, true, taken); };
 
     // The four movement-log keys start the replay whatever their buttons show
     // (§2.8); while it plays no other main-window key works (§3).
@@ -2403,15 +2408,18 @@ void MainWindow::hotkeys(UiContext& ui) {
     else if (pressed(Action::UntagMinefield)) startLocationPick(ui, Pick::UntagMinefield);
 
     // Waypoints 1..10 are keys 1..9 and 0 (spec 03 §8.1): Alt sets one, Ctrl
-    // moves there when Move To Waypoint is lit.
-    const bool ctrl = io.KeyCtrl, alt = io.KeyAlt;
+    // moves there when Move To Waypoint is lit; the modifiers held count one
+    // at a time, as for every main-window key.
     for (int digit = 0; digit < 10; ++digit) {
         const ImGuiKey key = static_cast<ImGuiKey>(ImGuiKey_0 + digit);
         if (!ImGui::IsKeyPressed(key, false)) continue;
+        const KeyChord held{key, io.KeyCtrl, io.KeyShift, io.KeyAlt};
+        const KeyChord one = taken(held) ? held : oneModifier(held);
+        const bool ctrl = one.ctrl && !one.shift && !one.alt, alt = one.alt && !one.shift && !one.ctrl;
         const int slot = (digit + 9) % 10;
-        if (alt && !ctrl) {
+        if (alt) {
             startLocationPick(ui, Pick::Waypoint, slot);
-        } else if (ctrl && !alt && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)]) {
+        } else if (ctrl && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)]) {
             game::Order o{game::OrderKind::MoveToWaypoint};
             o.amount = slot;
             giveOrder(ui, o);

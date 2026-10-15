@@ -4,7 +4,10 @@ These are the default keys. Most of them can be changed in the Controls tab of t
 [Settings](settings#controls) window, and the Help window's [Hotkeys](help:hotkeys) tab always
 shows the keys as they are bound now. The keys of the main window work while no other window is
 open and no text field has the keyboard. An order key works only while its order button is lit;
-pointing at an order button shows its name and key at the top of the system panel.
+pointing at an order button shows its name and key at the top of the system panel. The main
+window counts one of `Shift`, `Alt` and `Ctrl` at a time, in that order: `Ctrl+Shift+A` tags all
+as `Shift+A` does, and `Ctrl+Alt+3` (`AltGr+3` on many keyboards) sets waypoint 3 as `Alt+3`
+does. OpenSE4's own keys with two modifiers, such as `Ctrl+Shift+N`, keep their meaning.
 
 ## Windows
 

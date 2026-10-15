@@ -470,6 +470,16 @@ TEST_CASE("main window: the colony cycle by planet name, letter case counting (s
     CHECK(cycleColony(s, kMe, -1, m) == home.planet);
 }
 
+TEST_CASE("main window: one modifier at a time, Shift, else Alt, else Ctrl (spec 06 §3)") {
+    using client::KeyChord;
+    using client::oneModifier;
+    CHECK(oneModifier(KeyChord{ImGuiKey_A, true, true, false}) == KeyChord{ImGuiKey_A, false, true, false});   // Ctrl+Shift+A: Shift+A
+    CHECK(oneModifier(KeyChord{ImGuiKey_3, true, false, true}) == KeyChord{ImGuiKey_3, false, false, true});   // Ctrl+Alt+3: Alt+3
+    CHECK(oneModifier(KeyChord{ImGuiKey_F, true, true, true}) == KeyChord{ImGuiKey_F, false, true, false});
+    CHECK(oneModifier(KeyChord{ImGuiKey_F, true, false, false}) == KeyChord{ImGuiKey_F, true, false, false});
+    CHECK(oneModifier(KeyChord{ImGuiKey_M, false, false, false}) == KeyChord{ImGuiKey_M, false, false, false});
+}
+
 TEST_CASE("main window: order names and the lessons' slot keys") {
     CHECK(orderName(OrderId::MoveTo) == "Move To");
     CHECK(orderSlotKey(OrderId::MoveTo) == "Move");

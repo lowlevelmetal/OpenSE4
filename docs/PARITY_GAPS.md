@@ -1014,7 +1014,7 @@ without its closing step, so Fleet Transfer then keeps an empty fleet; the secto
 "<design> Class" under the player's own ships and bases only, and sorts its stellar objects by
 owner, then name in capitals; the empire pickers list the empires by name; an enemy design's
 detail stops after its size; Select Directory opens a folder as soon as a mouse button is pressed
-on it. OpenSE4's additions there became options, off by default:
+on it; the main window counts one modifier key at a time. OpenSE4's additions there became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|

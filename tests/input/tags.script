@@ -6,6 +6,9 @@
 #   order goes to the tagged group, and that order goes to the tagged ship, not to the one shown.
 # - OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options, OpenSE4) clears them
 #   then, as OpenSE4 did before.
+# - The main window counts one modifier at a time, Shift, else Alt, else Ctrl (spec 06 §3):
+#   Ctrl+Shift+A tags all as Shift+A does, Ctrl+Shift+C clears, Ctrl+Alt+3 (AltGr+3 on many
+#   keyboards) asks for waypoint 3's sector as Alt+3 does.
 # (docs/BUILDING.md "Input scripts")
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
@@ -13,6 +16,18 @@ options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 -
 wait-lesson moves
 wait 5
 click tag:lesson:hide
+# One modifier at a time.
+click sector:home
+wait-for item:report:ship
+key Ctrl+Shift+A
+wait-for item:tagged:2
+key Ctrl+Shift+C
+wait-gone item:tagged:*
+key Ctrl+Alt+3
+wait-until { picking = "location" }
+click sector:empty nth=20
+wait 3
+assert { command = "SetWaypoint" }
 # The first ship sets out for the far corner: it stands elsewhere afterwards.
 click sector:home
 wait-for item:report:ship
