@@ -763,8 +763,8 @@ same (§10.6).
   aimed at the weapon's target. If a seeker of the same empire, component and target
   already sits on that square, the new one joins it instead: a seeker group counts its
   members. That is so even if the seeker there has already moved or was launched by
-  another piece; the group keeps its travelled count and its first launcher (who gets
-  the kill credit). Mounts are not compared.
+  another piece; the group keeps its travelled count and its first launcher (whose
+  design(s) a kill's tonnage goes to, Impact below). Mounts are not compared.
 - A seeker has 0 movement in the turn it is launched. From the next combat turn it
   moves up to `Weapon Seeker Speed` squares in its owner's phase, before the owner's
   other pieces act. Each step moves one square toward the target's centre square (its
