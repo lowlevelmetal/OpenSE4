@@ -1012,11 +1012,13 @@ the first such member; the colony cycle goes by planet name, letter case countin
 the colony's sector as a click does; Drop Cargo asks the kind of cargo before the destination; Esc and Enter close a large window
 without its closing step, so Fleet Transfer then keeps an empty fleet; the sector's list writes
 "<design> Class" under the player's own ships and bases only, and sorts its stellar objects by
-owner, then name in capitals. OpenSE4's additions there became options, off by default:
+owner, then name in capitals; the empire pickers list the empires by name; an enemy design's
+detail stops after its size. OpenSE4's additions there became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Fleet Transfer's empty fleets (`screens/fleet_transfer.cpp`, `GameState::tidyFleets`) | The Close button deletes the player's fleets with no member, Esc and Enter keep them, as the original does; turn processing deletes any still left (OpenSE4's own) | Kept until the game is loaded again, when memberless fleets are disbanded (turn processing inferred) | L |
+| An enemy design's detail (`screens/designs.cpp`) | The picture, name, Size and components, as the original's; OpenSE4's option "Show enemy designs' details" (Options) adds the owner, date, costs and figures | Only the picture, name, Size and components | none (an option) |
 | Tags across selections (`MainWindow::selectVehicle`, `selectPlanet`, `taggedNote`) | The original's rule; a line over the report says the next order goes to the tagged group (ours, Q124). OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options) clears them when a ship or fleet button or a Goto selects an object in another sector | The ship and fleet buttons and the Gotos keep the tags; the next order goes to the tagged group | none (an option) |
 
 ## Computer player (spec 05 §7)

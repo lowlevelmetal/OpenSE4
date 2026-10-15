@@ -21,6 +21,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 #include "client/classic/screens/type_picker.hpp"
+#include "client/classic/settings.hpp"
 #include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 
@@ -329,6 +330,14 @@ private:
         textAt(ui, dlg, ui.fonts.bold, kTitleSize, kTitleLead, top + Vec2{140, 4}, white, d.name);
         text(top + Vec2{140, 40}, blue, "Size");
         text(top + Vec2{152, 55}, white, std::format("{} ({}kT)", hull.name, hull.tonnage));
+        // The enemy tabs stop here: the component grid follows (spec 06 §7
+        // Q93, confirmed: binary). OpenSE4's option "Show enemy designs'
+        // details" adds the rest, the owner in place of the design type.
+        if (enemyTab(tab_) && !settings().enemyDesignDetails) {
+            if (statsView_) serviceRecord(ui, dlg, d, own);
+            else components(ui, dlg, d);
+            return;
+        }
         text(top + Vec2{140, 70}, blue, own ? "Design Type" : "Owner");
         text(top + Vec2{152, 85}, white, own ? (d.designType.empty() ? std::string("-") : d.designType) : (d.owner.valid() ? s.empire(d.owner).name : std::string("-")));
         text(top + Vec2{140, 100}, blue, "Date Created");

@@ -135,7 +135,7 @@ simultaneous game is loaded from a saved game (Load Game, Resume Game, the Game 
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Damage, Launching, Formation); Add asks "Enter Strategy Name" (spec 04 §16, confirmed: binary) [T]. Copy and Remove are ours. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
 | Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. The original's Manual opens the installed `manual\SE4 Manual.htm` in the browser at once (confirmed: binary); ours opens OpenSE4's Manual window, and since 2026-10-14 the gap (slot 11) holds Original Manual, which opens the installed manual in the browser, when the install has one. | F1. |
-| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). Ours: a weapon whose type the mount does not take keeps its plain figures (inferred, §7 Q113). | Help; Create Design. |
+| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). A weapon whose type the mount does not take keeps its plain figures (confirmed: binary, §7 Q113 (f)); ours too. | Help; Create Design. |
 | Galaxy Map | Enlarged strategic map. | See §2.6. | Right-click the galaxy panel. |
 
 #### 1.2.1 Player Computer Control
@@ -1011,6 +1011,12 @@ tags last as the original keeps them (§2.5 "What clears the tags"); on, selecti
 them, so the next order goes to the object shown (`OptionsScreen` in
 `screens/settings_screen.cpp`, `MainWindow::selectVehicle`, `selectPlanet`).
 
+**OpenSE4's enemy designs option** (an OpenSE4 option, since 2026-10-15). "Show enemy designs'
+details", off by default, kept with this computer's settings (`enemyDesignDetails`,
+`enemy_design_details` in `classic_settings.toml`): on, the Designs window's enemy tabs show
+an enemy design's owner (in place of the design type), date, costs, Movement, Shields, Cargo
+Space and Supply Capacity as well, which the original leaves out (§7 Q93).
+
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
 in brackets.
@@ -1473,7 +1479,7 @@ in the code and asked in §7 Q89–Q98.
   alphabetical order, the areas in data order under each; the heading over the boxes reads "1
   Current Project" or "N Current Projects"; the reorder window's rows are the areas' names; a
   right-click on an area or a project box opens the area's report. Ours since 2026-10-11 (the
-  green is the progress bar's #00FF00, inferred, §7 Q113); the description under the pointer
+  green is #00FF00, confirmed: binary, §7 Q113 (d)); the description under the pointer
   is ours. The original shows Tech Tree only when the game lets players see the complete tech
   tree (§1.2, spec 01 §2.2), and the project boxes of §7 Q92 (confirmed: binary); ours too
   since 2026-10-03 (`GameOptions::completeTechTree`).
@@ -5587,8 +5593,11 @@ choices (inferred):
       at (4,150) with their three amounts. The part below (from (270,209)) holds Movement,
       Shields, Cargo Space and Supply Capacity (labels at x 4, values right-aligned at x 160,
       15 px apart), "(Insufficient technology)" in grey #A0A0A0 when it applies, and
-      "Components on Design" at (274,291) over the component grid. With Stats\Strategy on the
-      grid is hidden and the part shows Number Constructed, Number In Service, Number Lost,
+      "Components on Design" at (274,291) over the component grid. On the enemy tabs the
+      detail stops after the Size line: no Design Type, Date Created, "(Obsolete)", Cost,
+      Maintenance Cost, Movement, Shields, Cargo Space, Supply Capacity or "(Insufficient
+      technology)"; the component grid follows. Those lines are drawn on the own tabs only
+      (2026-10-15, complete listing). With Stats\Strategy on the grid is hidden and the part shows Number Constructed, Number In Service, Number Lost,
       Number Scrapped and Enemy Tonnage Destroyed (labels at x 6, values right-aligned at
       x 270, 15 px apart from y 97 of that part) and "Default Strategy" with its picker.
     - *Component grid:* at (276,308), 290×146: 36×36 cells, 8 to a row, 4 rows; **one cell
@@ -5597,8 +5606,7 @@ choices (inferred):
     Our client follows the answer since 2026-10-03. Our choices: the letter case is ignored in
     the alphabetical order; the hull's picture is drawn 36 px; the three amounts of Cost and
     Maintenance Cost right-aligned at x 172, 225 and 278 of the top part, each with its icon;
-    an enemy design shows its owner in place of its design type; the default strategy is a
-    drop-down; an obsolete design's button reads Make Current; a design just made is selected
+    the default strategy is a drop-down; an obsolete design's button reads Make Current; a design just made is selected
     and scrolled into view, and our notes (a design made, a refusal) go in the title strip.
     Hide Obsolete and Stats\Strategy are kept with the empire's options in the saved game, as
     the original keeps them (spec 08 §3.6.7), so the window opens again as it was left: ours
@@ -5608,9 +5616,10 @@ choices (inferred):
     saves), the buttons are lit as above, and the enemy tabs list as above; ours hid enemy
     designs their owner had made obsolete and listed eliminated empires' designs, lit
     Create and Stats\Strategy everywhere and dimmed Edit for a design in a queue. Ours still
-    opens on the tab of a design it was opened for, and writes "(Obsolete)" only for an own
-    design (whether another empire made a design obsolete is its own business; inferred,
-    §7 Q113).
+    opens on the tab of a design it was opened for. Since 2026-10-15 an enemy design's detail
+    stops after Size as the original's (`DesignsScreen::detail`); before, it showed the owner
+    in place of the design type, the date, both costs and the four figures, which OpenSE4's
+    option "Show enemy designs' details" (§1.9, off by default) still shows.
 94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
     Type", the same from every tab; the designer is a 780x475 window. Places in its content
     area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes
@@ -5693,9 +5702,9 @@ choices (inferred):
     report; a design opened while Condensed View is on is reordered only at its next added
     component, the strip merging its identical entries meanwhile; the size list's Abilities
     box shows the hull under the pointer, else the design's, a design being edited keeps its
-    hull listed, and Cancel clears a size chosen before (inferred, as in Design Type's list, §7 Q113);
-    Cancel in "Select Weapon Mount" picks Normal Mount, and the mount's name at x 319 is white
-    and reads "Normal Mount" without one (inferred, §7 Q113); blank lines of a name file are
+    hull listed, and Cancel clears a size chosen before (confirmed: binary, §7 Q113 (b));
+    Cancel in "Select Weapon Mount" picks Normal Mount (confirmed: binary, §7 Q113 (c)), and the
+    mount's name at x 319 is white and reads "Normal Mount" without one (inferred, §7 Q113); blank lines of a name file are
     left out; a mount's figures show under the pointer in its list. **Our client differs:**
     the words "Design Name" are only a hint in an empty box, and Create Design refuses an
     empty name in the "Design Warnings" box, so no design is named "Design Name" or nothing
@@ -6211,7 +6220,16 @@ an imported turn-based game of the original.
      not take (a direct-fire mount and a missile)? Ours: no, that weapon keeps its plain
      figures.
      (g) *Designs.* Does the detail of an enemy design say "(Obsolete)" when its owner made
-     it obsolete? Ours: no, only an own design's does.
+     it obsolete? Ours: no, only an own design's does. **Answer** (confirmed: binary;
+     2026-10-15, complete listing): no; the enemy tabs' detail stops after the Size line
+     (Q93). Ours follows.
+     **Answers to (b), (c), (d) and (f)** (confirmed: binary; 2026-10-15, complete listing):
+     (b) the Abilities box follows the row under the pointer, a single left click picks and
+     closes, a right click opens the hull's report, and Cancel clears a size chosen before;
+     (c) Cancel picks the normal mount (the list's first row describes the standard mount;
+     the label at x 319 was not traced); (d) queued areas are pure green #00FF00, completed
+     ones #606060 with "Complete"; (f) a mount changes a weapon's figures only when it can
+     take that weapon. Ours already does all four.
 
 114. **The objects a stellar manipulation can be aimed at.** The Stellar Manipulation window
      takes its target from the vehicle's sector after the player confirms (§1.3), and asks

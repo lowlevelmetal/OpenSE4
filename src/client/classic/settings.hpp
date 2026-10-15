@@ -71,6 +71,11 @@ struct ClassicSettings {
     // in another sector clears them, as OpenSE4 did before 2026-10-15. Off
     // by default.
     bool clearTagsElsewhere = false;
+    // Options, under OpenSE4: "Show enemy designs' details". The original's
+    // Designs window shows only the picture, name, Size and components of
+    // another empire's design (spec 06 §7 Q93); with this on, also its owner,
+    // date, costs and figures. Off by default.
+    bool enemyDesignDetails = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

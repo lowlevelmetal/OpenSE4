@@ -170,6 +170,12 @@ public:
                               "report is shown. With this on, selecting a ship or planet in another sector\n"
                               "clears the tags. A click on a sector, the colony buttons and Shift+C always\n"
                               "clear them.");
+        // The original's enemy design tabs stop after the Size line (spec 06 §7 Q93).
+        changed |= lampToggle(ui, "Show enemy designs' details", &s.enemyDesignDetails);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The original's Designs window shows only the picture, name, size and components\n"
+                              "of another empire's design. With this on, its owner, date, costs, movement,\n"
+                              "shields, cargo space and supply capacity show too.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {
