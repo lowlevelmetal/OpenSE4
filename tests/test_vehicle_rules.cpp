@@ -460,7 +460,7 @@ TEST_CASE("vehicle rules: ruins grant an advance only when a researchable area c
     REQUIRE(never);
     World w(r);
     auto grantWith = [&](uint64_t seed) {
-        w.s.empire(kA).techLevels.assign(areas, 0);
+        w.s.empire(kA).techLevels.assign(static_cast<size_t>(areas), 0);
         TurnContext ctx{r, w.s, {}, {}, {}};
         Rng rng(seed);
         research::grantRandomAdvances(ctx, kA, 1, rng, "ruins");

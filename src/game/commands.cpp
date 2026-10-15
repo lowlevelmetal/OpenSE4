@@ -1601,7 +1601,9 @@ std::string defaultFleetName(const GameState& s, EmpireId empire) {
     // the word for (n - 100) div 10 and the word for n - 100 (inferred).
     static constexpr std::array<std::string_view, 10> kLetters{"Alpha", "Beta", "Gamma", "Delta", "Epsilon",
                                                                "Zeta",  "Eta",  "Theta", "Iota",  "Kappa"};
-    auto word = [](uint64_t k) -> std::string_view { return k >= 1 && k <= kLetters.size() ? kLetters[k - 1] : std::string_view{}; };
+    auto word = [](uint64_t k) -> std::string_view {
+        return k >= 1 && k <= kLetters.size() ? kLetters[static_cast<size_t>(k - 1)] : std::string_view{};
+    };
     auto nameOf = [&](uint64_t n) -> std::string {
         if (n <= 10) return std::format("{} Fleet", word(n));
         if (n <= 100) return std::format("{} {} Fleet", word(n / 10), word(n - 10));
