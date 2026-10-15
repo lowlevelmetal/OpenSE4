@@ -220,14 +220,18 @@ int64_t triggerValue(const ruleset::HappinessModel* m, std::string_view trigger)
 
 // ---- Mood reports (spec 02 §4 "Mood reports", confirmed: binary) ----------------------------------
 
-// The causes the Planetary Minister reports, in the order the reports go out:
-// the happiness record's entries, a cause for each kind of change.
+// The causes the Planetary Minister reports, in the fixed order the reports go
+// out (spec 02 §4, confirmed: binary). Ships present are kept apart by where
+// they count: enemies in the system and in the sector, ours in the sector and
+// in the system, each pair sharing one phrase. A battle's sector and system
+// values go to one total, and so do the empire-wide and the local ship losses
+// and ship construction, which are reported in separate lists.
 enum class Cause : uint8_t {
     HomeworldLost, PlanetLost, PlanetColonized, OurPlanetCaptured, EnemyPlanetCaptured,
     TreatyWar, TreatyNonIntercourse, TreatyNone, TreatyNonAggression, TreatySubjugatedSub, TreatyProtectorateSub,
     TreatySubjugatedDom, TreatyProtectorateDom, TreatyTrade, TreatyTradeResearch, TreatyMilitaryAlliance, TreatyPartnership,
-    ShipLosses, ShipConstruction, BattleWin, BattleLoss, BattleStalemate, EnemyShips, OurShips, EnemyTroops, OurTroops,
-    PopulationKilled, FacilityConstruction, Plague, Count
+    BattleWin, BattleLoss, BattleStalemate, EnemyShipsSystem, EnemyShipsSector, OurShipsSector, OurShipsSystem, EnemyTroops,
+    OurTroops, PopulationKilled, ShipLosses, ShipConstruction, FacilityConstruction, Plague, Count
 };
 using CauseTotals = std::array<int64_t, static_cast<size_t>(Cause::Count)>;  // tenths of a percent
 
@@ -263,10 +267,10 @@ constexpr std::array<CauseName, 36> kCauseTriggers{{
     {"Battle in Sector - Loss", Cause::BattleLoss},
     {"Battle in System - Stalemate", Cause::BattleStalemate},
     {"Battle in Sector - Stalemate", Cause::BattleStalemate},
-    {"Enemy Ship in System", Cause::EnemyShips},
-    {"Enemy Ship in Sector", Cause::EnemyShips},
-    {"Our Ship in System", Cause::OurShips},
-    {"Our Ship in Sector", Cause::OurShips},
+    {"Enemy Ship in System", Cause::EnemyShipsSystem},
+    {"Enemy Ship in Sector", Cause::EnemyShipsSector},
+    {"Our Ship in System", Cause::OurShipsSystem},
+    {"Our Ship in Sector", Cause::OurShipsSector},
     {"Enemy Troops on Planet", Cause::EnemyTroops},
     {"Our Troops on Planet", Cause::OurTroops},
     {"1M Population Killed", Cause::PopulationKilled},
@@ -305,8 +309,10 @@ std::string_view causePhrase(Cause c) {
         case Cause::BattleWin: return "victory in battle";
         case Cause::BattleLoss: return "defeat in battle";
         case Cause::BattleStalemate: return "an undecided battle";
-        case Cause::EnemyShips: return "enemy ships nearby";
-        case Cause::OurShips: return "our ships nearby";
+        case Cause::EnemyShipsSystem:
+        case Cause::EnemyShipsSector: return "enemy ships nearby";
+        case Cause::OurShipsSector:
+        case Cause::OurShipsSystem: return "our ships nearby";
         case Cause::EnemyTroops: return "enemy troops on our soil";
         case Cause::OurTroops: return "our troops among them";
         case Cause::PopulationKilled: return "the deaths of our people";
@@ -415,8 +421,8 @@ bool updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
     const int64_t enemies = p.enemySector > 0 ? v("Enemy Ship in Sector") * p.enemySector : v("Enemy Ship in System") * p.enemySystem;
     const int64_t friends = p.ourSector > 0 ? v("Our Ship in Sector") * p.ourSector : v("Our Ship in System") * p.ourSystem;
     total += enemies + friends;
-    addCause(causes, Cause::EnemyShips, enemies);
-    addCause(causes, Cause::OurShips, friends);
+    addCause(causes, p.enemySector > 0 ? Cause::EnemyShipsSector : Cause::EnemyShipsSystem, enemies);
+    addCause(causes, p.ourSector > 0 ? Cause::OurShipsSector : Cause::OurShipsSystem, friends);
 
     // 5. Troops (confirmed: binary): troops another empire landed that still
     //    fight for the planet count once as enemies, whatever the treaty; they
@@ -566,6 +572,9 @@ void updateHappiness(TurnContext& ctx, EmpireId e) {
     CauseTotals wide{};
     for (const MoodEvent& ev : events)
         if (scopeOf(ev.trigger) == Scope::Empire) {
+            // With Game Setup's Team Mode on, new treaties change no mood: their
+            // events are logged and dropped with the rest (spec 02 §4, confirmed: binary).
+            if (s.options.teamMode && datafile::normalizeKey(ev.trigger).starts_with("new treaty")) continue;
             const int64_t d = triggerValue(model, ev.trigger) * std::max(1, ev.count);
             empireWide += d;
             addCause(wide, causeOf(ev.trigger), d);

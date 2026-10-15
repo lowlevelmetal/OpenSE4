@@ -108,7 +108,9 @@ reports, the riot entry only with people, and the negative change limit as store
 Type refuses a queue type name already listed (§6.4); the RacialTraits.txt checks (§1.6);
 the first maintenance victims and their Misc entries (§7); the ship limit message once per
 turn and the built mark before units are placed (§6.5); a click on a design beyond our
-technology does nothing (spec 06 §1.8.3). No row remains; where the original's place of a
+technology does nothing (spec 06 §1.8.3). On 2026-10-15 the analyst's answers added that in
+a Team Mode game new treaties change no mood (§4), and fixed the mood reports' order. No row
+remains; where the original's place of a
 mood report was not read is §13 Q57.
 
 ## Vehicles, movement and logistics (spec 03)

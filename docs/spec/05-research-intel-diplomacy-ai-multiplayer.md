@@ -747,8 +747,11 @@ up the trade chain [M].
   that exists every roll is made, whatever the checks before it found: the luck roll also
   after a failed home-location test; for a star event every empire with a colony there
   rolls, without stopping at the first failure; and the bad-event-chance roll for every
-  candidate with a system, even when no such ability is there (the intel pick of §2.4 rolls
-  only when the ability is set). None of this changes a chance; it fixes the sequence of
+  candidate with a system, even when no such ability is there (the value is then 0: the roll
+  is made and cannot fail), unless the system's value is exactly 100 (the intel pick of
+  §2.4 rolls only when the ability is set). Empire targets and targets that no longer exist
+  draw none of these. Per candidate: the home test (no draw), the luck draw or draws, the
+  bad-event draw. None of this changes a chance; it fixes the sequence of
   random numbers. Since 2026-10-14 ours draws in this order and number (`events.cpp`
   `rollNewEvent`, `pickEventTarget`, `starLuckHolds`, `effects::chanceRejectsRoll`); before,
   it skipped each of these rolls.

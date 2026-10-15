@@ -324,7 +324,7 @@ change to anger in tenths of a percent: positive means angrier.
 
 How the game uses each record value is in §4 (confirmed: binary). In short:
 - The five planet events at the top are empire-wide. So are the `New Treaty …` values,
-  unless a game option switches treaty effects off.
+  unless Game Setup's Team Mode is on (§4).
 - `Any Ship Lost` is counted from every "ship lost in system" event and `Any Ship
   Constructed` from every ship built; both are empire-wide.
 - Battles are logged per sector: the colonies of that system get the `… in System` value,
@@ -669,7 +669,12 @@ entry in the empire's happiness type (§1.8), in tenths of a percent.
 logged since the last update (each event carries a count):
 - `count × v[…]` for `Homeworld Lost`, `Any Planet Lost`, `Any Planet Colonized`, `Any Our
   Planet Captured` and `Any Enemy Planet Captured`;
-- `count × v[New Treaty …]` for new treaties, unless a game option turns treaty effects off;
+- `count × v[New Treaty …]` for new treaties, unless Game Setup's **Team Mode** ("All
+  computer players versus all human players", a game option saved with the game) is on: then
+  every new-treaty event is ignored, logged and dropped with the rest of the list, so it
+  changes no anger and makes no report (confirmed: binary; corrected 2026-10-15, complete
+  listing: the option was not named, and OpenSE4 counted the events regardless; since
+  2026-10-15 `updateHappiness` follows);
 - `count × v[Any Ship Lost]` for each "ship lost in system" event, and `count × v[Any Ship
   Constructed]` for each "ship constructed" event;
 - minus `trunc(E_happy / 5)`, where `E_happy` is the Happiness characteristic − 100 plus
@@ -722,16 +727,20 @@ logged since the last update (each event carries a count):
   owner: category Misc, an event-style entry (confirmed: binary; corrected 2026-10-14,
   complete listing: a colony without people logs none).
 
-**Mood reports** (confirmed: binary; added 2026-10-14, complete listing). The update
-writes reports to the empire's own log, a computer player's included, by cause. The causes
-are the happiness record's entries, in this order: the five planet events (`Homeworld
-Lost`, `Any Planet Lost`, `Any Planet Colonized`, `Any Our Planet Captured`, `Any Enemy
-Planet Captured`), the twelve `New Treaty …` values in the order of §1.8, ship losses (`Any
-Ship Lost`, `Ship Lost in System`), ship construction (`Any Ship Constructed`, `Ship
-Constructed`), the three battle results (`… - Win`, `… - Loss`, `… - Stalemate`, in system
-or sector), enemy ships near, our ships near, enemy troops, our troops, population killed,
-facility construction and plague (the `Planet Plagued` event and a plagued colony's own
-term). Each cause has a short phrase of its own.
+**Mood reports** (confirmed: binary; added 2026-10-14, complete listing; the order
+corrected 2026-10-15). The update writes reports to the empire's own log, a computer
+player's included, by cause. The causes come in this fixed order: the five planet events
+(`Homeworld Lost`, `Any Planet Lost`, `Any Planet Colonized`, `Any Our Planet Captured`,
+`Any Enemy Planet Captured`); the twelve `New Treaty …` values in the order of §1.8; the
+three battle results (`… - Win`, `… - Loss`, `… - Stalemate`, a battle's sector and system
+values in one total); enemy ships counted system-wide (when none is in the colony's
+sector), enemy ships in the sector, our ships in the sector, our ships counted system-wide
+(two totals each, the pairs sharing a phrase); enemy troops; our troops; population killed;
+ship losses (empire-wide `Any Ship Lost`, per system `Ship Lost in System`); ship
+construction (empire-wide `Any Ship Constructed`, per system `Ship Constructed`); facility
+construction; plague (the `Planet Plagued` event and a plagued colony's own term). Each
+cause has a short phrase of its own. Empire-wide only the planet events, the treaties (not
+in Team Mode), ship losses and ship construction can appear; per system the rest.
 - **Empire-wide**, right after the empire-wide sum: for each cause in turn, the cause's
   total from the empire-wide events alone, truncated to whole percent; above 20 a
   "Population Growing Unhappy" entry says that the Planetary Minister reports the general

@@ -435,6 +435,14 @@ TEST_CASE("events: the event step makes the original's draws (spec 05 §4, confi
         expected.range(1, 100);
         expected.range(1, 100);
         CHECK(used.next() == expected.next());
+        // A system value of exactly 100 makes no bad-chance draw.
+        GameState hundred = one;
+        hundred.galaxy.system(hundred.galaxy.object(home).system).abilities.push_back({"Change Bad Event Chance - System", "", "100", ""});
+        Rng skip(5), noBad(5);
+        REQUIRE(events::pickEventTarget(*low, hundred, 0, skip).has_value());
+        noBad.index(1);
+        noBad.range(1, 100);
+        CHECK(skip.next() == noBad.next());
         auto high = rulesWith({event(Effect::PlanetValueChange, -1, "High")});
         Rng spared(5), spent(5);
         CHECK_FALSE(events::pickEventTarget(*high, one, 0, spared).has_value());  // a homeworld, spared

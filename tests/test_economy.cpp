@@ -2094,6 +2094,34 @@ TEST_CASE("economy: the Planetary Minister reports moods by cause, after the rio
     CHECK_FALSE(logged(still.s, kMe, "Population Growing"));
 }
 
+TEST_CASE("economy: enemy ships in the system and in the sector are reported apart, in their order (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    const DesignId theirs = frigate(w.s, r, kThem, "Raider");
+    for (int i = 0; i < 11; ++i) addTestVehicle(w.s, r, theirs, locationOf(w.s.galaxy, w.home->planet));
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s);
+    // The home colony counts them in its sector (44 %), the moon in the system (22 %).
+    std::vector<std::string> rows;
+    for (const LogEntry& l : w.s.empire(kMe).log)
+        if (l.title.starts_with("Population Growing")) rows.push_back(l.text);
+    REQUIRE(rows.size() == 2);
+    for (const std::string& row : rows) CHECK(row.ends_with("because of enemy ships nearby."));
+}
+
+TEST_CASE("economy: in Team Mode new treaties change no mood (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    w.s.options.teamMode = true;
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s, {{kMe, "New Treaty War", {}, {}, 1}, {kMe, "Any Ship Lost", {}, {}, 3}});
+    CHECK(w.home->anger == 40 + 6);  // the ship losses alone
+    CHECK_FALSE(logged(w.s, kMe, "the new war"));
+    w.s.options.teamMode = false;
+    populationTurn(r, w.s, {{kMe, "New Treaty War", {}, {}, 1}});
+    CHECK(logged(w.s, kMe, "the new war"));
+}
+
 TEST_CASE("economy: a colony without people logs no riot (spec 02 §4, confirmed: binary)") {
     MoodWorld w;
     const Rules& r = *w.rules;

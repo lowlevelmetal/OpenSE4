@@ -1725,7 +1725,8 @@ std::optional<Target> pickEventTarget(const Rules& r, const GameState& s, uint32
     // roll is made for a candidate that exists, whatever the checks before it
     // found: the luck roll after a failed home-location test too, and the
     // bad-chance roll for every candidate with a system, with or without such
-    // an ability (spec 05 §4, confirmed: binary).
+    // an ability, unless the system's value is exactly 100 (spec 05 §4,
+    // confirmed: binary).
     for (int draw = 0; draw < effects::kTargetDraws && !candidates.empty(); ++draw) {
         const size_t i = rng.index(candidates.size());
         const Target t = eventTarget(s, kind, candidates[i]);
@@ -1738,9 +1739,11 @@ std::optional<Target> pickEventTarget(const Rules& r, const GameState& s, uint32
             // Luck, good events and bad alike.
             const bool lucky = kind == TargetKind::Star && where ? starLuckHolds(r, s, where->system, rng) : luckHolds(r, s, t.empire, rng);
             if (!lucky) ok = false;
+            // One draw unless the system's value is exactly 100 (with no
+            // such ability it is 0: drawn, and it cannot fail).
             if (where) {
-                const int64_t roll = rng.range(1, 100);
-                if (effects::chanceRejectsRoll(effects::unownedChanceValue(s, where->system, AbilityKind::ChangeBadEventChanceSystem), roll)) ok = false;
+                const int64_t bad = effects::unownedChanceValue(s, where->system, AbilityKind::ChangeBadEventChanceSystem);
+                if (bad != 100 && effects::chanceRejectsRoll(bad, rng.range(1, 100))) ok = false;
             }
         }
         if (ok) return t;
