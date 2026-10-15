@@ -562,7 +562,11 @@ Let D be the hit's damage after §8.
 2. **Damage pool.** Every ship, base and seeker keeps a pool of damage that was too
    small to destroy anything. For the *hull-damaging types* (Normal, Skips Normal
    Shields, Skips Armor, Skips Shields And Armor, Skips All Shields, Quad/Double/
-   Half/Quarter Damage To Shields), the pool is added to D and emptied. A unit group, and
+   Half/Quarter Damage To Shields), the pool is added to D and emptied. After every hit
+   on a piece its pool is cut to 50000, a ship's, a base's and a seeker's alike, as a
+   unit group's is (§9.4) (confirmed: binary; added 2026-10-14, complete listing). With
+   stock data a pool never comes near it: it stays below the structure of the next
+   component. Since 2026-10-14 ours follows (`Battle::shipHit`, `Battle::seekerHit`). A unit group, and
    the units stored on a planet, keep their own pools (§9.4); a planet piece itself keeps
    none. No pool outlives the battle: a ship's pool belongs to its piece, and the pools
    of unit groups and stored units go back to 0 at the end of every battle (and after

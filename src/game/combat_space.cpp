@@ -2171,6 +2171,9 @@ void Battle::shipHit(int att, int t, DamageType type, int64_t damage) {
     if (isPlanetOnlyDamage(type)) return;
     Piece& b = pieces_[t];
     const detail::HitResult h = detail::hitVehicle(r_, s_, b.unit, b.sh, b.pool, damage, type, rng_);
+    // After every hit the pool is cut to 50000 (spec 04 §9.1 step 2, confirmed:
+    // binary; added 2026-10-14, complete listing).
+    b.pool = std::min(b.pool, detail::kMaxDamagePool);
     if (h.destroyed) {
         b.unitsLost = 1;
         kill(t, att);
@@ -2227,6 +2230,7 @@ void Battle::seekerHit(int att, int t, DamageType type, int64_t damage) {
         dies = damage >= b.hp - b.pool;
         if (!dies) b.pool += damage;
     }
+    b.pool = std::min(b.pool, detail::kMaxDamagePool);   // cut to 50000 after every hit (spec 04 §9.1 step 2)
     if (!dies) return;
     if (--b.members <= 0) kill(t, att);
 }

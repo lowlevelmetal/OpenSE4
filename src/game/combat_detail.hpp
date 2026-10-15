@@ -214,8 +214,11 @@ struct UnitToughness {
 UnitToughness unitToughness(const Rules& r, const Design& d);
 int64_t unitHitPoints(const Rules& r, const Design& d);   // H
 
-// A unit group's damage pool never exceeds this; a hit tries up to this many draws (spec 04 §9.4).
-inline constexpr int64_t kMaxUnitPool = 50000;
+// No damage pool exceeds this after a hit, a ship's, a base's, a seeker's or a
+// unit group's (spec 04 §9.1 step 2, §9.4, confirmed: binary); a hit on a unit
+// group tries up to kMaxUnitDraws draws.
+inline constexpr int64_t kMaxDamagePool = 50000;
+inline constexpr int64_t kMaxUnitPool = kMaxDamagePool;
 inline constexpr int kMaxUnitDraws = 20;
 // Spec 04 §9.4: one hit of `damage` on units kept as stacks (a unit group, or
 // the units stored on a planet), with the group's damage pool P (`pool`) and

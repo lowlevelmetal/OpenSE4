@@ -415,6 +415,34 @@ TEST_CASE("combat: a seeker's impact has no attacker: no damage bonus, no experi
     }
 }
 
+TEST_CASE("combat: a ship's damage pool is cut to 50000 after every hit") {
+    // Spec 04 §9.1 step 2 (confirmed: binary; added 2026-10-14, complete listing).
+    ruleset::Ruleset rs = buildCombatRuleset();
+    gun(rs, "CT Huge Gun", WeaponKind::DirectFire, std::vector<int>(5, 60000), "Normal");
+    part(rs, "CT Mega Armor", 200000, {ab(AbilityKind::Armor)});
+    rs.reindex();
+    const Rules rules{std::move(rs)};
+    Bench k(rules, makeArena(rules));
+    GameState& s = k.ar.s;
+    const VehicleId smasher = spawnOn(rules, s, frigate(s, k.ar.a, "Smasher", 1, {"CT Huge Gun", "CT Huge Gun", "CT Always Hit"}, rules), k.ar.loc);
+    const VehicleId wall = addTestVehicle(s, rules, addTestDesign(s, rules, k.ar.b, "Wall", "Test Station", {"Test Bridge", "CT Mega Armor"}), k.ar.loc).id;
+    Battle& b = k.start({k.ar.a, k.ar.b});
+    const int g = k.at(smasher), w = k.at(wall);
+    k.arrange({{g, 20, 20}, {w, 21, 20}});
+    b.advance();
+    while (b.stage() == Battle::Stage::Orders && b.phaseEmpire() != k.ar.a) REQUIRE(b.submit(TacticalOrder{OK::EndPhase, b.phaseEmpire()}).empty());
+    REQUIRE(b.phaseEmpire() == k.ar.a);
+    for (int weapon : {0, 1}) {
+        TacticalOrder fire{OK::Fire, k.ar.a, g, w};
+        fire.weapon = weapon;
+        REQUIRE(b.submit(fire).empty());
+    }
+    // Two shots of 50000 (the cap of one shot) that cannot destroy the armor: the
+    // pool would hold 100000, and is cut to 50000.
+    REQUIRE(b.pieces()[static_cast<size_t>(w)].alive);
+    CHECK(b.pieces()[static_cast<size_t>(w)].pool == 50000);
+}
+
 TEST_CASE("planning: the attack map - point-defense only when nothing else adds, the border over-count, the weighted emissive cut") {
     ruleset::Ruleset rs = buildCombatRuleset();
     gun(rs, "CT Engine Cutter", WeaponKind::DirectFire, {100, 100, 100}, "Only Engines");
