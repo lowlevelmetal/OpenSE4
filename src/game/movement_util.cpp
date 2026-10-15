@@ -7,6 +7,7 @@
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
@@ -97,6 +98,20 @@ void refillSupply(const Rules& r, const GameState& s, Vehicle& v) {
     // A resupply recomputes the maximum, which caps the movement left: a
     // turn-based game's unspent Emergency Energy above it is lost (§6.1).
     capMovement(r, s, v);
+}
+
+void depotCheck(TurnContext& ctx, Vehicle& v) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    if (!alive(v)) return;
+    if (v.status != VehicleStatus::Mothballed && isShipOrBase(vehicleType(r, s, v))) {
+        const int64_t medical = bestValue1(vehicleAbilities(r, s, v), AbilityKind::MedicalBay);
+        if (medical > 0)
+            for (ObjectId o : planetsAt(s, v.location))
+                if (Colony* c = s.colony(o); c && c->plagueLevel > 0 && medical >= c->plagueLevel && allied(s, v.owner, c->owner))
+                    economy::curePlague(ctx, *c);
+    }
+    if (resupplyDepotAt(r, s, v.owner, v.location)) refillSupply(r, s, v);
 }
 
 void poolSupply(const Rules& r, GameState& s, std::span<const VehicleId> members) {

@@ -122,6 +122,12 @@ std::string_view conditionsName(ConditionsBand b);
 // Reproduction points of a band: -20 (Deadly) to +5 (Optimal).
 int conditionsReproduction(ConditionsBand b);
 
+// ---- Plague (spec 02 §3) -------------------------------------------------------------------------
+
+// The colony's plague is cured: its level goes to 0 and the owner gets the
+// "Plague on <planet> cured" entry.
+void curePlague(TurnContext& ctx, Colony& c);
+
 // ---- Mood (spec 02 §4) ------------------------------------------------------------------------
 
 bool emotionless(const Rules& r, const GameState& s, EmpireId e);

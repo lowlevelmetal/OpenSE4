@@ -371,8 +371,9 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     }
     for (Vehicle& v : s.vehicles)
         if (alive(v) && v.owner == e && v.status == VehicleStatus::Cloaked && !canCloak(r, s, v)) decloak(v);
-    for (Vehicle& v : s.vehicles)
-        if (alive(v) && v.owner == e && resupplyDepotAt(r, s, e, v.location)) refillSupply(r, s, v);
+    // The depot check, and a Medical Bay's cure, for every object of the empire (§3.3, §7).
+    for (VehicleId id : vehiclesInObjectOrder(s))
+        if (Vehicle* v = s.vehicle(id); v && alive(*v) && v->owner == e) depotCheck(ctx, *v);
     // Fleet pooling among the members at the fleet's location, at the end of the turn only.
     for (const Fleet& f : s.fleets)
         if (f.owner == e) poolSupply(r, s, fleetMembersAt(s, f));

@@ -290,6 +290,10 @@ The accuracy pass of 2026-10-14 (spec 03 settled from the complete listing) clos
 - **Ruins** draw up to 1,001 times and grant only a find within the first 999
   (`research::grantRandomAdvances`).
 - **Self-Destruct** destroys the group's first member only, each run (`selfDestruct`).
+- **Medical Bay** cures as the ship passes, in the depot check after each step and in the
+  supply step, not in the plague step (`depotCheck`).
+- **Fleet names** are the n-th of the original's, n counting every fleet ever created
+  (`defaultFleetName`, `Empire::fleetsCreated`, save format 11).
 - **Log entries**: "Vehicle Self-Destructed" / "Group Self-Destructed" and "Vehicle Scrapped"
   / "Group Scrapped" (Construction), "Cannot Mothball" and "Cannot Unmothball" (Misc), "Ship
   Mothballed" (Misc), "Retrofit Problem" and "Vehicle Retrofit" (Construction), "Planet

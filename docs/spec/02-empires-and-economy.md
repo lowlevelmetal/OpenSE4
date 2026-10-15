@@ -617,7 +617,9 @@ system is added each turn to every colony of the owner there. Negative values do
 - Each turn, the best `Plague Prevention - System` cures every colony of the owner in
   that system whose level is at most its Val1.
 - A Medical Bay cures plagues on your own planets and on allies' planets (Military
-  Alliance or better) [H].
+  Alliance or better): not in the plague step but in the depot check, after every step of
+  the ship or base and in its owner's end-of-turn supply step (spec 03 §3.3; confirmed:
+  binary, 2026-10-14). Since 2026-10-14 ours follows (`movement_util.cpp` `depotCheck`).
 
 ---
 

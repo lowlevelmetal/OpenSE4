@@ -693,7 +693,7 @@ private:
         for (VehicleId id : participants_) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
-            if (resupplyDepotAt(r_, s_, v->owner, v->location)) refillSupply(r_, s_, *v);
+            depotCheck(ctx_, *v);   // a Medical Bay cures, a depot refills (§3.3, §7)
             if (v->status == VehicleStatus::Cloaked &&
                 ((v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) || !canCloak(r_, s_, *v))) {
                 v->status = VehicleStatus::Normal;
@@ -1111,8 +1111,10 @@ private:
                 ctx_.hooks->run(ctx_, Hook::VehicleEnteredSector, a);
             }
             v->movement = std::max(0, v->movement - 1);
-            // The depot check runs before the step's cost is taken (§7).
-            if (resupplyDepotAt(r_, s_, v->owner, next)) refillSupply(r_, s_, *v);
+            // The depot check runs before the step's cost is taken (§7); a
+            // ship's Medical Bay cures the plague of the colonies there as it
+            // passes (§3.3, confirmed: binary).
+            depotCheck(ctx_, *v);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
         entered_.push_back(Entry{g.members, g.holders, g.owner, next, name(g), pursuing_});
@@ -1183,7 +1185,7 @@ private:
         if (here.system.index() < k.present.size()) k.present[here.system.index()] = 1;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
-            if (v && alive(*v) && resupplyDepotAt(r_, s_, v->owner, here)) refillSupply(r_, s_, *v);  // passing a depot refuels
+            if (v && alive(*v)) depotCheck(ctx_, *v);  // passing a depot refuels, a Medical Bay cures
         }
         touched_.push_back(here);
     }

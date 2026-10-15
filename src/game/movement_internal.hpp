@@ -71,6 +71,13 @@ void spendSupply(const Rules& r, const GameState& s, Vehicle& v, int64_t amount)
 // Refills to the maximum (drones never; satellites and mines have no supply)
 // and caps the movement left (capMovement, spec 03 §6.1).
 void refillSupply(const Rules& r, const GameState& s, Vehicle& v);
+// The depot check (spec 03 §3.3, §7, confirmed: binary), after every step and
+// daily action and in the end-of-turn supply step: a ship or base that is not
+// mothballed cures the plague of every colony in its sector, its owner's or of
+// an empire whose treaty lets it use that colony as a depot, when its best
+// `Medical Bay` is at least the plague's level; and the vehicle is refilled
+// when its sector holds a depot it may use (resupplyDepotAt, refillSupply).
+void depotCheck(TurnContext& ctx, Vehicle& v);
 // Unlimited supply back at its marker; otherwise supply clamped to the capacity.
 void holdSupply(const Rules& r, const GameState& s, Vehicle& v);
 // Fleet pooling (§7): equal shares of the total, each capped by the member's

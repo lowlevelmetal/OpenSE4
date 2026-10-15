@@ -470,3 +470,52 @@ TEST_CASE("vehicle rules: ruins grant an advance only when a researchable area c
     CHECK(grantWith(*late) == 0);    // found on the 1,000th or 1,001st draw: thrown away
     CHECK(grantWith(*never) == 0);
 }
+
+// ---- Medical Bay (finding 27) ------------------------------------------------------------------------
+
+TEST_CASE("vehicle rules: a Medical Bay cures a plague as the ship passes, step by step, and in the supply step") {
+    ruleset::Ruleset rs = mvtest::buildRuleset();
+    ruleset::Component med;
+    med.name = "Mv Medical Bay";
+    med.tonnage = 10;
+    med.structure = 10;
+    med.cost = {10, 0, 0};
+    med.vehicles = ruleset::maskOf(VehicleType::Ship) | ruleset::maskOf(VehicleType::Base);
+    med.abilities = {mvtest::ab(AbilityKind::MedicalBay, 3)};
+    med.generalGroup = "Miscellaneous";
+    med.romanNumeral = 1;
+    rs.components.push_back(med);
+    rs.reindex();
+    const Rules r{std::move(rs)};
+    World w(r);
+    const SystemId a = w.system("A");
+    const ObjectId sick = w.planet(a, {5, 6});
+    const ObjectId allyWorld = w.planet(a, {9, 6});
+    w.colony(sick, kA, 500).plagueLevel = 2;
+    w.colony(allyWorld, kB, 500).plagueLevel = 3;
+    w.setTreaty(kA, kB, Treaty::MilitaryAlliance);
+    const VehicleId doctor = w.spawn(w.ship(kA, "Doctor", 6, {"Mv Medical Bay"}), at(a, 4, 6));
+    fuel(w, doctor);
+    w.order(doctor, moveTo(a, 12, 6));   // through both sectors, five steps this turn
+    w.move();
+    CHECK(w.v(doctor).location.sector.x >= 9);
+    CHECK(w.s.colony(sick)->plagueLevel == 0);
+    CHECK(w.s.colony(allyWorld)->plagueLevel == 0);   // an ally's colony too
+    CHECK(w.logged(kA, "Plague on"));
+
+    // Too weak a bay cures nothing; the supply step looks again.
+    w.s.colony(sick)->plagueLevel = 4;
+    w.v(doctor).location = at(a, 5, 6);
+    TurnContext ctx{r, w.s, {}, {}, {}};
+    movement::supplyEmpire(ctx, kA);
+    CHECK(w.s.colony(sick)->plagueLevel == 4);
+    w.s.colony(sick)->plagueLevel = 3;
+    movement::supplyEmpire(ctx, kA);
+    CHECK(w.s.colony(sick)->plagueLevel == 0);
+    // Not a colony of an empire whose treaty does not let it be a depot.
+    w.setTreaty(kA, kB, Treaty::War);
+    w.s.colony(allyWorld)->plagueLevel = 1;
+    w.v(doctor).location = at(a, 9, 6);
+    movement::supplyEmpire(ctx, kA);
+    CHECK(w.s.colony(allyWorld)->plagueLevel == 1);
+}
