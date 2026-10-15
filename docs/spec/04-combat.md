@@ -1266,14 +1266,73 @@ Point Blank and Drone Attack.
 | Field | Semantics |
 |---|---|
 | `Primary Movement Strategy`, `Secondary Movement Strategy` | One of eight: the three range strategies (Optimal, Short and Maximum Weapons Range), Point Blank, Ram, Board Enemy Ships, Drop Troops and Don't Get Hurt. What each does is §16.1. Use the secondary strategy when the primary is impossible, for example Drop Troops with no troops. |
-| `Targeting Priority 1..4` | Sort keys for choosing a target, applied in order: Nearest, Farthest, Largest, Smallest, Most Damaged, Least Damaged, Fastest, Slowest, Strongest, Weakest, Has Weapons, Does Not Have Weapons. The first key filters or sorts, and later keys break ties. |
-| `Use Type Priority First`, `Type Priority <Cat>` | Rank per category (1 = engage first) over 14 categories: Planets, Fighters, Seekers(On Us), Seekers(On Others), Mines, Carriers, Colony Ships, Transports, Bases(No Weapons), Ships(No Weapons), Bases, Ships, Satellites, Drones. The flag decides whether category rank is applied before the targeting keys. The UI also offers turning type priority off. |
+| `Targeting Priority 1..4` | Sort keys for choosing a target, applied in order: Nearest, Farthest, Largest, Smallest, Most Damaged, Least Damaged, Fastest, Slowest, Strongest, Weakest, Has Weapons, Does Not Have Weapons. Each later key decides only between candidates the earlier ones find equal. What each key measures is below the table. |
+| `Use Type Priority First`, `Type Priority <Cat>` | Rank per category (1 = engage first) over 14 categories: Planets, Fighters, Seekers(On Us), Seekers(On Others), Mines, Carriers, Colony Ships, Transports, Bases(No Weapons), Ships(No Weapons), Bases, Ships, Satellites, Drones. With the flag on, the rank is compared first, as a plain number, lower first (so a rank of 0 comes before 1); with it off the ranks are never looked at, not even to break ties: only the four targeting keys compare (confirmed: binary; corrected 2026-10-14, complete listing). All ten stock strategies have the flag off. |
 | `Dont Fire On <Cat>` | Never engage that category. |
 | `Fighters Launch Group Amount` | Fighter group size at launch; 0 puts all of a carrier's fighters in one group (§10.4). |
 | "Drones Per Target" | Drone launch batch and limit (default 3); each drone is still its own group (§10.7). Not a DefaultStrategies.txt key. |
 | `Break Formation <Cat>` | Whether own pieces of that category leave the formation in combat. |
-| `Damage Percent Per Ship / Planet / Fighter Group / Satellite Group` | (confirmed: binary) While choosing targets, a ship, planet, fighter group or satellite group already damaged by more than this percentage is skipped, unless `Damage Until All Weapons Gone` is set and it still has weapons. Drones and seekers are never skipped this way. If no target is left, the choice is made again without this filter. |
+| `Damage Percent Per Ship / Planet / Fighter Group / Satellite Group` | (confirmed: binary) While choosing targets, a ship, planet, fighter group or satellite group already damaged by more than this percentage is skipped, unless `Damage Until All Weapons Gone` is set and it still has weapons. The damage counted is only what it took in this battle: 100 − Round(100 × its current hit points ÷ its hit points when it entered the battle), a ship's current hit points being its intact structure less its damage pool; so a ship that arrives 85 % damaged counts 0 % here and is not skipped. The test is made only when the percentage is below 100 (confirmed: binary; corrected 2026-10-14, complete listing). Drones and seekers are never skipped this way. If no target is left, the choice is made again without this filter. |
 | `Damage Until All Weapons Gone` | See the row above. |
+
+**What the keys measure** (confirmed: binary; corrected 2026-10-14, complete listing; the
+spec named the keys without saying):
+
+- **Nearest** and **Farthest**: the aim distance from the choosing piece (§1), so a planet
+  counts up to 3 squares farther than its near edge.
+- **Largest** and **Smallest**: twice the piece's full hit points: a ship's or base's whole
+  design structure with mounts, a unit group's units × each unit's hit points (§9.4). A
+  planet counts 5000 and a seeker 1, so a ship of more than 2500 structure outranks a
+  planet.
+- **Most Damaged** and **Least Damaged**: the damage percentage 100 − Round(100 × current
+  hit points ÷ full hit points), 100 when the full value is 0 and 0 when the current value
+  is above it. A ship's current hit points are its intact components' structure less its
+  damage pool (§9.1), so damage held in the pool counts. Least Damaged is the same order
+  reversed. For a unit group the full value counts every unit it had when it entered,
+  and the current one its living units less its pool (inferred, question 100).
+- **Fastest** and **Slowest**: the piece's combat movement allowance for the combat turn
+  (§5). It follows hits, but it is not the points left, so a fast ship that has already
+  moved still ranks as fast.
+- **Strongest** and **Weakest**: the strength below.
+- **Has Weapons** and **Does Not Have Weapons**: the weapons flag below.
+
+**Strength and the weapons flag** (confirmed: binary; added 2026-10-14, complete listing).
+Both are worked out once for each piece, when it enters the battle (at set-up, or when it
+is launched), and again only for a planet's piece when it is set up again after a landing
+(§11). Damage taken during the battle changes neither.
+
+- **Strength** of a ship or base: let W be the sum, over its intact weapon components of
+  any kind, of each one's largest damage at ranges 1 to 20 with its mount, and A its total
+  `Boarding Attack` from intact parts. If W + A is above 0 its strength is W + A + S ÷ 2
+  (truncated), S being the total `Shield Generation`, `Phased Shield Generation` and
+  `Planet - Shield Generation` of its intact parts; otherwise 0. Each fighter in its cargo
+  then adds its design's rating, the sum over the design's weapons of each one's largest
+  damage at ranges 1 to 20. A ship without supplies has the whole divided by 5
+  (truncated). A mothballed ship counts 0 (inferred).
+- A fighter group's strength is the number of weapon components on its units (units ×
+  weapons each), divided by 5 without supplies; a satellite or drone group's is the same
+  count, never divided.
+- A planet's strength is the rating of the units in its cargo (count × design rating) and,
+  when that is above 0, the colony's total `Planet - Shield Generation` ÷ 5 added;
+  otherwise 0.
+- A seeker's strength is 0.
+- **The weapons flag.** A ship or base has weapons when its design has a weapon component
+  of any kind, point-defense and warheads included, destroyed ones too; a mothballed ship
+  has none. A unit group has weapons when its units' designs carry weapon components, a
+  planet when its cargo holds weapon platforms with weapons. The same flag puts a ship or
+  base in Ships or Bases or in their "(No Weapons)" categories, so a warship whose weapons
+  are all shot away still sorts as armed and stays in Ships for the whole battle, and a
+  ship armed only with warheads counts as armed. An Optimal Weapons Range ship without
+  the flag rams (§16.1). Has Weapons is priority 1 of all ten stock strategies, and
+  Strongest priority 2 of six of them.
+
+Since 2026-10-14 ours follows (`Battle::sortedTargets`, `Battle::rateOnEntry`,
+`strengthOf`, `weaponsFlag`, `sizeOf`, `fullHitPoints`, `currentHitPoints`). It used to
+measure Nearest by range distance, Largest by hull tonnage (planets always largest),
+Most Damaged truncated and without the pool, Fastest by the points left, Strongest by
+weapon damage per reload without shields, boarding or carried fighters and refreshed
+after every hit, and the weapons flag by an intact weapon other than a warhead now; it
+also broke ties by the type ranks with the flag off and treated a rank of 0 as last.
 
 **The Strategies window** (confirmed: binary). Its pages are Movement, Firing, Damage,
 Launching and Formation. Damage holds the four `Damage Percent` settings and `Damage Until
@@ -1310,7 +1369,20 @@ it fires. Both use the same steps; only the firing choice checks distance.
    never reaches past 20 squares, even for a mounted weapon whose range-20 entry is
    above 0 (confirmed: binary). The `Damage Percent` filters (table above) apply first;
    if they leave nothing, the candidates are taken again without them. The list is
-   sorted by the strategy's priorities.
+   sorted by the strategy's priorities (the table above).
+   **The sort** (confirmed: binary; added 2026-10-14, complete listing). The list is
+   built in piece order and sorted in place by a quicksort that is not stable, so
+   candidates equal on every key end in the order it leaves them. For each range of the
+   list, the element at its middle (the lower of the two middles) is the pivot. A scan
+   from the low end stops at the first element that does not come strictly before the
+   pivot, a scan from the high end at the first that does not come strictly after it;
+   the two are swapped, equal ones included, both scans step past them, and this goes on
+   until the scans cross. Then the lower part is sorted the same way, and after it the
+   upper part. A candidate comes "before" another only when the comparison says strictly
+   before. So two equal candidates come out in reverse piece order, three also reversed,
+   and four as 3, 4, 1, 2: with two equal best candidates the main target is the later
+   piece. Since 2026-10-14 ours follows (`detail::classicQuicksort`); it used to break
+   such ties by piece order, the earlier piece first.
 2. **Main target.** The first candidate of the sorted list, whether or not any weapon of
    the piece can hit it. The range strategies measure their distances from it (§16.1).
 3. **Budget.** Only the first B candidates are used, where B is the piece's target budget
@@ -2412,3 +2484,21 @@ traced and are OpenSE4's choices until a session with the executable settles the
     strategy data file leaves out, where OpenSE4 also used fighter groups of 10, ships
     skipped only at 100 % and no Break Formation (§16 "The Strategies window"). Since
     2026-10-14 ours follows (`combat::Strategy`, `combat::newStrategyRecord`).
+
+### 19.8 Questions from the 2026-10-14 accuracy pass
+
+The accuracy pass of 2026-10-14 settled most of §19.6 and §19.7 from the complete listing
+and corrected several earlier answers. These details were left open; each is OpenSE4's
+choice, marked "(inferred)" in the code, until a session with the executable settles it:
+
+99. **A launched group joined in the same Launch Units window.** Strength and the weapons
+    flag (§16) are set when a piece enters the battle. When later units of the same kind
+    join a group launched earlier in the same window (§10.4), is the group rated again
+    with them? Ours rates it again, as it takes its hit points at the start again
+    (`Battle::joinUnit`, inferred).
+100. **A unit group's damage percentage.** Most Damaged and Least Damaged (§16) measure
+    100 − Round(100 × current ÷ full hit points). For a unit group the finding did not
+    trace which values the original uses. Ours takes as full every unit the group had when
+    it entered (killed units stay in its records until the battle ends, §9.4), and as
+    current its living units' hit points less its pool; Largest and Smallest take twice
+    the same full value (`Battle::fullHitPoints`, inferred).

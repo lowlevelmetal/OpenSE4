@@ -64,7 +64,7 @@ constexpr int64_t kSelfDestruct = 10000;
 constexpr int64_t kRegenerationCap = 10000;      // organic armor pool, and the end-of-battle restore
 constexpr int kShipKillTenths = 10;              // +1.0 for a ship, base or planet
 constexpr int kUnitKillTenths = 1;               // +0.1 for a whole unit group or a seeker
-constexpr int64_t kPlanetSizeRank = 1'000'000;   // planets rank as the largest targets
+constexpr int64_t kPlanetSizeRank = 5000;        // what Largest and Smallest count for a planet (spec 04 §16)
 constexpr int64_t kDangerOwnSquare = 30;         // a hostile piece's own square (spec 04 §16.1)
 
 // Facings (spec 03 §10): 0 up, 1 right, 2 down, 3 left, then the diagonals.
@@ -427,6 +427,8 @@ bool Battle::setup() {
         if (p.kind == Kind::Vehicle) detail::refreshShields(r_, s_, p.unit, shieldBonus(p.owner), disruption_, p.sh, true);
         else if (p.kind == Kind::Planet) planetShields(p, true);
         if (p.kind == Kind::Planet) p.hpStart = planetHp(p);
+        if (p.kind == Kind::Vehicle) p.hpStart = detail::remainingStructure(r_, s_, p.unit);   // its pool starts at 0
+        rateOnEntry(static_cast<int>(i));
         refreshPiece(static_cast<int>(i));
     }
     place();
@@ -890,44 +892,146 @@ void Battle::refreshStats(int i) {
         p.budget = static_cast<int>(std::max<int64_t>(1, detail::componentBest(r_, s_, p.unit, AbilityKind::MultiplexTracking)));
     }
     refreshCombatValues(i);
-    // Firepower by range, used to rank targets by strength.
-    p.firepower.fill(0);
-    p.strength = 0;
+    // The weapons it can fire now (they follow hits); the weapons flag and the
+    // strength the targeting keys use are fixed when it enters (rateOnEntry).
     p.armed = false;
     p.guns = false;
     for (const Weapon& w : p.weapons) {
-        const int n = instances(i, w) * firedTogether(i, w);
-        if (n <= 0) continue;
+        if (instances(i, w) * firedTogether(i, w) <= 0) continue;
         p.armed = true;
         if (w.kind() != WeaponKind::PointDefense) p.guns = true;
-        int64_t best = 0;
-        for (int d = 1; d <= kRangeTable; ++d) {
-            const int64_t dmg = int64_t{weaponDamage(r_, w.de, d)} * n / w.reloadRate;
-            p.firepower[static_cast<size_t>(d)] += dmg;
-            best = std::max(best, dmg);
+    }
+}
+
+namespace {
+
+// A weapon's largest damage at any range from 1 to 20, with its mount (spec 04 §16 strength).
+int64_t bestDamageInRange(const Rules& r, const DesignEntry& e) {
+    int64_t best = 0;
+    for (int d = 1; d <= 20; ++d) best = std::max<int64_t>(best, weaponDamage(r, e, d));
+    return best;
+}
+
+// A design's rating: the sum over its weapons of each one's largest damage at ranges 1 to 20.
+int64_t designRating(const Rules& r, const Design& d) {
+    int64_t total = 0;
+    for (const DesignEntry& e : d.entries)
+        if (r.component(e.component).isWeapon()) total += bestDamageInRange(r, e);
+    return total;
+}
+
+int64_t weaponComponents(const Rules& r, const Design& d) {
+    int64_t n = 0;
+    for (const DesignEntry& e : d.entries)
+        if (r.component(e.component).isWeapon()) ++n;
+    return n;
+}
+
+} // namespace
+
+// Strength for Strongest and Weakest (spec 04 §16, confirmed: binary; added
+// 2026-10-14, complete listing), worked out when the piece enters:
+//   - a ship or base: W, its intact weapons' (any kind) largest damage at
+//     ranges 1 to 20 with mounts, summed, and A, its Boarding Attack; W + A +
+//     its shield generation ÷ 2 when W + A is above 0, else 0; then each
+//     fighter in its cargo adds its design's rating; without supplies the
+//     whole is divided by 5;
+//   - a fighter group: its weapon components (units × weapons each), ÷ 5
+//     without supplies; a satellite or drone group: the same count, never
+//     divided;
+//   - a planet: its cargo's rating (count × design rating) and, when that is
+//     above 0, the colony's Planet - Shield Generation ÷ 5;
+//   - a seeker: 0.
+int64_t Battle::strengthOf(int i) const {
+    const Piece& p = pieces_[i];
+    switch (p.kind) {
+        case Kind::Vehicle: {
+            if (p.mothballed) return 0;   // (inferred) a mothballed ship has no weapons and no abilities
+            const Design& d = s_.design(p.unit.design);
+            int64_t w = 0;
+            for (size_t e = 0; e < d.entries.size(); ++e)
+                if (r_.component(d.entries[e].component).isWeapon() && entryIntact(r_, s_, p.unit, e)) w += bestDamageInRange(r_, d.entries[e]);
+            const int64_t a = detail::componentSum(r_, s_, p.unit, AbilityKind::BoardingAttack);
+            const int64_t shields = detail::componentSum(r_, s_, p.unit, AbilityKind::ShieldGeneration) +
+                                    detail::componentSum(r_, s_, p.unit, AbilityKind::PhasedShieldGeneration) +
+                                    detail::componentSum(r_, s_, p.unit, AbilityKind::PlanetShieldGeneration);
+            int64_t strength = w + a > 0 ? w + a + shields / 2 : 0;
+            for (const UnitStack& st : p.unit.cargo.units) {
+                const Design& u = s_.design(st.design);
+                if (st.count > 0 && r_.hull(u.hull).type == VehicleType::Fighter) strength += int64_t{st.count} * designRating(r_, u);
+            }
+            return hasSupply(i) ? strength : strength / 5;
         }
-        p.strength += best;
+        case Kind::UnitGroup: {
+            int64_t n = 0;
+            for (const UnitStack& st : p.stacks)
+                if (st.count > 0) n += int64_t{st.count} * weaponComponents(r_, s_.design(st.design));
+            return p.vtype == VehicleType::Fighter && !hasSupply(i) ? n / 5 : n;
+        }
+        case Kind::Planet: {
+            int64_t total = 0;
+            for (const UnitStack& st : p.unit.cargo.units)
+                if (st.count > 0) total += int64_t{st.count} * designRating(r_, s_.design(st.design));
+            if (total <= 0) return 0;
+            int64_t planetShield = 0;
+            for (uint32_t f : p.facilities) planetShield += sumValue1(r_.facilityAbilities(f), AbilityKind::PlanetShieldGeneration);
+            return total + planetShield / 5;
+        }
+        default: return 0;
     }
-    // Viewer-independent category.
-    if (p.kind == Kind::Planet) p.category = TargetCategory::Planets;
-    else if (p.vtype == VehicleType::Fighter) p.category = TargetCategory::Fighters;
-    else if (p.vtype == VehicleType::Satellite) p.category = TargetCategory::Satellites;
-    else if (p.vtype == VehicleType::Drone) p.category = TargetCategory::Drones;
-    else if (p.vtype == VehicleType::Base) p.category = p.armed ? TargetCategory::Bases : TargetCategory::BasesNoWeapons;
-    else {
-        const Design& d = s_.design(p.unit.design);
-        const bool colony = detail::designHasComponent(r_, d, AbilityKind::ColonizeRock) ||
-                            detail::designHasComponent(r_, d, AbilityKind::ColonizeIce) ||
-                            detail::designHasComponent(r_, d, AbilityKind::ColonizeGas);
-        const bool carrier = detail::designHasComponent(r_, d, AbilityKind::LaunchRecoverFighters) ||
-                             detail::designHasComponent(r_, d, AbilityKind::LaunchDrones) ||
-                             detail::designHasComponent(r_, d, AbilityKind::LaunchRecoverSatellites) ||
-                             detail::designHasComponent(r_, d, AbilityKind::LayMines);
-        if (colony) p.category = TargetCategory::ColonyShips;
-        else if (carrier) p.category = TargetCategory::Carriers;
-        else if (!p.armed && vehicleCargoCapacity(r_, s_, p.unit) > 0) p.category = TargetCategory::Transports;
-        else p.category = p.armed ? TargetCategory::Ships : TargetCategory::ShipsNoWeapons;
+}
+
+// The weapons flag (spec 04 §16, confirmed: binary; added 2026-10-14,
+// complete listing): a ship's or base's design has a weapon component of any
+// kind, point-defense and warheads included, destroyed ones too (a mothballed
+// ship has none); a unit group's designs carry weapons; a planet's cargo holds
+// weapon platforms with weapons.
+bool Battle::weaponsFlag(int i) const {
+    const Piece& p = pieces_[i];
+    switch (p.kind) {
+        case Kind::Vehicle: return !p.mothballed && weaponComponents(r_, s_.design(p.unit.design)) > 0;
+        case Kind::UnitGroup:
+            return std::any_of(p.stacks.begin(), p.stacks.end(),
+                               [&](const UnitStack& st) { return st.count > 0 && weaponComponents(r_, s_.design(st.design)) > 0; });
+        case Kind::Planet:
+            return std::any_of(p.unit.cargo.units.begin(), p.unit.cargo.units.end(), [&](const UnitStack& st) {
+                const Design& d = s_.design(st.design);
+                return st.count > 0 && r_.hull(d.hull).type == VehicleType::WeaponPlatform && weaponComponents(r_, d) > 0;
+            });
+        default: return false;
     }
+}
+
+// The piece's category, viewer-independent, from the weapons flag: a ship
+// whose weapons are all shot away stays in Ships (spec 04 §16, confirmed:
+// binary). The rest of the rule is OpenSE4's: a colony ship by its colony
+// module, a carrier by a launch bay or mine layer, a transport by cargo space.
+TargetCategory Battle::categoryOnEntry(int i) const {
+    const Piece& p = pieces_[i];
+    if (p.kind == Kind::Planet) return TargetCategory::Planets;
+    if (p.vtype == VehicleType::Fighter) return TargetCategory::Fighters;
+    if (p.vtype == VehicleType::Satellite) return TargetCategory::Satellites;
+    if (p.vtype == VehicleType::Drone) return TargetCategory::Drones;
+    if (p.vtype == VehicleType::Base) return p.hasWeapons ? TargetCategory::Bases : TargetCategory::BasesNoWeapons;
+    const Design& d = s_.design(p.unit.design);
+    const bool colony = detail::designHasComponent(r_, d, AbilityKind::ColonizeRock) || detail::designHasComponent(r_, d, AbilityKind::ColonizeIce) ||
+                        detail::designHasComponent(r_, d, AbilityKind::ColonizeGas);
+    const bool carrier = detail::designHasComponent(r_, d, AbilityKind::LaunchRecoverFighters) ||
+                         detail::designHasComponent(r_, d, AbilityKind::LaunchDrones) ||
+                         detail::designHasComponent(r_, d, AbilityKind::LaunchRecoverSatellites) ||
+                         detail::designHasComponent(r_, d, AbilityKind::LayMines);
+    if (colony) return TargetCategory::ColonyShips;
+    if (carrier) return TargetCategory::Carriers;
+    if (!p.hasWeapons && vehicleCargoCapacity(r_, s_, p.unit) > 0) return TargetCategory::Transports;
+    return p.hasWeapons ? TargetCategory::Ships : TargetCategory::ShipsNoWeapons;
+}
+
+void Battle::rateOnEntry(int i) {
+    Piece& p = pieces_[i];
+    if (p.kind == Kind::Obstacle || p.kind == Kind::Seeker) return;
+    p.hasWeapons = weaponsFlag(i);
+    p.strength = strengthOf(i);
+    p.category = categoryOnEntry(i);
 }
 
 void Battle::refreshPiece(int i) {
@@ -935,7 +1039,7 @@ void Battle::refreshPiece(int i) {
     if (!p.alive || p.kind == Kind::Seeker || p.kind == Kind::Obstacle) return;
     p.engaged.clear();
     p.launchedNow = {};
-    p.mp = computeMp(i);
+    p.mp = p.allowance = computeMp(i);
     refreshStats(i);
 }
 
@@ -1156,16 +1260,37 @@ int Battle::damagePercent(int j) const {
     return static_cast<int>(std::clamp<int64_t>((total - hitPoints(j)) * 100 / total, 0, 100));
 }
 
+// Largest and Smallest (spec 04 §16, confirmed: binary; corrected
+// 2026-10-14, complete listing): twice the full hit points, 5000 for a planet
+// and 1 for a seeker, so a ship of more than 2500 structure outranks a planet.
 int64_t Battle::sizeOf(int j) const {
     const Piece& p = pieces_[j];
     if (p.kind == Kind::Planet) return kPlanetSizeRank;
-    if (p.kind == Kind::Seeker || p.kind == Kind::Obstacle) return 0;
-    if (p.kind == Kind::UnitGroup) {
-        int64_t tons = 0;
-        for (const UnitStack& st : p.stacks) tons += int64_t{r_.hull(s_.design(st.design).hull).tonnage} * std::max(0, st.count);
-        return tons;
+    if (p.kind == Kind::Seeker) return 1;
+    if (p.kind == Kind::Obstacle) return 0;
+    return 2 * fullHitPoints(j);
+}
+
+// Full hit points (spec 04 §16): a ship's or base's whole design structure
+// with mounts; a unit group's units at full health, counting every unit it
+// had when it entered (inferred, spec 04 §19.8 Q100); a planet's hit points
+// at the battle's start; a seeker's resistance for each member.
+int64_t Battle::fullHitPoints(int j) const {
+    const Piece& p = pieces_[j];
+    switch (p.kind) {
+        case Kind::Vehicle: return detail::designStructure(r_, s_.design(p.unit.design));
+        case Kind::UnitGroup:
+        case Kind::Planet: return p.hpStart;
+        case Kind::Seeker: return p.hp * p.members;
+        case Kind::Obstacle: return 0;
     }
-    return int64_t{r_.hull(s_.design(p.unit.design).hull).tonnage} * p.unit.count;
+    return 0;
+}
+
+int64_t Battle::currentHitPoints(int j) const {
+    const Piece& p = pieces_[j];
+    if (p.kind == Kind::Vehicle) return std::max<int64_t>(0, detail::remainingStructure(r_, s_, p.unit) - p.pool);
+    return hitPoints(j);
 }
 
 bool Battle::hasSupply(int i) const {
@@ -1323,6 +1448,15 @@ bool Battle::holdsFire(EmpireId e) {
     return false;
 }
 
+// The candidates of a choice, sorted (spec 04 §16 step 1, confirmed: binary;
+// corrected 2026-10-14, complete listing). They are listed in piece order and
+// sorted by the original's quicksort (classicQuicksort), which is not stable:
+// candidates equal on every key end in the order it leaves them, so with two
+// equal best candidates the later piece comes first. With Use Type Priority
+// First on, the category's rank comes first as a plain number, lower first (a
+// rank of 0 before 1); with it off the ranks are never looked at. Then the
+// four targeting keys, each deciding only between candidates the earlier ones
+// find equal.
 std::vector<int> Battle::sortedTargets(int i, const Strategy& S, int range, uint8_t only) {
     struct Candidate {
         int idx = 0;
@@ -1352,32 +1486,35 @@ std::vector<int> Battle::sortedTargets(int i, const Strategy& S, int range, uint
         }
         Candidate c;
         c.idx = j;
-        const int pr = S.typePriority[static_cast<size_t>(cat)];
-        c.priority = pr > 0 ? pr : 1000;
-        // Skip targets damaged past the strategy's percentage, unless they still have
-        // weapons and the strategy says so; drones and seekers never (confirmed: binary).
+        c.priority = S.typePriority[static_cast<size_t>(cat)];
+        // Skip targets damaged in this battle past the strategy's percentage,
+        // measured against their hit points when they entered, and only when
+        // the percentage is below 100; unless they still have weapons and the
+        // strategy says so; drones and seekers never (spec 04 §16, confirmed:
+        // binary; corrected 2026-10-14, complete listing).
         int threshold = S.damagePercentShip;
         if (b.kind == Kind::Planet) threshold = S.damagePercentPlanet;
         else if (b.vtype == VehicleType::Fighter) threshold = S.damagePercentFighters;
         else if (b.vtype == VehicleType::Satellite) threshold = S.damagePercentSatellites;
-        const int dmgPct = damagePercent(j);
-        c.fresh = b.kind == Kind::Seeker || b.vtype == VehicleType::Drone || (S.damageUntilWeaponsGone && b.armed) || dmgPct <= threshold;
+        if (b.kind != Kind::Seeker && !(b.kind == Kind::UnitGroup && b.vtype == VehicleType::Drone) && threshold < 100 &&
+            !(S.damageUntilWeaponsGone && b.armed))
+            c.fresh = logDamagePercent(b.hpStart, currentHitPoints(j)) <= threshold;
         for (size_t n = 0; n < S.targeting.size(); ++n) {
             int64_t v = 0;
             switch (S.targeting[n]) {
                 case TargetKey::None: break;
-                case TargetKey::Nearest: v = dist(i, j); break;
-                case TargetKey::Farthest: v = -dist(i, j); break;
+                case TargetKey::Nearest: v = aimDist(i, j); break;    // the aim distance (confirmed: binary)
+                case TargetKey::Farthest: v = -aimDist(i, j); break;
                 case TargetKey::Largest: v = -sizeOf(j); break;
                 case TargetKey::Smallest: v = sizeOf(j); break;
-                case TargetKey::MostDamaged: v = -dmgPct; break;
-                case TargetKey::LeastDamaged: v = dmgPct; break;
-                case TargetKey::Fastest: v = -b.mp; break;
-                case TargetKey::Slowest: v = b.mp; break;
+                case TargetKey::MostDamaged: v = -logDamagePercent(fullHitPoints(j), currentHitPoints(j)); break;
+                case TargetKey::LeastDamaged: v = logDamagePercent(fullHitPoints(j), currentHitPoints(j)); break;
+                case TargetKey::Fastest: v = -b.allowance; break;
+                case TargetKey::Slowest: v = b.allowance; break;
                 case TargetKey::Strongest: v = -b.strength; break;
                 case TargetKey::Weakest: v = b.strength; break;
-                case TargetKey::HasWeapons: v = b.armed ? 0 : 1; break;
-                case TargetKey::NoWeapons: v = b.armed ? 1 : 0; break;
+                case TargetKey::HasWeapons: v = b.hasWeapons ? 0 : 1; break;
+                case TargetKey::NoWeapons: v = b.hasWeapons ? 1 : 0; break;
             }
             c.keys[n] = v;
         }
@@ -1388,11 +1525,11 @@ std::vector<int> Battle::sortedTargets(int i, const Strategy& S, int range, uint
     if (std::any_of(list.begin(), list.end(), [](const Candidate& c) { return c.fresh; }))
         std::erase_if(list, [](const Candidate& c) { return !c.fresh; });
     const bool typeFirst = S.typePriorityFirst;
-    std::sort(list.begin(), list.end(), [&](const Candidate& x, const Candidate& y) {
-        if (typeFirst && x.priority != y.priority) return x.priority < y.priority;
-        if (x.keys != y.keys) return x.keys < y.keys;
-        if (!typeFirst && x.priority != y.priority) return x.priority < y.priority;   // (inferred) later tie-break
-        return x.idx < y.idx;
+    classicQuicksort(list, [&](const Candidate& x, const Candidate& y) {
+        if (typeFirst && x.priority != y.priority) return x.priority < y.priority ? -1 : 1;
+        for (size_t n = 0; n < x.keys.size(); ++n)
+            if (x.keys[n] != y.keys[n]) return x.keys[n] < y.keys[n] ? -1 : 1;
+        return 0;
     });
     std::vector<int> out;
     out.reserve(list.size());
@@ -1951,6 +2088,7 @@ void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
     sk.seekTarget = t;
     sk.launcher = i;
     sk.speed = std::max(0, w.comp->weapon.seekerSpeed);
+    sk.allowance = sk.speed;   // (inferred) Fastest and Slowest see a seeker's speed
     sk.hp = std::max(1, w.comp->weapon.seekerDamageResistance);
     sk.seekWeapon = w;
     sk.members = count;
@@ -2013,9 +2151,13 @@ void Battle::applyHit(int att, int t, DamageType type, int64_t damage) {
     // maximum; if that leaves 0 and its side is automated, the whole group
     // dissolves (spec 03 §10, §19 Q60, confirmed: binary).
     Piece& leader = pieces_[t];
-    if (combatant(t) && leader.isLeader && (leader.kind == Kind::Vehicle || leader.kind == Kind::UnitGroup)) {
-        leader.mp = std::min(leader.mp, computeMp(t));
-        if (leader.mp <= 0 && automated(leader.owner)) dissolve(t);
+    if (combatant(t) && (leader.kind == Kind::Vehicle || leader.kind == Kind::UnitGroup)) {
+        // Its movement allowance, as Fastest and Slowest see it, follows every hit (spec 04 §16).
+        leader.allowance = computeMp(t);
+        if (leader.isLeader) {
+            leader.mp = std::min(leader.mp, leader.allowance);
+            if (leader.mp <= 0 && automated(leader.owner)) dissolve(t);
+        }
     }
 }
 
@@ -2663,6 +2805,7 @@ int Battle::spawnUnit(int carrier, DesignId design, int count) {
     buildWeapons(u);
     const int idx = addPiece(std::move(u));
     occupy(idx);
+    rateOnEntry(idx);
     refreshPiece(idx);   // launched units get their full movement at once (history 1.55, 1.71)
     event(Ev::Launch, idx, carrier, count);
     // A drone group chooses its drone target as it is launched (spec 04 §10.7).
@@ -2692,6 +2835,9 @@ void Battle::joinUnit(int group, DesignId design, int count) {
     g.hpStart = groupHitPoints(g);
     g.tonnageHad += designTonnage(r_, s_.design(design)) * count;
     rec_.pieces[static_cast<size_t>(group)].count += count;
+    // The group is rated again with its new units, as its hit points at the
+    // start are (inferred, spec 04 §19.8 Q99).
+    rateOnEntry(group);
     refreshStats(group);
     event(Ev::Launch, group, g.carrier, count);
 }
@@ -2722,11 +2868,12 @@ void Battle::walk(int i, const std::vector<std::pair<int, int>>& path) {
 
 // Spec 04 §16.1: the primary strategy unless it is impossible, else the
 // secondary tested the same way, else Don't Get Hurt (a secondary Ram never
-// falls back). An Optimal ship with no weapons at all rams.
+// falls back). An Optimal ship whose design has no weapon component at all
+// (the weapons flag, spec 04 §16) rams.
 MoveStrategy Battle::strategyInEffect(int i) {
     const Piece& p = pieces_[i];
     const Strategy& S = strategyOf(i);
-    if (p.kind == Kind::Vehicle && S.primary == MoveStrategy::OptimalRange && !p.armed) return MoveStrategy::Ram;
+    if (p.kind == Kind::Vehicle && S.primary == MoveStrategy::OptimalRange && !p.hasWeapons) return MoveStrategy::Ram;
     auto possible = [&](MoveStrategy m) {
         switch (m) {
             case MoveStrategy::DontGetHurt: return true;
@@ -3577,6 +3724,7 @@ void Battle::dropTroops(int i) {
     for (Weapon& w : p.weapons) std::fill(w.reload.begin(), w.reload.end(), 0);
     for (Weapon& w : p.warheads) std::fill(w.reload.begin(), w.reload.end(), 0);
     planetShields(p, true);
+    rateOnEntry(t);   // set up again: its strength and weapons flag are worked out anew (spec 04 §16)
     refreshStats(t);
     if (o.captured) {
         event(Ev::Captured, t, i, static_cast<int>(attacker.value));

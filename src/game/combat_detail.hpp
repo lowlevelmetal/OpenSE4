@@ -17,6 +17,40 @@ struct TurnContext;
 
 namespace opense4::game::combat::detail {
 
+// The sort the computer's target candidates go through (spec 04 §16 step 1,
+// confirmed: binary): a quicksort in place, not stable, so candidates that
+// compare equal end in the order it leaves them (two equal ones come out
+// reversed, four as 3, 4, 1, 2). Each range takes the element at its middle
+// (the lower of the two middles) as the pivot; a scan from the low end stops
+// at the first element not strictly before the pivot, one from the high end
+// at the first not strictly after it, and the two are swapped, equal ones
+// included, until the scans cross. The lower part is then sorted, then the
+// upper. `order(a, b)` is negative when a goes before b, positive when after,
+// 0 when they are equal. Written out here, never std::sort, so that every
+// compiler gives the same order.
+template <class T, class Order>
+void quicksortRange(std::vector<T>& v, std::ptrdiff_t lo, std::ptrdiff_t hi, Order& order) {
+    while (lo < hi) {
+        std::ptrdiff_t i = lo, j = hi;
+        const T pivot = v[static_cast<size_t>(lo + (hi - lo) / 2)];
+        while (i <= j) {
+            while (i < hi && order(v[static_cast<size_t>(i)], pivot) < 0) ++i;
+            while (j > lo && order(v[static_cast<size_t>(j)], pivot) > 0) --j;
+            if (i <= j) {
+                std::swap(v[static_cast<size_t>(i)], v[static_cast<size_t>(j)]);
+                ++i;
+                --j;
+            }
+        }
+        if (lo < j) quicksortRange(v, lo, j, order);
+        lo = i;
+    }
+}
+template <class T, class Order>
+void classicQuicksort(std::vector<T>& v, Order order) {
+    if (v.size() > 1) quicksortRange(v, 0, static_cast<std::ptrdiff_t>(v.size()) - 1, order);
+}
+
 bool enemies(const GameState& s, EmpireId a, EmpireId b);   // hostile in either direction
 // Mines, troops and weapon platforms are never combat pieces.
 bool canBePiece(ruleset::VehicleType t);

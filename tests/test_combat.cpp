@@ -1172,6 +1172,10 @@ TEST_CASE("combat: a seeker in flight keeps its side in the battle; a target's d
         GameState& s = ar.s;
         const VehicleId launcher = spawn(s, frigate(s, ar.a, "Launcher", 2, {"CT Torpedo", "CT Torpedo"}), ar.loc);
         spawn(s, design(s, ar.b, "Fort", "Test Station", {"Test Bridge", "CT Big Gun", "CT Big Gun", "CT Big Armor"}), ar.loc);
+        // It closes in, firing as it comes, and once its torpedoes are shot away
+        // it rams: it still counts as armed (spec 04 §16), so only its secondary
+        // strategy makes it ram rather than run.
+        useStrategy(s, ar.a, {{"Primary Movement Strategy", "Point Blank"}, {"Secondary Movement Strategy", "Ram"}});
         TurnContext ctx = context(s);
         combat::resolveSpaceCombat(ctx, ar.loc);
         REQUIRE(s.combats.size() == 1);
