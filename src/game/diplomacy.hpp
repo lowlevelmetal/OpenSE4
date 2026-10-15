@@ -194,6 +194,13 @@ void recalculateColonies(const Rules& r, GameState& s);
 // ---- Ownership transfers (packages, surrender, defection, rebellion) ---------------------------
 
 void transferColony(GameState& s, ObjectId planet, EmpireId to);
+// A colony handed over by a package, a surrender or a `Planet - Population
+// Rebel` that joins the source: transferColony, and a new owner whose race
+// has `No Plagues` cures its plague at once, silently (spec 05 §3.4, §2.3,
+// confirmed: binary).
+void handOverColony(const Rules& r, GameState& s, ObjectId planet, EmpireId to);
+// A vehicle changes hands: it leaves its fleet, loses its orders and its
+// minister mark, and its system becomes explored for the new owner.
 void transferVehicle(GameState& s, VehicleId vehicle, EmpireId to);
 // Moves package items from `giver` to `receiver` (spec 05 §3.4, spec 06 §7
 // Q70, confirmed: binary), in package order, each item making its own log

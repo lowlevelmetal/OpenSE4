@@ -835,8 +835,30 @@ TEST_CASE("diplomacy: surrender and independence") {
     const SystemId homeSystemC = s.galaxy.object(homeworld(s, kC).planet).system;
     s.empire(kA).knowledge.explored[homeSystemC.index()] = 1;
     s.empire(kA).researchPool = 900;
+    // A's ships in a fleet; a plague on A's homeworld, and B a No Plagues race.
+    std::vector<VehicleId> shipsA;
+    const auto firstA = std::find_if(s.vehicles.begin(), s.vehicles.end(), [](const Vehicle& v) { return v.owner == kA; });
+    REQUIRE(firstA != s.vehicles.end());
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kA && v.location == firstA->location) shipsA.push_back(v.id);
+    REQUIRE_FALSE(shipsA.empty());
+    Fleet fleet;
+    fleet.owner = kA;
+    fleet.members = shipsA;
+    fleet.leader = shipsA.front();
+    fleet.location = s.vehicle(shipsA.front())->location;
+    const FleetId fleetA = s.addFleet(fleet).id;
+    for (VehicleId v : shipsA) s.vehicle(v)->fleet = fleetA;
+    s.colony(homeA)->plagueLevel = 2;
+    s.empire(kB).race.traits.push_back(traitIndex(r, "Test Machine Folk"));
     send(s, kA, kB, MessageType::Surrender);
     diplomacy::deliverMessages(ctx);
+    // Each ship leaves its fleet as it changes owner: B gets them in no fleet
+    // (spec 05 §3.4, confirmed: binary); A's fleet is left empty.
+    for (VehicleId v : shipsA) CHECK_FALSE(s.vehicle(v)->fleet.valid());
+    for (const Fleet& f : s.fleets) CHECK(f.owner != kB);
+    // A No Plagues race cures a plagued colony it receives at once.
+    CHECK(s.colony(homeA)->plagueLevel == 0);
     // Everything passes, but the empire lives on, owning nothing, until its
     // next destruction check (spec 05 §6).
     CHECK(s.empire(kA).alive);

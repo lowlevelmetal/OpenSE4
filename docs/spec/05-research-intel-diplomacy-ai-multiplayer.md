@@ -602,7 +602,11 @@ up the trade chain [M].
     combat stops [H]. (confirmed: binary) It takes effect only when the game option Allow
     Surrender is on (§7.4); otherwise the message does nothing. Every object of the sender
     passes to the recipient, and every system where such an object lies becomes explored
-    for the recipient; no other map knowledge passes. The recipient receives the sender's
+    for the recipient; no other map knowledge passes. Each object goes through the ordinary
+    change of owner, which first takes a ship out of its fleet and clears its orders: the
+    recipient gets the ships in no fleet, and the surrendering empire's fleets are left empty
+    and go with it (corrected 2026-10-14, complete listing; until then ours handed the fleets
+    over whole; since then ours follows, `diplomacy::surrender`). The recipient receives the sender's
     minerals, organics and radioactives, which drop to 0; research and intelligence points
     do not pass. Designs are learned as in §8 "Design knowledge". Technology: the
     recipient gains **exactly one level** in every area where its level is lower than the
@@ -650,7 +654,11 @@ up the trade chain [M].
 - **Package items** (each logged on its own when carried out, spec 06 §7 Q70; confirmed:
   binary):
   - Systems: our border claim on the system passes to the receiver.
-  - Planets: transfers ownership.
+  - Planets: transfers ownership. When the receiver's race has `No Plagues`, a plagued
+    colony is cured at once, silently; the same holds for a surrender and for a `Planet -
+    Population Rebel` that joins the source (confirmed: binary). Since 2026-10-14 ours
+    follows (`diplomacy::handOverColony`); until then the plague stayed until the new owner's
+    planet step cured it, after that turn's income step.
   - Resources: in steps of 1000.
   - Technologies.
   - Ships.

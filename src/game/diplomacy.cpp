@@ -594,6 +594,15 @@ void transferColony(GameState& s, ObjectId planet, EmpireId to) {
     explore(s, to, s.galaxy.object(planet).system);
 }
 
+void handOverColony(const Rules& r, GameState& s, ObjectId planet, EmpireId to) {
+    const Colony* c = s.colony(planet);
+    if (!c || !validEmpire(s, to) || c->owner == to) return;
+    transferColony(s, planet, to);
+    // A race with `No Plagues` cures a plagued colony it receives at once,
+    // silently (spec 05 §3.4, confirmed: binary).
+    if (Colony* now = s.colony(planet); now && r.hasTrait(s.empire(to).race, "No Plagues")) now->plagueLevel = 0;
+}
+
 void transferVehicle(GameState& s, VehicleId id, EmpireId to) {
     Vehicle* v = s.vehicle(id);
     if (!v || !validEmpire(s, to) || v->owner == to) return;
@@ -678,7 +687,7 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
                 // The receiver learns the designs of the units in the planet's
                 // cargo (spec 05 §8 "Design knowledge", confirmed: binary).
                 for (const UnitStack& u : c->cargo.units) learnForeign(s, receiver, u.design);
-                transferColony(s, item.planet, receiver);
+                handOverColony(r, s, item.planet, receiver);
                 const Location where = locationOf(s.galaxy, item.planet);
                 const std::string& planet = s.galaxy.object(item.planet).name;
                 entry(receiver, "Planet Received", std::format("The {} has handed {} over to us.", giverName, planet), LogGoto::Location, where);
@@ -765,17 +774,16 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     if (!s.options.allowSurrender) return;
     // Every object passes, and every system where one lies becomes explored
     // for the recipient; no other map knowledge passes.
+    // Each object goes through the ordinary change of owner: a ship first
+    // leaves its fleet and loses its orders, so the recipient gets the ships
+    // in no fleet and the surrendering empire's fleets are left empty (spec
+    // 05 §3.4, confirmed: binary).
     for (auto& c : s.colonies)
-        if (c && c->owner == from) transferColony(s, c->planet, to);
-    for (Fleet& f : s.fleets)
-        if (f.owner == from) f.owner = to;  // its members' copies of its orders are cleared below
-    for (Vehicle& v : s.vehicles)
-        if (v.owner == from) {
-            v.owner = to;
-            v.orders.clear();
-            v.repeatOrders = false;
-            explore(s, to, v.location.system);
-        }
+        if (c && c->owner == from) handOverColony(r, s, c->planet, to);
+    std::vector<VehicleId> vehicles;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == from) vehicles.push_back(v.id);
+    for (VehicleId id : vehicles) transferVehicle(s, id, to);
     // The minerals, organics and radioactives pass; research and intelligence points do not.
     Empire& loser = s.empire(from);
     s.empire(to).stockpile += max(loser.stockpile, Resources{});

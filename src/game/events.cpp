@@ -1065,7 +1065,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
                 // check covers it (spec 05 §3.1, confirmed: binary).
                 if (intel) diplomacy::firstContactIn(ctx, s.galaxy.object(t.object).system);
             } else if (rng.range(1, 4) == 1) {
-                diplomacy::transferColony(s, t.object, t.source);
+                diplomacy::handOverColony(r, s, t.object, t.source);  // cures a plague for a No Plagues race (spec 05 §2.3)
                 ctx.mood(owner, "Any Planet Lost");
                 if (home) ctx.mood(owner, "Homeworld Lost");
             } else {
