@@ -1,0 +1,95 @@
+# The tagged group across selections of one object (spec 06 §2.5, §2.8; the accuracy pass of
+# 2026-10-15), on a training game of our own (tests/input/learn-moves): turn-based, two attack
+# ships at home.
+# - Only Shift+C and a sector's selection clear the tags: a Goto that selects one ship elsewhere
+#   (here Ships\Units' row) keeps them, its report shows with OpenSE4's line saying the next
+#   order goes to the tagged group, and that order goes to the tagged ship, not to the one shown.
+# - OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options, OpenSE4) clears them
+#   then, as OpenSE4 did before.
+# - The main window counts one modifier at a time, Shift, else Alt, else Ctrl (spec 06 §3):
+#   Ctrl+Shift+A tags all as Shift+A does, Ctrl+Shift+C clears, Ctrl+Alt+3 (AltGr+3 on many
+#   keyboards) asks for waypoint 3's sector as Alt+3 does.
+# (docs/BUILDING.md "Input scripts")
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
+
+wait-lesson moves
+wait 5
+click tag:lesson:hide
+# One modifier at a time.
+click sector:home
+wait-for item:report:ship
+key Ctrl+Shift+A
+wait-for item:tagged:2
+key Ctrl+Shift+C
+wait-gone item:tagged:*
+key Ctrl+Alt+3
+wait-until { picking = "location" }
+click sector:empty nth=20
+wait 3
+assert { command = "SetWaypoint" }
+# The first ship sets out for the far corner: it stands elsewhere afterwards.
+click sector:home
+wait-for item:report:ship
+click item:"California 0001*"
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:12,12
+wait-gone sector:gliding
+
+# OpenSE4's option on: the Goto to the first ship clears the tags.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+click item:"Clear tags when selecting a ship elsewhere" in=options
+key Escape
+wait-closed options
+click sector:home
+wait-for item:report:ship
+click item:"California 0002*" shift
+wait-for item:tagged:1
+key F6
+wait-window ships
+click item:##row in=ships nth=1
+wait-closed ships
+wait 2
+assert-present item:Comps
+assert-absent item:tagged:*
+
+# The original's rule (the option off again): the tags stay through the Goto.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+click item:"Clear tags when selecting a ship elsewhere" in=options
+key Escape
+wait-closed options
+click sector:home
+wait-for item:report:ship
+click item:"California 0002*" shift
+wait-for item:tagged:1
+key F6
+wait-window ships
+click item:##row in=ships nth=1
+wait-closed ships
+wait 2
+# The first ship's report, with the line that the next order goes to the tagged ship.
+assert-present item:Comps
+assert-present item:tagged:1
+assert-absent sector:home+selected
+screenshot tags-kept.png
+# Move To: given to the tagged ship at home, not to the one shown.
+key M
+wait-until { picking = "move-to" }
+click sector:0,0
+wait 5
+assert { command = "OrderTagged" }
+assert-absent item:tagged:*
+wait-gone sector:gliding
+# The home sector holds the colony alone now: the tagged ship left (the one shown had no
+# movement left).
+click sector:home
+wait 3
+assert-absent item:report:ship

@@ -388,6 +388,10 @@ std::expected<std::pair<GameState, SaveInfo>, std::string> loadGame(const std::f
     // The computer players' demand lists are written to no saved game in the
     // original: every load empties them (spec 05 §7.4, question 83).
     ai::forgetUnsavedLists(game->first);
+    // The original disbands every fleet with no member at its place when a
+    // saved game is loaded: a fleet Fleet Transfer made and left empty goes
+    // then (spec 03 §9, spec 08 §3.6.12, confirmed: binary).
+    game->first.tidyFleets(false);
     return game;
 }
 

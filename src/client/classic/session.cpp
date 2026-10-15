@@ -1107,6 +1107,8 @@ void ClassicSession::reloadGame() {
     state_.pendingMood.clear();
     // Nor are the computer players' demand lists in the game file (spec 05 §7.4, question 83).
     game::ai::forgetUnsavedLists(state_);
+    // Loading disbands the fleets left without a member (spec 03 §9; game::loadGame).
+    state_.tidyFleets(false);
 }
 
 void ClassicSession::setPlayer(game::EmpireId e) {

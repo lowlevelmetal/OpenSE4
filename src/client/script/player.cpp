@@ -446,6 +446,13 @@ Player::Status Player::keyStep(const Step& st, FrameOutput& out) {
             e.alt = c.alt;
             e.decisive = press;
             queue_.push_back({e});
+            // held=N: the system's repeats, one a frame, while the key is down.
+            for (int64_t i = 0; press && i < st.number; ++i) {
+                InputEvent again = e;
+                again.repeat = true;
+                again.decisive = false;
+                queue_.push_back({again});
+            }
         }
         if (mods) {
             std::vector<InputEvent> up;

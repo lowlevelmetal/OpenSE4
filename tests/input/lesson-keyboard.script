@@ -2,7 +2,7 @@
 # docs/BUILDING.md "Input scripts"): Ctrl+Tab (which would bring another window to the front)
 # is refused, even while a text field has the keyboard; Tab only moves between the fields of the
 # window in front; and Space or Enter never press a button the keyboard went to. A key the step
-# allows still works: tutorial 5's step 12 takes Ctrl+F (the next fleet). The manual's search
+# allows still works: tutorial 5's step 13 takes Ctrl+1 (Move To Waypoint 1). The manual's search
 # field is the text field.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=fleets-and-movement --layout=1024x768 --size=1280x800
@@ -40,7 +40,15 @@ wait-step 11
 key Alt+1
 click sector:warp-point
 wait-step 12
-# Step 12 takes Space. First the manual, its search field, and the keys that move around.
+# Enter is End Turn in the main window: refused here, and so are Space and Ctrl+F (the ship and
+# fleet cycles are not the step's: the fleet has used its movement). A click on the fleet's
+# sector is the step's.
+key Enter refused
+key Space refused
+key Ctrl+F refused
+click sector:ship+!home
+wait-step 13
+# Step 13. First the manual, its search field, and the keys that move around.
 click tag:lesson:read-more
 wait-window manual
 wait 5
@@ -57,16 +65,14 @@ wait 5
 key Escape
 wait-closed manual
 wait 5
-# Enter is End Turn in the main window: refused here, and so is Space (the ship cycle is not the
-# step's). Ctrl+F is the step's (the next fleet), and does nothing else: no window opens, no
-# turn ends.
+# Enter is still refused. Ctrl+1 is the step's (Move To Waypoint 1), and does nothing else: no
+# window opens, no turn ends.
 key Enter refused
-key Space refused
-key Ctrl+F
+key Ctrl+1
 wait 10
-assert { selected = "fleet", design_type = "Attack Ship" }
+assert { order = "move-to-waypoint", design_type = "Attack Ship" }
 assert-no-window manual
 assert-no-window planets
 assert-no-window fleet-transfer
 assert-turn 0
-wait-step 13
+wait-step 14

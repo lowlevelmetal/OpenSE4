@@ -885,11 +885,14 @@ TEST_CASE("client logic: intelligence target lists and the box's target line") {
         return out;
     };
 
-    // Stage 0: the living contacts, in empire order; the empire-only kinds end there.
+    // Stage 0: the living contacts by name, the letter case ignored (spec 06 §7 Q113 (e));
+    // the empire-only kinds end there.
+    s.empire(b).name = "zulu Empire";
+    s.empire(c).name = "Alpha Empire";
     const IntelTargetList empires = intelTargetList(r, s, a, order(Effect::ShipDamage), 0);
     CHECK(empires.title == "Select Empire");
-    CHECK(labels(empires) == std::vector<std::string>{s.empire(b).name, s.empire(c).name});
-    CHECK(empires.rows[1].order.target == c);
+    CHECK(labels(empires) == std::vector<std::string>{"Alpha Empire", "zulu Empire"});
+    CHECK(empires.rows[1].order.target == b);
     CHECK_FALSE(empires.last);
     CHECK(intelTargetList(r, s, a, order(Effect::PointsChange), 0).last);
 
@@ -947,12 +950,17 @@ TEST_CASE("client logic: intelligence target lists and the box's target line") {
         CHECK(std::find(open.begin(), open.end(), areas.rows[i].order.targetTech) != open.end());
     CHECK(intelTargetLine(r, s, areas.rows[0].order) == "Any Technology");
 
-    // A third empire: our other living contacts, the target left out.
+    // A third empire: our other living contacts by name, the target left out.
     const IntelTargetList third = intelTargetList(r, s, a, order(Effect::PoliticsDisruptTrade, b), 1);
     CHECK(third.title == "Select Empire");
     CHECK(labels(third) == std::vector<std::string>{"Any Empire", s.empire(c).name});
     CHECK(third.rows[1].order.thirdEmpire == c);
     CHECK(intelTargetLine(r, s, third.rows[1].order) == s.empire(c).name);
+    s.empire(d).alive = true;
+    s.empire(d).name = "Beta Empire";
+    CHECK(labels(intelTargetList(r, s, a, order(Effect::PoliticsDisruptTrade, b), 1)) ==
+          std::vector<std::string>{"Any Empire", "Alpha Empire", "Beta Empire"});
+    s.empire(d).alive = false;
 
     // The empire-only kinds and defense: no target line.
     CHECK(intelTargetLine(r, s, order(Effect::PointsSteal, b)).empty());

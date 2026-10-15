@@ -113,6 +113,7 @@ private:
         std::string title;
         std::string note;
         std::vector<Choice> items;
+        std::function<void()> cancelled;   // Cancel or Esc (none: nothing more)
     };
 
     // Selection.
@@ -133,11 +134,16 @@ private:
     // every redraw; the selection itself stays as clicked (spec 06 §2.4, §7 Q64).
     bool selectedSectorMarked(const UiContext& ui) const;
     std::vector<const game::Vehicle*> vehiclesAt(const UiContext& ui, game::Location where) const;
-    // The ship cycle of Space, Ctrl+N, Ctrl+B and the top selector (cycleShip, spec 06 §2.3).
+    // The ship cycle of Space, Ctrl+N, Ctrl+B and the top selector, the fleet
+    // cycle of Ctrl+F, Ctrl+D and the middle one, the colony cycle of Ctrl+C,
+    // Ctrl+X and the bottom one (cycleShip, cycleFleet, cycleColony, spec 06
+    // §2.3): each goes on from what it chose last.
     void cycleVehicle(UiContext& ui, int dir);
     ShipCycleMemory shipCycle_;
     void cycleFleet(UiContext& ui, int dir);
+    FleetCycleMemory fleetCycle_;
     void cycleColony(UiContext& ui, int dir);
+    ColonyCycleMemory colonyCycle_;
     // Tagging (Shift+click, Shift+A, Shift+C; §2.5): a vehicle in a fleet tags the fleet.
     void toggleTag(UiContext& ui, game::VehicleId v);
     void tagAll(UiContext& ui);
@@ -176,10 +182,15 @@ private:
         Pick pick = Pick::None;
         game::Location where;
         std::vector<PickCandidate> candidates;
+        std::optional<game::CargoKind> cargo;   // Drop Cargo: the kind asked first (none: cancelled, no order)
     };
     bool pursuingAttack(UiContext& ui) const;
     std::vector<PickCandidate> pickCandidates(UiContext& ui, Pick p, game::Location where) const;
-    void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c);
+    void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c, std::optional<game::CargoKind> cargo = std::nullopt);
+    // Drop Cargo once its kind was asked (or the question cancelled, `kind`
+    // none): the destination in the clicked sector, asked with Pick Object when
+    // there are several; an order only with a kind (spec 06 §2.9, confirmed: binary).
+    void dropTo(UiContext& ui, game::Location where, std::optional<game::CargoKind> kind);
     void drawPickObject(UiContext& ui);
     // Set Patrol (spec 03 §8, confirmed: binary): each point clicked appends
     // its Move To at once, held (cmd::SetOrders::hold), so that a turn-based
@@ -204,8 +215,8 @@ private:
     void startLocationPick(UiContext& ui, Pick p, int slot = 0);
     void openFor(UiContext& ui, ScreenId id);   // a window about the selected vehicle, fleet or colony
     // Load / Drop Cargo, Launch / Recover Units Remotely: the place first
-    // (`where` once picked, the Drop's `target`), then the kind of cargo.
-    void chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where = std::nullopt, PickCandidate target = {});
+    // (`where` once picked), then the kind of cargo; Drop Cargo's destination after it (dropTo).
+    void chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where = std::nullopt);
     void note(UiContext& ui, std::string text);
     void hotkeys(UiContext& ui);
     void drawChooser(UiContext& ui);
@@ -264,6 +275,10 @@ private:
     void aiNotesOverlay(UiContext& ui);
     void aiNotesInReport(UiContext& ui, std::string_view kind, int64_t id, const std::vector<game::VehicleId>* members = nullptr);
     std::vector<ShownNote> notes_;   // this frame's, while the view is on
+    // While tags exist and the report of one object is shown (the ship and
+    // fleet buttons and the Gotos keep the tags, spec 06 §2.5): a line over
+    // the report's foot saying that the orders go to the tagged group.
+    void taggedNote(UiContext& ui, bool fleetOnly);
     // The notice of computer players that failed: the newest failure, with
     // Details (Computer Player Errors) and Dismiss; `failuresSeen_` were dismissed.
     void playerFailureNotice(UiContext& ui);

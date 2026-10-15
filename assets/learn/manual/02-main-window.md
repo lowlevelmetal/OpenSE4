@@ -48,7 +48,12 @@ key at the top of the system panel. Most orders have a key, listed in [Hotkeys](
 one order to several ships, hold `Shift` and click them in the list of a sector (`Shift+A` tags
 them all); the next order goes to every tagged ship. In a turn-based game the tagged ships carry
 it out at once, together: they move while every one of them has movement left, and fight as one
-group. What is left for later turns each ship then carries out on its own.
+group. What is left for later turns each ship then carries out on its own. The tags last until
+you press `Shift+C` or select a sector (a click on one, the colony buttons): the ship and fleet
+buttons and a Goto from another window keep them, so the next order still goes to the tagged
+ships while another ship's report is shown, as a line at the foot of the report reminds you.
+Options' "Clear tags when selecting a ship elsewhere" (under OpenSE4) clears them instead when
+the ship or planet selected is in another sector.
 
 With one of your **ships** selected you can, for example, move it, warp, attack, colonize,
 explore, resupply, repair, set a patrol, change its fleet, transfer cargo, launch units, cloak,
@@ -117,7 +122,10 @@ unexplored system shows only a star field and the word *Unexplored*.
 The **selection buttons** at the top right of the command panel step through your ships, fleets
 and colonies: the left arrow goes back, the right arrow goes forward. The keyboard does the same
 (see [Hotkeys](hotkeys#selecting)). `Space` jumps to the next ship without orders; in a
-turn-based game, to the next ship with movement left.
+turn-based game, to the next ship with movement left. Each button goes on from what it chose
+last, whatever you selected since. The fleet buttons offer only fleets that can still move this
+turn, and the colony buttons go by the planets' names and select the colony's sector as a click
+does.
 
 ## The report panel
 

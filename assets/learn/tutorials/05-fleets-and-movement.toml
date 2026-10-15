@@ -153,13 +153,14 @@ manual = "ships-and-fleets#waypoints"
 [[step]]
 title = "Your fleet again"
 text = """
-**Select your fleet again** with the arrows of the second row of selectors, the fleets', or
-`Ctrl+F`. The report shows the fleet.
+**Click your fleet in the system view** to select it again. The report shows the fleet; where its
+sector holds more, click the fleet's row in the list.
 
-The ship arrows pass it by now: they offer only ships that can still move this turn.
+The ship and fleet arrows pass it by now: they offer only ships and fleets that can still move
+this turn.
 """
-highlight = ["cycle:fleet"]
-show = ["panel:report"]
+highlight = ["panel:system"]
+allow = ["panel:report"]
 done = { selected = "fleet", design_type = "Attack Ship" }
 manual = "ships-and-fleets#fleets"
 

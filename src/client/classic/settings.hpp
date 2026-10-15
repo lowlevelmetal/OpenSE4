@@ -94,6 +94,23 @@ struct ClassicSettings {
     // §11.1 Q26, confirmed: binary), so it is off by default, and the
     // original's empire file (.emp) written from Game Setup never holds any.
     bool setupSavesDesigns = false;
+    // Options, under OpenSE4: "Clear tags when selecting a ship elsewhere".
+    // The original keeps the tags through the ship, fleet and colony buttons'
+    // and the Gotos' selections of one object, so the next order still goes
+    // to the tagged group (spec 06 §2.5); with this on, selecting one object
+    // in another sector clears them, as OpenSE4 did before 2026-10-15. Off
+    // by default.
+    bool clearTagsElsewhere = false;
+    // Options, under OpenSE4: "Show enemy designs' details". The original's
+    // Designs window shows only the picture, name, Size and components of
+    // another empire's design (spec 06 §7 Q93); with this on, also its owner,
+    // date, costs and figures. Off by default.
+    bool enemyDesignDetails = false;
+    // Options, under OpenSE4: "Act once on held keys". The original's main
+    // window acts on every repeat of a held key, End Turn and the window and
+    // order keys too (spec 06 §3, §7 Q117); with this on, only the selection
+    // cycles and the movement log's single step repeat. Off by default.
+    bool actOnceOnHeldKeys = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

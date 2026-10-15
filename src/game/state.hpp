@@ -1468,8 +1468,9 @@ struct GameState {
     // member that is gone or no longer carries the fleet's tag is dropped, a
     // chosen leader that left is no longer chosen, and a fleet with no member
     // left at its location is disbanded (disbandFleet). A fleet with no
-    // members at all is one Fleet Transfer is filling (cmd::CreateFleet): it
-    // is kept unless `keepEmpty` is false (turn processing).
+    // members at all is one Fleet Transfer made (cmd::CreateFleet): it is kept,
+    // through turn processing too, unless `keepEmpty` is false (loading a
+    // saved game, as the original disbands memberless fleets then).
     void tidyFleets(bool keepEmpty = true);
     std::vector<const Vehicle*> vehiclesAt(Location where) const;
 };

@@ -104,6 +104,7 @@ SDL_Event toSdlEvent(const InputEvent& e, SDL_WindowID window) {
             ev.key.raw = static_cast<Uint16>(k.scancode);
             ev.key.mod = static_cast<SDL_Keymod>((e.ctrl ? SDL_KMOD_LCTRL : 0) | (e.shift ? SDL_KMOD_LSHIFT : 0) | (e.alt ? SDL_KMOD_LALT : 0));
             ev.key.down = e.kind == InputEvent::Kind::KeyDown;
+            ev.key.repeat = e.repeat;
             break;
         }
         case InputEvent::Kind::Text:

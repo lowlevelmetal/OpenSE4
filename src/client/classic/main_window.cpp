@@ -359,7 +359,11 @@ void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
     ++selections_;
     const bool sameSector = sector_ && *sector_ == v->location.sector && shown_ == v->location.system;
     clearSelection();
-    if (!sameSector) tagged_.clear();
+    // The tags stay: only Shift+C and a sector's selection clear them, so
+    // after a ship or fleet button or a Goto the next order still goes to the
+    // tagged group (spec 06 §2.5, confirmed: binary). OpenSE4's option
+    // "Clear tags when selecting a ship elsewhere" clears them here.
+    if (!sameSector && settings().clearTagsElsewhere) tagged_.clear();
     shown_ = v->location.system;
     sector_ = v->location.sector;
     vehicle_ = id;
@@ -369,8 +373,10 @@ void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
 void MainWindow::selectPlanet(UiContext& ui, game::ObjectId p) {
     ++selections_;
     const game::SpaceObject& o = ui.state().galaxy.object(p);
+    const bool sameSector = sector_ && *sector_ == o.sector && shown_ == o.system;
     clearSelection();
-    tagged_.clear();
+    // A Goto to a planet keeps the tags too (as selectVehicle).
+    if (!sameSector && settings().clearTagsElsewhere) tagged_.clear();
     shown_ = o.system;
     sector_ = o.sector;
     object_ = p;
@@ -415,35 +421,34 @@ const game::Colony* MainWindow::selectedColony(const UiContext& ui) const {
 
 void MainWindow::cycleVehicle(UiContext& ui, int dir) {
     // One cycle for Space, Ctrl+N, Ctrl+B and the selector's arrows, with the
-    // Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3).
+    // Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3). It
+    // goes on from the last ship it selected itself, whatever was selected
+    // since (cycleShip).
     const game::InterfaceOptions& prefs = ui.options();
     ShipCycleOptions options;
     options.turnBased = ui.session.turnBased();
     options.skipDamaged = prefs.skipDamaged;
     options.skipInFleets = prefs.skipInFleets;
     options.stopOncePerLocation = prefs.stopOncePerLocation;
-    if (const auto next = cycleShip(ui.rules(), ui.state(), ui.session.player(), vehicle_, dir, options, shipCycle_)) selectVehicle(ui, *next);
+    if (const auto next = cycleShip(ui.rules(), ui.state(), ui.session.player(), dir, options, shipCycle_)) selectVehicle(ui, *next);
 }
 
 void MainWindow::cycleFleet(UiContext& ui, int dir) {
-    std::vector<game::FleetId> list;
-    for (const game::Fleet& f : ui.state().fleets)
-        if (f.owner == ui.session.player()) list.push_back(f.id);
-    if (list.empty()) return;
-    auto it = fleet_ ? std::find(list.begin(), list.end(), *fleet_) : list.end();
-    size_t i = it == list.end() ? 0 : (size_t(it - list.begin()) + list.size() + size_t(dir + int(list.size()))) % list.size();
-    const game::Fleet* f = ui.state().fleet(list[i]);
-    if (const game::Vehicle* leader = f ? game::fleetLeader(ui.state(), *f) : nullptr) selectVehicle(ui, leader->id);
+    // By fleet number from the fleet it chose last, only fleets with a member
+    // that can still move this turn; that member is selected, which shows the
+    // Fleet Report (spec 06 §2.3, confirmed: binary).
+    if (const auto member = classic::cycleFleet(ui.state(), ui.session.player(), dir, fleetCycle_)) selectVehicle(ui, *member);
 }
 
 void MainWindow::cycleColony(UiContext& ui, int dir) {
-    std::vector<game::ObjectId> list;
-    for (const auto& c : ui.state().colonies)
-        if (c && c->owner == ui.session.player()) list.push_back(c->planet);
-    if (list.empty()) return;
-    auto it = object_ ? std::find(list.begin(), list.end(), *object_) : list.end();
-    size_t i = it == list.end() ? 0 : (size_t(it - list.begin()) + list.size() + size_t(dir + int(list.size()))) % list.size();
-    selectPlanet(ui, list[i]);
+    // By planet name from the colony it chose last; its sector is selected as
+    // a click selects it: one visible object opens its report, several give
+    // the list, and the tags are cleared (spec 06 §2.3, §2.5, confirmed: binary).
+    const auto planet = classic::cycleColony(ui.state(), ui.session.player(), dir, colonyCycle_);
+    if (!planet) return;
+    const game::Location at = game::locationOf(ui.state().galaxy, *planet);
+    shown_ = at.system;
+    selectSector(ui, at.sector, true);
 }
 
 bool MainWindow::tagged(game::VehicleId v) const { return std::find(tagged_.begin(), tagged_.end(), v) != tagged_.end(); }
@@ -738,7 +743,7 @@ std::vector<MainWindow::PickCandidate> MainWindow::pickCandidates(UiContext& ui,
     return out;
 }
 
-void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c) {
+void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c, std::optional<game::CargoKind> cargo) {
     // The picked object is the order's target; nothing about it is checked
     // now: the order's own tests run when it is carried out (spec 06 §2.9).
     switch (p) {
@@ -756,11 +761,30 @@ void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const P
             giveOrder(ui, o);
             return;
         }
-        case Pick::DropCargo:
-            // Delivered into the object picked; what to drop is asked now (inferred: after the object).
-            chooseCargo(ui, p, where, c);
+        case Pick::DropCargo: {
+            // Delivered into the object picked, of the kind asked first; a
+            // cancelled kind gives no order (spec 06 §2.9, confirmed: binary).
+            if (!cargo) return;
+            game::Order o{game::OrderKind::DropCargo, where};
+            o.cargo = *cargo;
+            o.amount = -1;
+            o.object = c.object;
+            o.vehicle = c.vehicle;
+            giveOrder(ui, o);
             return;
+        }
         default: return;
+    }
+}
+
+void MainWindow::dropTo(UiContext& ui, game::Location where, std::optional<game::CargoKind> kind) {
+    // Asked whatever the kind's answer: Cancel there still shows the Pick
+    // Object window, and then no order is given (spec 06 §2.9, confirmed: binary).
+    std::vector<PickCandidate> candidates = pickCandidates(ui, Pick::DropCargo, where);
+    switch (pickStep(candidates.size())) {
+        case PickStep::Nothing: return;   // no order, and nothing said
+        case PickStep::GiveAtOnce: givePicked(ui, Pick::DropCargo, where, candidates.front(), kind); return;
+        case PickStep::AskWhich: pickObject_ = PickObject{Pick::DropCargo, where, std::move(candidates), kind}; return;
     }
 }
 
@@ -779,8 +803,7 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             }
             [[fallthrough]];
         case Pick::Warp:
-        case Pick::Colonize:
-        case Pick::DropCargo: {
+        case Pick::Colonize: {
             std::vector<PickCandidate> candidates = pickCandidates(ui, p, where);
             if (object) std::erase_if(candidates, [&](const PickCandidate& c) { return c.object != *object; });
             switch (pickStep(candidates.size())) {
@@ -814,6 +837,7 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             return;
         }
         case Pick::LoadCargo:
+        case Pick::DropCargo:   // the kind first, then the destination (dropTo)
         case Pick::LaunchRemote:
         case Pick::RecoverRemote: chooseCargo(ui, p, where); return;
         case Pick::Callback: {
@@ -900,7 +924,7 @@ void MainWindow::drawPickObject(UiContext& ui) {
     if (picked) {
         const PickObject chosen = std::move(*pickObject_);
         pickObject_.reset();
-        givePicked(ui, chosen.pick, chosen.where, *picked);
+        givePicked(ui, chosen.pick, chosen.where, *picked, chosen.cargo);
     } else if (cancel) {
         audio().play("close");
         pickObject_.reset();
@@ -1014,9 +1038,9 @@ void MainWindow::abandonPatrol(UiContext&) {
 // whatever the selection carries, and the order is given for that kind (it
 // moves every design of it). A colony's Launch and Recover ask only the kind:
 // the order is given at once at the colony, and a turn-based game carries
-// out the colony's orders then. Drop Cargo asks after its destination is
-// picked (§2.9; inferred order).
-void MainWindow::chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where, PickCandidate target) {
+// out the colony's orders then. Drop Cargo asks the kind first and its
+// destination after it, whatever the first answer (§2.9, dropTo).
+void MainWindow::chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where) {
     static constexpr std::array<const char*, 4> kTitles{"Load Cargo", "Drop Cargo", "Launch Units Remotely", "Recover Units Remotely"};
     static constexpr std::array<const char*, 4> kPrompts{"Load Cargo: pick where", "Drop Cargo: pick where", "Launch Units: pick where",
                                                          "Recover Units: pick where"};
@@ -1046,14 +1070,17 @@ void MainWindow::chooseCargo(UiContext& ui, Pick p, std::optional<game::Location
     c.title = kTitles[k];
     c.note = kNotes[k];
     for (const K kind : kinds)
-        c.items.push_back({std::string(game::displayName(kind)), [this, &ui, k, kind, at = *where, target] {
+        c.items.push_back({std::string(game::displayName(kind)), [this, &ui, k, kind, at = *where, p] {
+                               if (p == Pick::DropCargo) {
+                                   dropTo(ui, at, kind);
+                                   return;
+                               }
                                game::Order o{kOrders[k], at};
                                o.cargo = kind;
                                o.amount = -1;
-                               o.object = target.object;
-                               o.vehicle = target.vehicle;
                                giveOrder(ui, o);
                            }});
+    if (p == Pick::DropCargo) c.cancelled = [this, &ui, at = *where] { dropTo(ui, at, std::nullopt); };
     chooser_ = std::move(c);
 }
 
@@ -1092,9 +1119,9 @@ void MainWindow::cloakNow(UiContext& ui, bool cloak) {
 void MainWindow::chooseFormation(UiContext& ui) {
     const game::Fleet* f = fleet_ ? ui.state().fleet(*fleet_) : nullptr;
     if (!f) return;
-    // Two pickers in turn (spec 06 §1.3, confirmed: binary): the formation,
-    // which is set as it is picked, then the strategy (inferred: Cancel on the
-    // second keeps the formation picked).
+    // Two pickers in turn (spec 06 §1.3, §7 Q118, confirmed: binary): the
+    // formation, which is set as it is picked, then the strategy; Cancel on
+    // the second keeps the formation picked.
     Chooser c;
     c.title = "Select Formation";
     c.note = f->name;
@@ -1429,7 +1456,10 @@ void MainWindow::drawChooser(UiContext& ui) {
             ImGui::PopID();
         }
         ImGui::EndChild();
-        if (classicButton(ui, "Cancel", {180, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) close = true;
+        if (classicButton(ui, "Cancel", {180, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            close = true;
+            chosen = chooser_->cancelled;   // what follows a cancelled question (Drop Cargo's destination)
+        }
     }
     if (close) {
         audio().play("close");
@@ -1718,7 +1748,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;
     // The Fleet Report has no tabs: its body takes the whole panel.
-    const bool fleetOnly = vehicle_ && tagged_.empty() && fleet_ && s.fleet(*fleet_) && s.vehicle(*vehicle_);
+    const bool fleetOnly = vehicle_ && fleet_ && s.fleet(*fleet_) && s.vehicle(*vehicle_);
     const float bodyH = fleetOnly ? geo.reportPanel.size().y : tabsY - 1;
     // The report body scrolls above the tabs; the portrait, flag and name reach over the frame rail above it.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
@@ -1730,9 +1760,12 @@ void MainWindow::reportPanel(UiContext& ui) {
     const bool modPanels = modReport(ui, false);
     if (modPage_ && modPanels) {
         (void)modReport(ui, true);
-        if (vehicle_ && tagged_.empty() && !fleetOnly) tabsFor = true;
-        if (object_ && tagged_.empty() && !vehicle_) tabsFor = planetTabs = true;
-    } else if (vehicle_ && tagged_.empty()) {
+        if (vehicle_ && !fleetOnly) tabsFor = true;
+        if (object_ && !vehicle_) tabsFor = planetTabs = true;
+    } else if (vehicle_) {
+        // The selected object's report, while tags exist too: the ship and
+        // fleet buttons and the Gotos keep them (spec 06 §2.5), and the
+        // orders still go to the tagged group, which taggedNote says.
         if (const game::Vehicle* v = s.vehicle(*vehicle_)) {
             if (const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr) {
                 // One of the player's fleets: the Fleet Report fills the panel
@@ -1751,7 +1784,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 tabsFor = true;
             }
         }
-    } else if (object_ && tagged_.empty()) {
+    } else if (object_) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
         if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
             if (const auto item = planetReport(ui, *object_, tab_)) openItem(ui, *item);
@@ -1763,51 +1796,70 @@ void MainWindow::reportPanel(UiContext& ui) {
         }
     } else if ((listMode_ || !tagged_.empty()) && listAt_) {
         // Everything in the sector the list was built for, which another
-        // system shown leaves as it is: planets first, then vehicles. Each
-        // row: the picture, the name, a ship's class, and status icons for
-        // own objects; Shift+click tags a vehicle (§2.5, §7 Q103).
+        // system shown leaves as it is, in the original's order (sectorListRows:
+        // stellar objects first, by owner and name). Each row (spec 06 §2.5,
+        // confirmed: binary): the picture, the name at x 40, for the
+        // player's own ships and bases "<design> Class" under it at (46,16)
+        // (no class line for unit groups, fleets and other empires'
+        // vehicles), and status icons for own objects; Shift+click tags a
+        // vehicle (§2.5, §7 Q103).
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float rowH = ui.px(36);
         const game::Location at = *listAt_;
-        for (game::ObjectId id : shownStellarObjects(ui.rules(), s, me, at.system, at.sector)) {
-            const game::SpaceObject& o = s.galaxy.object(id);
-            ImGui::PushID(int(id.value));
-            image(ui, objectSprite(ui, o), {36, 36});
-            ImGui::SameLine();
-            if (ImGui::Selectable(objectName(s, id, me).c_str(), false, 0, ImVec2(0, rowH))) {
-                clearSelection();
-                tagged_.clear();
-                if (o.system == shown_) sector_ = o.sector;
-                object_ = id;
-                reportFromList_ = true;
-                ++selections_;
-            }
-            if (const game::Colony* col = s.colony(id); col && col->owner == me) ui.tagItem("report:colony");   // for lessons
-            if (script::collectingItems()) {
-                // Input scripts name the rows by kind: report:colony (the player's), report:planet, report:object.
-                const game::Colony* col = s.colony(id);
-                const bool planet = o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids;
-                script::reportItem(col && col->owner == me ? "report:colony" : planet ? "report:planet" : "report:object");
-            }
-            iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
-            ImGui::PopID();
-        }
-        // Each of the player's own fleets is one row, with the fleet's
-        // picture, name and status icons and no class line; it opens the
-        // Fleet Report. Other empires' fleet members are listed one by one
-        // (spec 06 §2.5 "Fleets in the list").
+        const std::string& style = s.empire(me).race.style;
+        // One row: its picture, name and class line, and the Selectable that
+        // takes its clicks; input scripts find it by the name.
+        auto rowAt = [&](const Sprite& picture, const std::string& name, const std::string& classLine, bool selected) {
+            const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+            const bool clicked = ImGui::Selectable("##row", selected, 0, ImVec2(0, rowH));
+            script::reportItem(name);
+            if (picture)
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(picture.tex.value)), rowMin, {rowMin.x + ui.px(36), rowMin.y + ui.px(36)},
+                             {picture.uv.min.x, picture.uv.min.y}, {picture.uv.max.x, picture.uv.max.y});
+            dl->PushClipRect(rowMin, ImGui::GetItemRectMax(), true);
+            dl->AddText({rowMin.x + ui.px(40), rowMin.y + ui.px(1)}, IM_COL32_WHITE, name.c_str());
+            if (!classLine.empty()) dl->AddText({rowMin.x + ui.px(46), rowMin.y + ui.px(16)}, IM_COL32_WHITE, classLine.c_str());
+            dl->PopClipRect();
+            return std::pair{clicked, rowMin};
+        };
+        const std::vector<game::ObjectId> objects = shownStellarObjects(ui.rules(), s, me, at.system, at.sector);
         const std::vector<const game::Vehicle*> here = vehiclesAt(ui, at);
-        for (const SectorListRow& row : sectorListRows(r, s, me, {}, here)) {
+        for (const SectorListRow& row : sectorListRows(r, s, me, objects, here)) {
+            if (row.object.valid()) {
+                const game::ObjectId id = row.object;
+                const game::SpaceObject& o = s.galaxy.object(id);
+                ImGui::PushID(int(id.value));
+                if (rowAt(objectSprite(ui, o), objectName(s, id, me), {}, false).first) {
+                    // The tags stay (spec 06 §2.5): a row of the list is no sector's selection.
+                    clearSelection();
+                    if (o.system == shown_) sector_ = o.sector;
+                    object_ = id;
+                    reportFromList_ = true;
+                    ++selections_;
+                }
+                if (const game::Colony* col = s.colony(id); col && col->owner == me) ui.tagItem("report:colony");   // for lessons
+                if (script::collectingItems()) {
+                    // Input scripts name the rows by kind: report:colony (the player's), report:planet, report:object.
+                    const game::Colony* col = s.colony(id);
+                    const bool planet = o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids;
+                    script::reportItem(col && col->owner == me ? "report:colony" : planet ? "report:planet" : "report:object");
+                }
+                iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
+                ImGui::PopID();
+                continue;
+            }
+            // Each of the player's own fleets is one row, with the fleet's
+            // picture, name and status icons and no class line; it opens the
+            // Fleet Report. Other empires' fleet members are listed one by one
+            // (spec 06 §2.5 "Fleets in the list").
             const game::Vehicle* v = s.vehicle(row.vehicle);
             if (!v) continue;
             const game::Fleet* fleet = s.fleet(row.fleet);
             ImGui::PushID(int(v->id.value) + 1000000);
-            const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-            const std::string& style = s.empire(me).race.style;
-            image(ui, fleet ? ui.art.groupMini(style, "Fleet") : vehicleMini(ui, *v), {36, 36});
-            ImGui::SameLine();
-            const std::string label = fleet ? fleet->name : std::format("{}\n{}", v->name, vehicleSummary(ui, *v));
-            const bool left = ImGui::Selectable(label.c_str(), tagged(v->id), 0, ImVec2(0, rowH));
+            std::string classLine;
+            if (!fleet && v->owner == me && !game::isUnitType(game::vehicleType(r, s, *v))) classLine = s.design(v->design).name + " Class";
+            const auto [left, rowMin] = rowAt(fleet ? ui.art.groupMini(style, "Fleet") : vehicleMini(ui, *v), fleet ? fleet->name : v->name,
+                                              classLine, tagged(v->id));
             // A right-click opens the row's report too; only Shift with the left button tags.
             const bool right = ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !panelsBlocked_;
             if (left || right) {
@@ -1842,9 +1894,10 @@ void MainWindow::reportPanel(UiContext& ui) {
     } else if (shown_.valid() && !emptyReport_) {
         systemReport(ui, shown_);
     }
+    if (single && !tagged_.empty()) taggedNote(ui, fleetOnly);
     ImGui::PopClipRect();
     ImGui::EndChild();
-    if (reportFromList_ && single && tagged_.empty()) {
+    if (reportFromList_ && single) {
         // Back to the list of everything in the sector: the up-arrow button of
         // DetailUp.bmp, one 33x21 cell flush with the report's top right
         // corner, at (257,0) of the 290x361 report; its rows are normal, under
@@ -1878,7 +1931,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     }
     // OpenSE4's MOD button, while mods' panels apply: beside the up-arrow's place.
     if (modPanels) {
-        const bool arrow = reportFromList_ && single && tagged_.empty();
+        const bool arrow = reportFromList_ && single;
         if (modPageButton(ui, geo.reportPanel.min + Vec2{arrow ? 222.0f : 255.0f, 0})) modPage_ = !modPage_;
     }
     if (tabsFor) {
@@ -2213,6 +2266,26 @@ void MainWindow::aiNotesInReport(UiContext& ui, std::string_view kind, int64_t i
     }
 }
 
+void MainWindow::taggedNote(UiContext& ui, bool fleetOnly) {
+    // OpenSE4's own (what the original draws over the report while tags exist
+    // is not known, spec 06 §7 Q124): a line over the bottom of the report's
+    // body, above the tabs, that the orders go to the tagged group and not to
+    // the object shown.
+    const Rect& panel = geo.reportPanel;
+    const float bottom = panel.min.y + (fleetOnly ? panel.size().y : panel.size().y - 31) - 3;
+    const std::string text = std::format("{} tagged: the next order goes to them. Shift+C clears the tags.", tagged_.size());
+    ImFont* font = ui.fonts.regular ? ui.fonts.regular : ImGui::GetFont();
+    const float size = ui.fontPx(kTextSize);
+    const float width = panel.size().x - 12;
+    const float height = font->CalcTextSizeA(size, FLT_MAX, ui.px(width - 8), text.c_str()).y / ui.k();
+    const Vec2 min{panel.min.x + 4, bottom - height - 6};
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(ui.at(min), ui.at({min.x + width, bottom}), IM_COL32(0, 0, 0, 225));
+    dl->AddRect(ui.at(min), ui.at({min.x + width, bottom}), IM_COL32(0, 224, 0, 255));
+    dl->AddText(font, size, ui.at({min.x + 4, min.y + 3}), IM_COL32(0, 224, 0, 255), text.c_str(), nullptr, ui.px(width - 8));
+    script::reportItem(std::format("tagged:{}", tagged_.size()), ui.at(min), ui.at({min.x + width, bottom}));   // input scripts: the tag count
+}
+
 void MainWindow::playerFailureNotice(UiContext& ui) {
     // Only in the game whose players run on this computer (they fail on the host).
     const size_t count = playerFailureCount();
@@ -2332,12 +2405,21 @@ void MainWindow::hotkeys(UiContext& ui) {
     const ImGuiIO& io = ImGui::GetIO();
     if (io.WantTextInput) return;
     const Bindings& keys = appSettings().controls.bindings;
-    auto pressed = [&](Action a) { return keys.pressed(a); };
-    // A held key repeats, as the original's key-down does (spec 06 §3,
-    // inferred): ours only for the selection cycles and the movement log's
-    // single step, so that a held key never opens a window again, flips an
-    // order twice or ends several turns.
-    auto pressedOrHeld = [&](Action a) { return keys.pressed(a, true); };
+    // One modifier at a time (spec 06 §3, confirmed: binary): of those held,
+    // Shift, else Alt, else Ctrl counts, so Ctrl+Shift+A is Shift+A and
+    // Ctrl+Alt+digit (AltGr) Alt+digit; a chord some binding or mod key
+    // uses as it is held stays itself (OpenSE4's own, such as Ctrl+Shift+N).
+    auto taken = [&](const KeyChord& c) { return !chordUser(keys, appSettings().controls.modKeys, modActions(), c).empty(); };
+    // A held key repeats: the original acts on every key-down message, the
+    // system's repeats included, End Turn and the window and order keys too
+    // (spec 06 §3, §7 Q117, confirmed: binary); the repeats are the system's
+    // own (input.hpp systemKeyRepeated). OpenSE4's option "Act once on held
+    // keys" repeats only the selection cycles and the movement log's single
+    // step, so that a held key never opens a window again, flips an order
+    // twice or ends several turns.
+    const bool repeats = !settings().actOnceOnHeldKeys;
+    auto pressed = [&](Action a) { return keys.pressedOneModifier(a, repeats, taken); };
+    auto pressedOrHeld = [&](Action a) { return keys.pressedOneModifier(a, true, taken); };
 
     // The four movement-log keys start the replay whatever their buttons show
     // (§2.8); while it plays no other main-window key works (§3).
@@ -2403,15 +2485,18 @@ void MainWindow::hotkeys(UiContext& ui) {
     else if (pressed(Action::UntagMinefield)) startLocationPick(ui, Pick::UntagMinefield);
 
     // Waypoints 1..10 are keys 1..9 and 0 (spec 03 §8.1): Alt sets one, Ctrl
-    // moves there when Move To Waypoint is lit.
-    const bool ctrl = io.KeyCtrl, alt = io.KeyAlt;
+    // moves there when Move To Waypoint is lit; the modifiers held count one
+    // at a time, as for every main-window key.
     for (int digit = 0; digit < 10; ++digit) {
         const ImGuiKey key = static_cast<ImGuiKey>(ImGuiKey_0 + digit);
-        if (!ImGui::IsKeyPressed(key, false)) continue;
+        if (!ImGui::IsKeyPressed(key, false) && !(repeats && systemKeyRepeated(key))) continue;
+        const KeyChord held{key, io.KeyCtrl, io.KeyShift, io.KeyAlt};
+        const KeyChord one = taken(held) ? held : oneModifier(held);
+        const bool ctrl = one.ctrl && !one.shift && !one.alt, alt = one.alt && !one.shift && !one.ctrl;
         const int slot = (digit + 9) % 10;
-        if (alt && !ctrl) {
+        if (alt) {
             startLocationPick(ui, Pick::Waypoint, slot);
-        } else if (ctrl && !alt && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)] && takes(MainWindowInput::OrderButton)) {
+        } else if (ctrl && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)] && takes(MainWindowInput::OrderButton)) {
             game::Order o{game::OrderKind::MoveToWaypoint};
             o.amount = slot;
             giveOrder(ui, o);

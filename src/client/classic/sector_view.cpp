@@ -114,21 +114,26 @@ SectorView sectorView(const game::Rules& r, const game::GameState& s, game::Empi
 
 namespace {
 
-std::string lowerName(std::string_view name) {
+std::string upperName(std::string_view name) {
     std::string out(name);
-    for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (char& c : out) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     return out;
 }
 
-// The list's order of vehicles and fleet rows (spec 06 §2.5, confirmed: binary).
+// The list's order (spec 06 §2.5, confirmed: binary): stellar objects first,
+// then the fleet number, highest first, rows in no fleet last; the owner's
+// player number, unowned first; the hull in VehicleSize.txt order, unit
+// groups after ships; the name, compared in capitals.
 struct RowKey {
+    bool stellar = false;
     bool inFleet = false;
     uint32_t fleet = 0;       // the fleet number; highest first
-    size_t owner = 0;         // the owner's player number
+    size_t owner = 0;         // 0 unowned, else the owner's player number + 1
     bool unit = false;        // unit groups after ships
     uint32_t hull = 0;        // VehicleSize.txt order
-    std::string name;         // ignoring case
+    std::string name;         // in capitals
     bool operator<(const RowKey& o) const {
+        if (stellar != o.stellar) return stellar;
         if (inFleet != o.inFleet) return inFleet;
         if (fleet != o.fleet) return fleet > o.fleet;
         return std::tie(owner, unit, hull, name) < std::tie(o.owner, o.unit, o.hull, o.name);
@@ -139,10 +144,21 @@ RowKey keyOf(const game::Rules& r, const game::GameState& s, const game::Vehicle
     RowKey k;
     k.inFleet = v.fleet.valid();
     k.fleet = v.fleet.valid() ? v.fleet.value : 0;
-    k.owner = v.owner.valid() ? v.owner.index() : s.empires.size();
+    k.owner = v.owner.valid() ? v.owner.index() + 1 : 0;
     k.unit = game::isUnitType(game::vehicleType(r, s, v));
     k.hull = v.design.valid() && v.design.index() < s.designs.size() ? s.design(v.design).hull : 0;
-    k.name = lowerName(name);
+    k.name = upperName(name);
+    return k;
+}
+
+// A stellar object: no fleet and no hull; owned when it is a colony the viewer sees.
+RowKey keyOf(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::ObjectId id) {
+    RowKey k;
+    k.stellar = true;
+    const game::Colony* c = s.colony(id);
+    if (c && c->owner != viewer && !game::sight::canSeeColony(r, s, viewer, id)) c = nullptr;
+    k.owner = c && c->owner.valid() ? c->owner.index() + 1 : 0;
+    k.name = upperName(s.galaxy.object(id).name);
     return k;
 }
 
@@ -151,11 +167,8 @@ RowKey keyOf(const game::Rules& r, const game::GameState& s, const game::Vehicle
 std::vector<SectorListRow> sectorListRows(const game::Rules& r, const game::GameState& s, game::EmpireId viewer,
                                           std::span<const game::ObjectId> objects, std::span<const game::Vehicle* const> vehicles) {
     std::vector<SectorListRow> out;
-    std::vector<std::pair<std::string, game::ObjectId>> stellar;
-    for (game::ObjectId id : objects) stellar.emplace_back(lowerName(s.galaxy.object(id).name), id);
-    std::stable_sort(stellar.begin(), stellar.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (const auto& [name, id] : stellar) out.push_back(SectorListRow{id, {}, {}});
     std::vector<std::pair<RowKey, SectorListRow>> rows;
+    for (game::ObjectId id : objects) rows.emplace_back(keyOf(r, s, viewer, id), SectorListRow{id, {}, {}});
     for (const game::Vehicle* v : vehicles) {
         const game::Fleet* f = v->owner == viewer && v->fleet.valid() ? s.fleet(v->fleet) : nullptr;
         if (!f) {

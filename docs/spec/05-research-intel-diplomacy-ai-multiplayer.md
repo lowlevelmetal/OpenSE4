@@ -217,8 +217,8 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
   adds it. With 12 projects queued nothing happens, and nothing is said. Intelligence
   Defense is added at once, with no target. Every other project first opens a list window,
   "Select Empire", of the living empires we are **in contact with** (§3.1), friend or foe,
-  never ourselves, with no "Any" row. Then, by the project's `Type`, a second list window
-  whose first row is "Any ...":
+  never ourselves, sorted by empire name with the letter case ignored, with no "Any" row.
+  Then, by the project's `Type`, a second list window whose first row is "Any ...":
   - "Select Ship" ("Any Ship"): the target empire's vehicles we see now, sorted by name. For
     the seven ship sabotage types: Damage, Lose Movement, Lose Supply, Rebel, Experience
     Change, Cargo Damage and Orders Change.
@@ -226,9 +226,10 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
     the planet types from Conditions Change to Facility Damage, and Planet - Info.
   - "Select Technology" ("Any Technology"): the tech areas the **spying** empire can research
     now (requirements met, allowed in the game), in alphabetical order. For Research - Steal.
-  - "Select Empire" ("Any Empire"): our other contacts, the target empire left out. For the
-    five Politics types: Disrupt Trade, Intercept Messages, Fake Messages, Treaty Info and
-    Prevent Messages.
+  - "Select Empire" ("Any Empire"): our other contacts, the target empire left out, sorted by
+    name with the letter case ignored (as every list here, corrected 2026-10-15, complete
+    listing; spec 06 §7 Q113 (e)). For the five Politics types: Disrupt Trade, Intercept
+    Messages, Fake Messages, Treaty Info and Prevent Messages.
   Every other type (Ship - Concentrations, Ship - Construction Info, Planet - Locations, both
   Points types, both Delete Project types, the three Info types, the design and log steals)
   asks for the empire only. Cancel at either step adds nothing. The target picked, or "Any",

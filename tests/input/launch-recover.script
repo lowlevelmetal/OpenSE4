@@ -2,6 +2,9 @@
 # training game of our own (tests/input/learn-orders) with two colony ships at home:
 # - Load Cargo asks for the place first, then the kind of cargo from the fixed seven, and gives
 #   the order for that kind;
+# - Drop Cargo asks the kind first and the destination after it (the Pick Object window, with
+#   several of our objects there), whatever the first answer: Cancel on the kind still shows
+#   the Pick Object window, and then no order is given (spec 06 §2.9);
 # - a colony's Recover Units Remotely asks only the kind, and the order is given at once at the
 #   colony (a turn-based game then carries it out);
 # - the window opens on the colony, and its amount radios answer (docs/BUILDING.md "Input
@@ -25,6 +28,29 @@ assert-present item:"Troops"
 click item:"Population"
 wait-gone item:"Weapon Platforms"
 assert { order = "load-cargo" }
+# Drop Cargo: the sector, then the kind; Cancel there still asks the destination, and no order
+# is given.
+key D
+wait-until { picking = "drop-cargo" }
+click sector:home
+wait-for item:"Weapon Platforms"
+assert-absent tag:pick-object:list
+click item:Cancel in=main
+wait-for tag:pick-object:list
+assert-absent item:"Weapon Platforms"
+click item:Cancel in=main
+wait-gone tag:pick-object:list
+assert { not = { order = "drop-cargo" } }
+# Then a kind, and the destination: the colony.
+key D
+wait-until { picking = "drop-cargo" }
+click sector:home
+wait-for item:"Weapon Platforms"
+click item:"Population"
+wait-for tag:pick-object:list
+click item:"Eurul II" in=main
+wait-gone tag:pick-object:list
+assert { order = "drop-cargo" }
 # The colony: Recover Units Remotely asks only the kind (three of them), no place.
 click sector:home
 wait-for item:report:colony

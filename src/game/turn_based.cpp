@@ -302,8 +302,8 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     s.playerTurn.empire = e;
     s.playerTurn.started = true;
     s.playerTurn.questions.clear();
-    // A fleet Fleet Transfer made and left empty goes (OpenSE4's own, as in processTurn).
-    s.tidyFleets(false);
+    // A fleet Fleet Transfer made and left empty stays (as in processTurn).
+    s.tidyFleets();
     const bool human = s.empire(e).kind == PlayerKind::Human;
     // 1. Before it a human player signs in, the autosave is written and the
     // endings are shown: the client's part (spec 06 §2.7). The Lose ending's

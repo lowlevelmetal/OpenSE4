@@ -196,34 +196,51 @@ bool shipCycleCandidate(const game::Rules& r, const game::GameState& s, game::Em
     return v.orders.empty() || v.orders.front().kind != game::OrderKind::Sentry;
 }
 
-std::optional<game::VehicleId> cycleShip(const game::Rules& r, const game::GameState& s, game::EmpireId viewer,
-                                         std::optional<game::VehicleId> current, int direction, const ShipCycleOptions& options,
-                                         ShipCycleMemory& memory) {
+std::optional<game::VehicleId> cycleShip(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, int direction,
+                                         const ShipCycleOptions& options, ShipCycleMemory& memory) {
     const int dir = direction < 0 ? -1 : 1;
-    if (memory.player != viewer || memory.direction != dir) {
+    if (memory.player != viewer) {
+        // Another player's turn on this computer: the place is forgotten too.
+        memory = {};
         memory.player = viewer;
+    }
+    if (memory.direction != dir) {
         memory.direction = dir;
         memory.visited.clear();
     }
     const std::vector<game::VehicleId> list = game::vehiclesInObjectOrder(s);
     const auto n = static_cast<std::ptrdiff_t>(list.size());
     if (n == 0) return std::nullopt;
-    auto visited = [&](const game::Location& l) { return std::find(memory.visited.begin(), memory.visited.end(), l) != memory.visited.end(); };
-    // Where the cycle starts; the place of the ship it leaves counts as
-    // visited, so the next stop is another place (inferred, spec 06 §7 Q115).
-    std::ptrdiff_t at = dir > 0 ? -1 : n;
-    if (current) {
-        if (const auto it = std::find(list.begin(), list.end(), *current); it != list.end()) {
-            at = it - list.begin();
-            const game::Vehicle* v = s.vehicle(*current);
-            if (options.stopOncePerLocation && v && v->owner == viewer && !visited(v->location)) memory.visited.push_back(v->location);
+    auto slotAt = [&](std::ptrdiff_t i) {
+        const game::Vehicle* v = s.vehicle(list[static_cast<size_t>(i)]);
+        return v ? v->slot : 0u;
+    };
+    // Where the walk starts: just past the remembered place. With nothing
+    // remembered, forward from the list's start, and back from one before its
+    // end, so that the last object of the list is looked at last.
+    std::ptrdiff_t at = dir > 0 ? -1 : n;   // the walk's first step leaves this index
+    if (memory.place || dir < 0) {
+        uint32_t place = 0;
+        if (memory.place) {
+            place = *memory.place;
+        } else {
+            const std::vector<game::ObjectRef> all = game::objectOrder(s);
+            place = all.empty() ? 0 : all.back().slot;
+        }
+        if (dir > 0) {
+            at = -1;
+            while (at + 1 < n && slotAt(at + 1) <= place) ++at;
+        } else {
+            at = n;
+            while (at - 1 >= 0 && slotAt(at - 1) >= place) --at;
         }
     }
+    auto visited = [&](const game::Location& l) { return std::find(memory.visited.begin(), memory.visited.end(), l) != memory.visited.end(); };
     bool wrapped = false;
     for (std::ptrdiff_t step = 1; step <= n; ++step) {
         const std::ptrdiff_t raw = at + dir * step;
         if (!wrapped && (raw < 0 || raw >= n)) {
-            // Round the list's end: the places visited are forgotten.
+            // Past either end of the list: the places stopped at are forgotten.
             wrapped = true;
             memory.visited.clear();
         }
@@ -235,11 +252,77 @@ std::optional<game::VehicleId> cycleShip(const game::Rules& r, const game::GameS
         if (options.skipInFleets && v->fleet.valid()) continue;
         if (options.stopOncePerLocation) {
             if (visited(v->location)) continue;
-            memory.visited.push_back(v->location);
+            if (memory.visited.size() < kShipCycleStops) memory.visited.push_back(v->location);
         }
+        memory.place = v->slot;
         return v->id;
     }
     return std::nullopt;
+}
+
+std::optional<game::VehicleId> cycleFleet(const game::GameState& s, game::EmpireId viewer, int direction, FleetCycleMemory& memory) {
+    if (memory.player != viewer) memory = FleetCycleMemory{viewer, std::nullopt};
+    const int dir = direction < 0 ? -1 : 1;
+    // The viewer's fleets by fleet number (OpenSE4's fleet ids keep the order fleets were made in).
+    std::vector<const game::Fleet*> fleets;
+    for (const game::Fleet& f : s.fleets)
+        if (f.owner == viewer) fleets.push_back(&f);
+    std::sort(fleets.begin(), fleets.end(), [](const game::Fleet* a, const game::Fleet* b) { return a->id.value < b->id.value; });
+    const auto n = static_cast<std::ptrdiff_t>(fleets.size());
+    if (n == 0) return std::nullopt;
+    // The first member, in object order, that still has movement left this turn.
+    auto mover = [&](const game::Fleet& f) -> std::optional<game::VehicleId> {
+        const game::Vehicle* best = nullptr;
+        for (game::VehicleId id : f.members)
+            if (const game::Vehicle* v = s.vehicle(id); v && v->owner == viewer && v->fleet == f.id && v->count > 0 && v->movement > 0)
+                if (!best || v->slot < best->slot) best = v;
+        return best ? std::optional(best->id) : std::nullopt;
+    };
+    // Just past the fleet chosen last, round the end; from the first (or, back, the last) with none.
+    std::ptrdiff_t at = dir > 0 ? -1 : n;
+    if (memory.last) {
+        if (dir > 0) {
+            while (at + 1 < n && fleets[static_cast<size_t>(at + 1)]->id.value <= memory.last->value) ++at;
+        } else {
+            while (at - 1 >= 0 && fleets[static_cast<size_t>(at - 1)]->id.value >= memory.last->value) --at;
+        }
+    }
+    for (std::ptrdiff_t step = 1; step <= n; ++step) {
+        const std::ptrdiff_t i = (((at + dir * step) % n) + n) % n;
+        const game::Fleet& f = *fleets[static_cast<size_t>(i)];
+        if (const auto v = mover(f)) {
+            memory.last = f.id;
+            return v;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<game::ObjectId> cycleColony(const game::GameState& s, game::EmpireId viewer, int direction, ColonyCycleMemory& memory) {
+    if (memory.player != viewer) memory = ColonyCycleMemory{viewer, std::nullopt};
+    const int dir = direction < 0 ? -1 : 1;
+    // By planet name, character by character (letter case counts), in the
+    // game's colony order where two names are the same.
+    std::vector<std::pair<std::string, game::ObjectId>> colonies;
+    for (const auto& c : s.colonies)
+        if (c && c->owner == viewer) colonies.emplace_back(s.galaxy.object(c->planet).name, c->planet);
+    std::stable_sort(colonies.begin(), colonies.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    const auto n = static_cast<std::ptrdiff_t>(colonies.size());
+    if (n == 0) return std::nullopt;
+    auto where = [&](std::ptrdiff_t i) { return game::locationOf(s.galaxy, colonies[static_cast<size_t>(i)].second); };
+    // From the colonies of the remembered sector: past the last of them going
+    // forward, before the first going back (inferred, spec 06 §7 Q125).
+    std::ptrdiff_t at = dir > 0 ? -1 : n;
+    if (memory.last) {
+        for (std::ptrdiff_t i = 0; i < n; ++i)
+            if (where(i) == *memory.last) {
+                if (dir > 0) at = i;
+                else if (at == n) at = i;
+            }
+    }
+    const std::ptrdiff_t i = (((at + dir) % n) + n) % n;
+    memory.last = where(i);
+    return colonies[static_cast<size_t>(i)].second;
 }
 
 LitOrders litOrders(const OrderFacts& f) {

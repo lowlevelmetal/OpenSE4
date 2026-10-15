@@ -35,13 +35,19 @@ click item:Load in=game-menu
 wait-for item:"Change Directory" in=load-game
 click item:"Change Directory" in=load-game
 wait-for item:Default in="Select Directory"
-# Select Directory: Default goes to the saves folder, a double click opens a folder, OK takes it.
+# Select Directory: Default goes to the saves folder; a press of any mouse button on a folder
+# opens it at once (".." the parent); Enter is OK (spec 06 §1.1).
 click item:Default in="Select Directory"
 wait-for item:"Space Empires IV" in="Select Directory"
-double-click item:"Space Empires IV" in="Select Directory"
+click item:"Space Empires IV" in="Select Directory"
 wait-for item:.. in="Select Directory"
+assert-absent item:"Space Empires IV" in="Select Directory"
+right-click item:.. in="Select Directory"
+wait-for item:"Space Empires IV" in="Select Directory"
+right-click item:"Space Empires IV" in="Select Directory"
+wait-gone item:"Space Empires IV" in="Select Directory"
 screenshot select-directory.png
-click item:OK in="Select Directory"
+key Enter
 wait-gone item:Default in="Select Directory"
 wait-for item:"* 2400.3" in=load-game
 click item:"* 2400.3" in=load-game

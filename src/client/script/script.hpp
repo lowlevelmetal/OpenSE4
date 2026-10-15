@@ -83,7 +83,8 @@ struct Step {
     Op op = Op::Wait;
     Target target;
     Target to;              // drag: where to
-    int64_t number = 0;     // wait: frames; wait-step/assert-step: the step; wait-turn/assert-turn: the turn; wheel: notches
+    int64_t number = 0;     // wait: frames; wait-step/assert-step: the step; wait-turn/assert-turn: the turn; wheel: notches;
+                            // key: the system's repeats while it is held (held=N)
     std::string text;       // type: the text; key: the chord as written; windows, results, screens, lessons, log text, files;
                             // assert-window-hit: what a press there does (client/window_hit.hpp)
     std::vector<std::string> facts;   // print: condition keys

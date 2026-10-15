@@ -27,6 +27,9 @@
 #include <cstdio>
 #include <format>
 
+// The SDL3 backend's key mapping (imgui_impl_sdl3.cpp), for the system's key repeats.
+ImGuiKey ImGui_ImplSDL3_KeyEventToImGuiKey(SDL_Keycode keycode, SDL_Scancode scancode);
+
 namespace opense4::client {
 
 namespace {
@@ -468,7 +471,13 @@ EventVerdict App::handleEvent(SDL_Event& event, bool& running) {
     // The mode may hold input back (a tutorial's input lock) before ImGui sees it.
     const EventVerdict verdict = mode_->filterEvent(event);
     switch (verdict) {
-        case EventVerdict::Pass: ImGui_ImplSDL3_ProcessEvent(&event); break;
+        case EventVerdict::Pass:
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            // The system's repeat of a held key: Dear ImGui keeps its own
+            // timing, the main window acts on the system's (input.hpp).
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.repeat)
+                noteSystemKeyRepeat(ImGui_ImplSDL3_KeyEventToImGuiKey(event.key.key, event.key.scancode));
+            break;
         case EventVerdict::Drop: break;
         case EventVerdict::PointerAway: ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX); break;
     }
@@ -507,6 +516,7 @@ bool App::frame() {
     }
     if (recorder_ && probe) recorder_->frame(*probe, time_);
     const SDL_WindowID window = SDL_GetWindowID(window_);
+    clearSystemKeyRepeats();   // this frame's repeats come with its events
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (player_ && script::isUserInput(event)) continue;   // a script plays alone

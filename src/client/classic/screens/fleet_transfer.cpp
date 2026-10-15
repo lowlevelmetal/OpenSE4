@@ -2,8 +2,10 @@
 // in a sector that are in no fleet and may join one, and the fleets whose
 // location is the sector with their members there. Left-click moves a
 // vehicle into the selected fleet or out of its fleet. Create Fleet makes an
-// empty fleet, filled by those clicks; one still empty when the window
-// closes is deleted (spec 03 §9, confirmed: binary).
+// empty fleet, filled by those clicks; the Close button deletes the fleets
+// left without a member as it closes the window, while Esc and Enter close it
+// without that step, so such a fleet stays (spec 03 §9, spec 06 §3.4,
+// confirmed: binary).
 
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/list_widgets.hpp"
@@ -37,17 +39,16 @@ public:
     }
 
 private:
-    bool drawIn(UiContext& ui) {
-        const bool open = drawWindow(ui);
-        if (!open) deleteEmptyFleets(ui);
-        return open;
-    }
+    bool drawIn(UiContext& ui) { return drawWindow(ui); }
 
-    // The fleets this window created that are still empty go when it closes.
+    // The window's closing step, run by its Close button: the player's fleets
+    // left without a member go, those an earlier window closed with Esc or
+    // Enter left included (spec 06 §3.4, confirmed: binary).
     void deleteEmptyFleets(UiContext& ui) {
-        for (game::FleetId id : created_)
-            if (const game::Fleet* f = ui.state().fleet(id); f && f->members.empty()) ui.session.issue(game::cmd::DisbandFleet{id});
-        created_.clear();
+        std::vector<game::FleetId> empty;
+        for (const game::Fleet& f : ui.state().fleets)
+            if (f.owner == ui.session.player() && f.members.empty()) empty.push_back(f.id);
+        for (game::FleetId id : empty) ui.session.issue(game::cmd::DisbandFleet{id});
     }
 
     bool drawWindow(UiContext& ui) {
@@ -123,7 +124,11 @@ private:
         }
         if (d.button("Disband Fleet", fleet != nullptr)) status_.issue(ui, game::cmd::DisbandFleet{selected_}, "Fleet disbanded.");
         if (d.button("Rename Fleet", fleet != nullptr)) renamePrompt_.open("Rename Fleet", "New name of the fleet:", fleet->name);
-        if (d.close()) return false;
+        if (d.close()) {
+            // The bottom button runs the window's closing step; Esc and Enter skip it.
+            if (!d.closedByKey()) deleteEmptyFleets(ui);
+            return false;
+        }
         popups(ui);
         return d.keepOpen();
     }
@@ -236,7 +241,6 @@ private:
             if (status_.issue(ui, c))
                 if (const game::Fleet* f = ui.state().fleet(game::FleetId{next}); f && f->owner == ui.session.player()) {
                     selected_ = f->id;
-                    created_.push_back(f->id);
                     status_.ok(std::format("{} created.", f->name));
                 }
         }
@@ -257,7 +261,6 @@ private:
 
     game::VehicleId anchor_;
     game::FleetId selected_;
-    std::vector<game::FleetId> created_;   // made by Create Fleet here: deleted at close while empty
     std::optional<game::VehicleId> join_, leave_;
     std::optional<game::Location> where_;
     Status status_;

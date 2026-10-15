@@ -51,7 +51,6 @@ void abilityPage(UiContext& ui, const std::vector<std::string>& lines);
 // One-line descriptions for lists. `viewer` names warp points the way that
 // empire knows them (sight::warpPointName: the destination once explored);
 // without one they show their plain name.
-std::string vehicleSummary(const UiContext& ui, const game::Vehicle& v);
 // A vehicle's design, "Name xN" for a unit group, or for a group that mixes
 // designs each design with its units (the first `shown`, then "and N more").
 std::string groupDesigns(const game::GameState& s, const game::Vehicle& v, size_t shown = 3);

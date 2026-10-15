@@ -34,7 +34,7 @@ as *Escort 0003*; `N` renames them.
 | Clear Orders | `Del` | Remove every order. |
 | Fleet Transfer | `F` | Form fleets (below). |
 | Change Formation \ Strategy | `H` | Choose a fleet's formation and strategy. |
-| Load Cargo, Drop Cargo | `L`, `D` | Pick what (population or a kind of unit), then the sector where the ship loads or unloads it. |
+| Load Cargo, Drop Cargo | `L`, `D` | Pick the sector where the ship loads or unloads, then what (population or a kind of unit); a drop then asks which of your planets or ships there takes it. |
 | Cargo Transfer | `T` | Move cargo now ([Supply, cargo and repair](logistics#cargo)). |
 | Launch and Recover Units | `U` | Launch or pick up fighters, satellites, mines and drones now, in turn-based games ([Units](units)). |
 | Launch Units Remotely, Recover Units Remotely | `I`, `O` | Pick a kind of unit, then the sector where the ship launches or recovers it. |
@@ -93,7 +93,9 @@ not in a fleet and can join one (**Vehicles in sector**: ships, fighter groups, 
 settings let bases join fleets) and the fleets whose place is this sector with their members here
 (**Fleets in sector**, the leader marked). `Create Fleet` asks for a name, offering Alpha Fleet,
 Beta Fleet and so on, and makes an empty fleet; then **click** ships to add them, and click
-members to take them out. A fleet still empty when the window closes is deleted. `Formation` and `Strategy` choose the fleet's
+members to take them out. `Close` deletes your fleets that are still empty; closed with `Esc` or
+`Enter`, the window keeps them until the game is next read from its file (loaded, or, in a
+simultaneous game on one computer, at the end of the turn). `Formation` and `Strategy` choose the fleet's
 combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do what they say, and
 `Existing Fleets` opens the Ships and Units window, with the tab and the Show switches you left it with, to look at your fleets; clicking a row there does nothing.
 

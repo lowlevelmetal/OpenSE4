@@ -306,52 +306,178 @@ TEST_CASE("main window: one ship cycle for Space, Ctrl+N, Ctrl+B and the selecto
     s.vehicle(sentry)->orders.push_back(Order{OrderKind::Sentry});
     const VehicleId mothballed = add(runner, elsewhere, 1);
     s.vehicle(mothballed)->status = VehicleStatus::Mothballed;
+    const VehicleId last = add(runner, elsewhere, 1);     // the game's last object
+    REQUIRE(objectOrder(s).back().vehicle == last);
 
-    // Turn-based: the ships with movement left, forward and back, round the list's end.
+    // Turn-based: the ships with movement left, forward and back from the
+    // last one the cycle selected, round the list's end.
     ShipCycleOptions o;
     o.turnBased = true;
     ShipCycleMemory m;
-    CHECK(cycleShip(r, s, kMe, std::nullopt, 1, o, m) == a);
-    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == b);
-    CHECK(cycleShip(r, s, kMe, b, 1, o, m) == c);
-    CHECK(cycleShip(r, s, kMe, c, 1, o, m) == a);
-    CHECK(cycleShip(r, s, kMe, a, -1, o, m) == c);
-    CHECK(cycleShip(r, s, kMe, std::nullopt, -1, o, m) == c);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == b);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == c);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == last);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, -1, o, m) == last);
+    CHECK(cycleShip(r, s, kMe, -1, o, m) == c);
+    // Nothing remembered, going back: from one before the list's end, so the
+    // last object is looked at last.
+    m = {};
+    CHECK(cycleShip(r, s, kMe, -1, o, m) == c);
+    CHECK(cycleShip(r, s, kMe, -1, o, m) == b);
+    CHECK(cycleShip(r, s, kMe, -1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, -1, o, m) == last);
+    // The place is kept whatever else is selected meanwhile; a ship gone
+    // leaves its place, and the cycle goes on past it.
+    m = {};
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == b);
+    {
+        GameState without = s;
+        std::erase_if(without.vehicles, [&](const Vehicle& v) { return v.id == b; });
+        ShipCycleMemory copy = m;
+        CHECK(cycleShip(r, without, kMe, 1, o, copy) == c);
+    }
+    // Another player's turn on this computer forgets the place.
+    (void)cycleShip(r, s, EmpireId{1u}, 1, o, m);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == a);
 
     // Simultaneous: the ships whose own list is empty, movement or not.
     o.turnBased = false;
     s.vehicle(b)->orders.push_back(Order{OrderKind::MoveTo, elsewhere});
-    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == tired);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == tired);
     o.turnBased = true;
     s.vehicle(b)->orders.clear();
 
-    // Stop once per location: one ship a place until the cycle comes round the list's end.
+    // Stop once per location: one ship a place until the walk passes the
+    // list's end; only the places the cycle stopped at count.
     o.stopOncePerLocation = true;
     m = {};
-    CHECK(cycleShip(r, s, kMe, std::nullopt, 1, o, m) == a);
-    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == c);   // b stands where a does
-    CHECK(cycleShip(r, s, kMe, c, 1, o, m) == a);   // round the end: the places are forgotten
-    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == c);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == c);      // b stands where a does
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == a);      // last stands where c does; round the end the places are forgotten
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == c);
     // The other way round starts afresh.
-    CHECK(cycleShip(r, s, kMe, c, -1, o, m) == b);
+    CHECK(cycleShip(r, s, kMe, -1, o, m) == b);
     o.stopOncePerLocation = false;
 
     // Skip ships in fleets, skip damaged ships.
     REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Pair", {a, b}}).ok);
     o.skipInFleets = true;
-    CHECK(cycleShip(r, s, kMe, c, 1, o, m) == c);
+    m = {};
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == c);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == last);
+    CHECK(cycleShip(r, s, kMe, 1, o, m) == c);
     o.skipInFleets = false;
     o.skipDamaged = true;
     s.vehicle(c)->damage.assign(s.vehicle(c)->damage.size(), 0);
     if (!s.vehicle(c)->damage.empty()) {
         s.vehicle(c)->damage.front() = 1;
-        CHECK(cycleShip(r, s, kMe, a, 1, o, m) == b);
-        CHECK(cycleShip(r, s, kMe, b, 1, o, m) == a);
+        m = {};
+        CHECK(cycleShip(r, s, kMe, 1, o, m) == a);
+        CHECK(cycleShip(r, s, kMe, 1, o, m) == b);
+        CHECK(cycleShip(r, s, kMe, 1, o, m) == last);
     }
 
     // Nothing that qualifies: no ship.
     for (Vehicle& v : s.vehicles) v.movement = 0;
-    CHECK_FALSE(cycleShip(r, s, kMe, a, 1, o, m).has_value());
+    CHECK_FALSE(cycleShip(r, s, kMe, 1, o, m).has_value());
+}
+
+TEST_CASE("main window: the fleet cycle by fleet number, fleets that can still move only (spec 06 §2.3)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location home = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const DesignId runner = design(s, r, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    auto add = [&](int movement) {
+        Vehicle& v = addTestVehicle(s, r, runner, home);
+        v.movement = movement;
+        return v.id;
+    };
+    const VehicleId tiredLead = add(0), a = add(1), b = add(1);   // first: a member without movement left
+    const VehicleId stuck = add(0);
+    const VehicleId c = add(1);
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"First", {tiredLead, b, a}}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Stuck", {stuck}}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Third", {c}}).ok);
+
+    FleetCycleMemory m;
+    // The first member, in object order, with movement left; the fleet that cannot move is passed by.
+    CHECK(cycleFleet(s, kMe, 1, m) == a);
+    CHECK(cycleFleet(s, kMe, 1, m) == c);
+    CHECK(cycleFleet(s, kMe, 1, m) == a);   // round the end
+    CHECK(cycleFleet(s, kMe, -1, m) == c);
+    CHECK(cycleFleet(s, kMe, -1, m) == a);
+    // With nothing remembered, back from the highest number.
+    m = {};
+    CHECK(cycleFleet(s, kMe, -1, m) == c);
+    // It goes on from the fleet it chose last, and another player's turn forgets it.
+    CHECK(cycleFleet(s, kMe, 1, m) == a);
+    (void)cycleFleet(s, EmpireId{1u}, 1, m);
+    CHECK(cycleFleet(s, kMe, -1, m) == c);
+    // No fleet with movement left: nothing.
+    for (Vehicle& v : s.vehicles) v.movement = 0;
+    CHECK_FALSE(cycleFleet(s, kMe, 1, m).has_value());
+}
+
+TEST_CASE("main window: the colony cycle by planet name, letter case counting (spec 06 §2.3)") {
+    GameState s = newEngineGame();
+    Colony& home = homeworld(s, kMe);
+    s.galaxy.object(home.planet).name = "Mid";
+    // Four more colonies of ours, named so that the character codes order them.
+    // Each in a sector of its own.
+    std::vector<ObjectId> planets;
+    std::vector<Location> taken{locationOf(s.galaxy, home.planet)};
+    for (const SpaceObject& o : s.galaxy.objects)
+        if (o.kind == ObjectKind::Planet && !s.colony(o.id) && planets.size() < 4 &&
+            std::find(taken.begin(), taken.end(), locationOf(s.galaxy, o.id)) == taken.end()) {
+            planets.push_back(o.id);
+            taken.push_back(locationOf(s.galaxy, o.id));
+        }
+    REQUIRE(planets.size() == 4);
+    const std::array<std::string_view, 4> names{"beta", "Zeta", "alpha", "Alpha"};
+    for (size_t i = 0; i < planets.size(); ++i) {
+        s.galaxy.object(planets[i]).name = std::string(names[i]);
+        Colony c;
+        c.planet = planets[i];
+        c.owner = kMe;
+        c.population.push_back({kMe, 1});
+        s.colonies[planets[i].index()] = c;
+    }
+    const ObjectId beta = planets[0], zeta = planets[1], alpha = planets[2], bigAlpha = planets[3];
+    // Capitals before small letters: Alpha, Mid, Zeta, alpha, beta.
+    ColonyCycleMemory m;
+    CHECK(cycleColony(s, kMe, 1, m) == bigAlpha);
+    CHECK(cycleColony(s, kMe, 1, m) == home.planet);
+    CHECK(cycleColony(s, kMe, 1, m) == zeta);
+    CHECK(cycleColony(s, kMe, 1, m) == alpha);
+    CHECK(cycleColony(s, kMe, 1, m) == beta);
+    CHECK(cycleColony(s, kMe, 1, m) == bigAlpha);   // round the end
+    CHECK(cycleColony(s, kMe, -1, m) == beta);
+    m = {};
+    CHECK(cycleColony(s, kMe, -1, m) == beta);
+    // Another player's turn forgets the colony.
+    (void)cycleColony(s, EmpireId{1u}, 1, m);
+    CHECK(cycleColony(s, kMe, 1, m) == bigAlpha);
+    // Two colonies in one sector: the cycle stops at that sector once (inferred, spec 06 §7 Q125).
+    s.galaxy.object(alpha).system = s.galaxy.object(zeta).system;
+    s.galaxy.object(alpha).sector = s.galaxy.object(zeta).sector;
+    CHECK(cycleColony(s, kMe, 1, m) == home.planet);
+    CHECK(cycleColony(s, kMe, 1, m) == zeta);
+    CHECK(cycleColony(s, kMe, 1, m) == beta);
+    CHECK(cycleColony(s, kMe, -1, m) == alpha);
+    CHECK(cycleColony(s, kMe, -1, m) == home.planet);
+}
+
+TEST_CASE("main window: one modifier at a time, Shift, else Alt, else Ctrl (spec 06 §3)") {
+    using client::KeyChord;
+    using client::oneModifier;
+    CHECK(oneModifier(KeyChord{ImGuiKey_A, true, true, false}) == KeyChord{ImGuiKey_A, false, true, false});   // Ctrl+Shift+A: Shift+A
+    CHECK(oneModifier(KeyChord{ImGuiKey_3, true, false, true}) == KeyChord{ImGuiKey_3, false, false, true});   // Ctrl+Alt+3: Alt+3
+    CHECK(oneModifier(KeyChord{ImGuiKey_F, true, true, true}) == KeyChord{ImGuiKey_F, false, true, false});
+    CHECK(oneModifier(KeyChord{ImGuiKey_F, true, false, false}) == KeyChord{ImGuiKey_F, true, false, false});
+    CHECK(oneModifier(KeyChord{ImGuiKey_M, false, false, false}) == KeyChord{ImGuiKey_M, false, false, false});
 }
 
 TEST_CASE("main window: order names and the lessons' slot keys") {
@@ -1282,6 +1408,32 @@ TEST_CASE("main window: the sector's list shows each own fleet as one row, sorte
     CHECK(sectorListRows(r, s, kMe, {}, fleetOnly).size() == 1);
     // The Fleet Report's members, sorted as the list: by hull, then name.
     CHECK(fleetReportMembers(r, s, *s.fleet(first)) == std::vector<VehicleId>{c, b});
+}
+
+TEST_CASE("main window: stellar objects in the sector's list by owner, then name in capitals (spec 06 §2.5)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const ObjectId home = homeworld(s, kMe).planet;
+    s.galaxy.object(home).name = "Mid";
+    // Unowned objects of any kind: a free planet, a star, a warp point.
+    ObjectId freePlanet, star, warp;
+    for (const SpaceObject& o : s.galaxy.objects) {
+        if (!freePlanet.valid() && o.kind == ObjectKind::Planet && !s.colony(o.id)) freePlanet = o.id;
+        if (!star.valid() && isStarKind(o.kind)) star = o.id;
+        if (!warp.valid() && o.kind == ObjectKind::WarpPoint) warp = o.id;
+    }
+    REQUIRE(freePlanet.valid());
+    REQUIRE(star.valid());
+    REQUIRE(warp.valid());
+    s.galaxy.object(freePlanet).name = "alpha";
+    s.galaxy.object(star).name = "Zz Star";
+    s.galaxy.object(warp).name = "_Under";
+    const std::vector<ObjectId> objects{home, warp, star, freePlanet};
+    const std::vector<SectorListRow> rows = sectorListRows(r, s, kMe, objects, {});
+    // The unowned first, by name compared in capitals ("_" after the letters),
+    // then our colony.
+    const std::vector<SectorListRow> want{{freePlanet, {}, {}}, {star, {}, {}}, {warp, {}, {}}, {home, {}, {}}};
+    CHECK(rows == want);
 }
 
 TEST_CASE("main window: the stellar object a sector shows") {

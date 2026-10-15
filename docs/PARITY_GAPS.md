@@ -245,7 +245,8 @@ The REA parity audit of 2026-10-11 found these about cargo and units, implemente
 - **Cargo orders by kind** (`Order::cargo`, save format 10; `movement_util.cpp`
   `CargoWhat`). Load Cargo, Drop Cargo, Launch Units Remotely and Recover Units Remotely
   name a kind of cargo and move every design of it; the main window asks for the place
-  first and the kind after (`MainWindow::chooseCargo`), and a colony's Launch and Recover
+  first and the kind after (`MainWindow::chooseCargo`; since 2026-10-15 Drop Cargo's
+  destination after the kind, `dropTo`), and a colony's Launch and Recover
   only for the kind. The original's saved games carry the kind both ways. OpenSE4's
   computer players still give these orders for one design (the classic AI's own choice),
   and orders saved before format 10 keep their design.
@@ -702,12 +703,14 @@ keys the client ignored followed the specs:
   buildable designs of the hull that are not obsolete, with picture, Name, Size and cost
   columns and the Design Report on a right-click; Abandon Planet is a colony order (kind 64
   imported and exported) carried out at once only in a turn-based game; Create Fleet makes an
-  empty "Alpha Fleet" (and on), deleted when the window closes empty, under minister control
+  empty "Alpha Fleet" (and on), deleted when the window's Close button closes it empty (since
+  2026-10-15 Esc and Enter keep it, as the original does), under minister control
   as new vehicles are; Fleet Transfer lists only vehicles that may join and the fleets whose
   location is the sector; Systems To Avoid toggles the avoid mark on every tab. OpenSE4's own
   in these windows: the Scrap window's Facilities tab and status line, the reason a picker
   row gives when hovered, Fleet Transfer's Disband Fleet and Rename Fleet, Systems To Avoid's
-  Release All Claims, and turn processing deleting an empty fleet a lost window left.
+  Release All Claims. Since 2026-10-15 an empty fleet lasts through turn processing until a
+  saved game is loaded, as the original's does.
 - **Player Computer Control** (spec 06 §1.2.1, §7 Q84; `ai::setComputerControl`): the check
   list behind a master password, the mark with all ministers and flags; local and hotseat games
   end when no human is left. Since 2026-10-03 every empire can be switched, neutral ones too:
@@ -1058,11 +1061,9 @@ Settled from the executable on 2026-10-11 (the REA parity audit) and implemented
   (the inline editor showed its real name, against spec 01 §6.1); hovering anywhere showing
   the nearest system's notes.
 
-What remains:
-
-| Where | Client now | Original | Impact |
-|---|---|---|---|
-| Construct's size picker (`shipui::constructSizes`) | Always shown, even for a single size, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114); the sizes it offers (those whose ID equals the device's best value) and the targets (every object of the kind in the sector, seen or not) match since 2026-10-14 | L |
+Nothing of it remains: the accuracy pass of 2026-10-14/15 settled the Construct size picker
+(always shown, its sizes in PlanetSize.txt order, spec 06 §7 Q114) as ours, and Stellar
+Construction's world is read and written in the original's saved games (spec 08 §3.8.8).
 
 The REA parity audit of the main window (2026-10-14, spec 06 §2.3, §2.4, §2.8, §3, §7 Q99(d),
 Q115–Q118; spec 03 §8, §8.1) brought the client and engine in line with the executable:
@@ -1102,11 +1103,31 @@ What remains different:
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Change Name on the unchanged name | Taken as no change | Refused as a name in use, the prompt asked again | none (a quirk not copied) |
-| Held keys (spec 06 §3) | Only the selection cycles and the movement log's single step repeat | Every main-window key repeats while held (inferred) | L |
 | Set Patrol's end | Also Enter or a right click (OpenSE4's), Repeat on, a lone order kept as a plain move | Only a click on the object's own sector | none (an addition) |
 | View Orders | Editable (Move Up, Move Down, Delete Order, Clear Orders, Repeat), the current order first | Read-only, the list in place | none (an addition) |
 | Opening Set Construction Queue from Construction Queues | Marks the object changed only when something is changed there | Marks it as the window opens | L (which minister flags a switched player's copy carries) |
 | Ships\Units' fleet rows | Move and Supplies over the members at the location (ours) | Not described | none |
+
+The accuracy pass of 2026-10-15 on the interface (spec 06 §1.1, §1.3, §1.9, §2.3, §2.5, §2.9,
+§3, §3.4, §7 Q93, Q113, Q115, Q124, Q125) brought the main window and a few windows in line with
+the complete listing: the tags last until Shift+C or a sector's selection; the ship cycle goes
+on from the last ship it selected itself, its "Stop once per location" table holding only its
+own stops; the fleet cycle goes by fleet number through the fleets that can still move,
+selecting the first such member; the colony cycle goes by planet name, letter case counting,
+and selects the colony's sector as a click does; Drop Cargo asks the kind of cargo before the
+destination; Esc and Enter close a large window without its closing step, so Fleet Transfer
+then keeps an empty fleet, which lasts until a saved game is loaded; the sector's list writes "<design> Class" under the player's own
+ships and bases only, and sorts its stellar objects by owner, then name in capitals; the empire
+pickers list the empires by name; an enemy design's detail stops after its size; Select
+Directory opens a folder as soon as a mouse button is pressed on it; the main window counts one
+modifier key at a time, and every key repeats while held. What remains different, and OpenSE4's additions that became options,
+off by default:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| An enemy design's detail (`screens/designs.cpp`) | The picture, name, Size and components, as the original's; OpenSE4's option "Show enemy designs' details" (Options) adds the owner, date, costs and figures | Only the picture, name, Size and components | none (an option) |
+| Held keys (spec 06 §3, §7 Q117; `MainWindow::hotkeys`, `systemKeyRepeated`) | Every main-window key repeats while held, End Turn too, at the system's repeat rate, as the original; OpenSE4's option "Act once on held keys" (Options) repeats only the selection cycles and the movement log's single step | Every key repeats on the system's key-down messages | none (an option) |
+| Tags across selections (`MainWindow::selectVehicle`, `selectPlanet`, `taggedNote`) | The original's rule; a line over the report says the next order goes to the tagged group (ours, Q124). OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options) clears them when a ship or fleet button or a Goto selects an object in another sector | The ship and fleet buttons and the Gotos keep the tags; the next order goes to the tagged group | none (an option) |
 
 ## Computer player (spec 05 §7)
 

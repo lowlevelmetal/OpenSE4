@@ -77,8 +77,8 @@ sit below; **Close is always the bottom slot** [S].
 | Game Setup (8 pages) | Configure a new game. Pages: Quadrant, Events, Technology, Player Settings, Players, Victory Conditions, Game Settings, Mechanics. | Full-screen; page buttons plus Begin Game / Cancel on every page. Quadrant page has a map preview with Generate Map Now and Load Map; Players page has Add New, Add Existing, Remove, Save To File [T]. Opens on the Players page with an empty list and forgets everything between games; every page's layout is in spec 07 session 5 (observed). | Intro → New Game; File Menu → New. |
 | Empire Setup (6 pages) | Create an empire. Pages: General, Environment, Culture, Characteristics, Advanced Traits, Description. | Full-screen; page buttons plus Create Empire / Cancel. General page has a race-style picture chooser with arrows (the race portrait and a ship of the style side by side), design-name-file picker, minister style [T], and Password and Email boxes. It starts empty; the ▽ buttons open 340×370 list pickers; layouts in spec 07 session 5 (observed). | Game Setup → Players → Add New. |
 | Culture Modifiers Comparison | Compare cultures. | A 780x475 dialog: the list of cultures with ten modifier columns, a legend under it, Close; layout in spec 02 §9 (confirmed: binary). | Empire Setup → Culture → Compare Culture Modifiers. |
-| Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. A 420×520 dialog: "Save Game Name" and "Date" columns, names in capitals, Change Directory and Cancel under the list (observed, spec 07 session 5); Add Existing's "Load Empire" is the same dialog. It opens sorted by name, A to Z; a click on the "Save Game Name" or "Date" heading sorts by that column, dates newest first, with the usual five-key history of §7 Q24 (confirmed: binary; that a heading click does it, inferred). Ours since 2026-10-14 (`FileSortHistory`, `screens/file_list.hpp`), the history kept while the dialog is open. | Intro; File Menu → Load. |
-| Select Directory | Choose a folder. | A 400x500 window: a Drive box ("c:" at first), a 300 px list of the folders (a double click opens one, inferred), an editable Current Directory box, OK and Cancel (confirmed: binary). Our client: the Drive box lists the drives on Windows and the root elsewhere, ".." heads the list, a folder typed into Current Directory with Enter is opened, and Default goes to the saves folder (OpenSE4's); the places inside the window are ours (inferred). | Load Game (and the original's Save Game) → Change Directory. |
+| Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. A 420×520 dialog: "Save Game Name" and "Date" columns, names in capitals, Change Directory and Cancel under the list (observed, spec 07 session 5); Add Existing's "Load Empire" is the same dialog. It opens sorted by name, A to Z; a click on the "Save Game Name" or "Date" heading sorts by that column, dates newest first, with the usual five-key history of §7 Q24 (confirmed: binary). Ours since 2026-10-14 (`FileSortHistory`, `screens/file_list.hpp`), the history kept while the dialog is open. | Intro; File Menu → Load. |
+| Select Directory | Choose a folder. | A 400x500 window: a Drive box ("c:" at first), a 300 px list of the folders, an editable Current Directory box, OK and Cancel. Pressing any mouse button on a row of the list opens that folder at once (".." the parent; "." is not listed); Esc cancels, Enter is OK (confirmed: binary; the press corrected 2026-10-15, complete listing). Since 2026-10-15 ours opens a folder on the press, as the original (before, a click selected and a double click opened). Our client: the Drive box lists the drives on Windows and the root elsewhere, ".." heads the list, a folder typed into Current Directory with Enter is opened, and Default goes to the saves folder (OpenSE4's); the places inside the window are ours (inferred). | Load Game (and the original's Save Game) → Change Directory. |
 | Load Map | Pick a saved map. | (not documented) | Game Setup → Quadrant. |
 | Scenario chooser | Pick a scenario. | The Load Game picker in scenario mode, titled "Load Scenario": the first column "Scenario Filename", then Date. It lists the scenario folder's files whose lower-case name contains "_settings.txt", each as its name without that part in capitals, with the file's date; Change Directory and Cancel as in Load Game. A row starts the scenario with the stem folder + name (§5.6); Cancel does nothing. The Tutorial button starts the scenario folder's Tutorial without the picker (confirmed: binary). Ours: the Learn window's Scenarios tab lists them beside the mods' scenarios (§5.6). | Intro → Scenario. |
 | Credits | Rolling credits. | — | Intro. |
@@ -135,7 +135,7 @@ simultaneous game is loaded from a saved game (Load Game, Resume Game, the Game 
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Damage, Launching, Formation); Add asks "Enter Strategy Name" (spec 04 §16, confirmed: binary) [T]. Copy and Remove are ours. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
 | Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. The original's Manual opens the installed `manual\SE4 Manual.htm` in the browser at once (confirmed: binary); ours opens OpenSE4's Manual window, and since 2026-10-14 the gap (slot 11) holds Original Manual, which opens the installed manual in the browser, when the install has one. | F1. |
-| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). Only a right click on a weapon opens its report (confirmed: binary, 2026-10-14; ours opened it on a left click too until then). Ours: a weapon whose type the mount does not take keeps its plain figures (inferred, §7 Q113). | Help; Create Design. |
+| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). Only a right click on a weapon opens its report (confirmed: binary, 2026-10-14; ours opened it on a left click too until then). A weapon whose type the mount does not take keeps its plain figures (confirmed: binary, §7 Q113 (f)); ours too. | Help; Create Design. |
 | Galaxy Map | Enlarged strategic map. | See §2.6. | Right-click the galaxy panel. |
 
 #### 1.2.1 Player Computer Control
@@ -306,10 +306,10 @@ OpenSE4's own choices, (inferred):
 | Screen | Purpose | Reached from |
 |---|---|---|
 | Select Waypoint | Choose a waypoint as a destination. | Move To Waypoint; Set Construction Queue → Set Move To. |
-| Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. The vehicle list holds only vehicles in no fleet that may join one, cloaked ones too; the fleet list the fleets whose location is the sector, with their members there. Create Fleet asks for a name (OK, Cancel; "Alpha Fleet" and on) and makes an empty fleet; one still empty when the window closes is deleted. Rules in spec 03 §9 (confirmed: binary). Disband Fleet and Rename Fleet are OpenSE4's own. | Order F; Combat Simulator. |
+| Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. The vehicle list holds only vehicles in no fleet that may join one, cloaked ones too; the fleet list the fleets whose location is the sector, with their members there. Create Fleet asks for a name (OK, Cancel; "Alpha Fleet" and on) and makes an empty fleet. The Close button deletes the fleets left without a member as it closes the window; Esc and Enter close it without that step, so an empty fleet then stays (§3.4; corrected 2026-10-15, complete listing). Rules in spec 03 §9 (confirmed: binary). Disband Fleet and Rename Fleet are OpenSE4's own. | Order F; Combat Simulator. |
 | Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). Every holder with cargo space is listed, each with its cargo lines, a colony's population one line per race; holders with no cargo space are left out. The empire's options keep the step, Ten at first (spec 08 §3.6.7); loading from a planet quarantined by plague is refused in a message box. The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
 | Launch \ Recover Units | Two lists. Left, the carriers of the sector: the own colonies (also with nothing aboard) and the own ships and bases that can take part, each with "Can Launch:" and a line each for fighters, satellites, mines and drones (what it may still launch this turn against its rate), then the units it carries. Right, the own unit groups in space there. A click on a unit launches it from that carrier; a click on a group recovers it into the carrier selected on the left; each acts at once on exactly that holder, giving and running no order and logging nothing (spec 03 §12). Move One / Move Five / Move Ten / Move All, kept with the empire's options, Ten at first (spec 08 §3.6.7). A launch or recovery that cannot fully happen says why in a message box titled "Launch Warning" or "Recover Warning". Not available in simultaneous games. In a battle the same window opens in battle mode (§1.10.2, spec 04 §10.4) (confirmed: binary). | Order U; tactical combat orders. |
-| Location pick, then cargo-kind / unit-kind picker | Load, Drop, Launch Units Remotely and Recover Units Remotely: the sector is picked first (and for Drop its destination, §2.9); at the click a picker offers the kinds, the same whatever the selection carries: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms for Load and Drop; Fighters, Satellites, Mines, Drones for Launch; Fighters, Satellites, Drones for Recover. A colony's Launch and Recover ask only the kind: the order is given at once at the colony (spec 03 §8, confirmed: binary). | Orders L, D, I, O. |
+| Location pick, then cargo-kind / unit-kind picker | Load, Drop, Launch Units Remotely and Recover Units Remotely: the sector is picked first; at the click a picker offers the kinds (Drop then asks its destination, §2.9), the same whatever the selection carries: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms for Load and Drop; Fighters, Satellites, Mines, Drones for Launch; Fighters, Satellites, Drones for Recover. A colony's Launch and Recover ask only the kind: the order is given at once at the colony (spec 03 §8, confirmed: binary). | Orders L, D, I, O. |
 | Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). How it gives its orders: below the table (confirmed: binary). | Order B. |
 | Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked; on a colony too, the order lists the vehicles in its sector), opened with nothing selected; each row the vehicle's name, "<design> Class" and its status icons; Order By Name (the default: name with letter case ignored, then design) and Order By Class, each refilling the list and dropping the selection; Select All and Select None. Statistics: Scrap Value and Cost to Unmothball (the selection's sums, 0 unless that button is lit), Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status (the last selected vehicle's word), Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector, and two fixed note lines; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Retrofit opens Select New Design (spec 03 §14). Rules and turn styles in spec 03 §15 (confirmed: binary). Our client follows this since 2026-10-13; its Facilities tab, shown with an own colony in the sector, is OpenSE4's own (opened with `kFacilitiesTab`, for Scrap Facilities), and so are its status line and the reason a picker row gives when hovered. | Order G. |
 | View Orders | Pending orders of the selected object, read-only; with Repeat on the list ends with a "(Repeat Orders)" row (confirmed: binary). Ours adds Move Up, Move Down, Delete Order, Clear Orders and the Repeat Orders box, and shows the current order first. | Order V. |
@@ -318,7 +318,7 @@ OpenSE4's own choices, (inferred):
 | Select Facility | Pick a usable facility. | Use Facility order. |
 | Convert Resources | Choose source/target resource and amount. | Convert Resources order (Ctrl+V). |
 | Change Name | Text prompt "Enter New Name" holding the current name (the fleet's for a fleet). A name exactly equal, case counting, to the name of any space object of the game (a ship, base or unit group, a planet, star, warp point or other stellar object, of any empire) is refused with an "Invalid Name" box saying the name is in use, and the prompt opens again until the name is free or the player cancels; fleets' names are not compared (confirmed: binary). The original also refuses OK on the unchanged current name, as in use. Our client differs: that is taken as no change. Since 2026-10-14 the engine refuses such names for every player (`cmd::Rename`, `spaceObjectNameInUse`) and our prompt shows the box. | Order N. |
-| Formation \ Strategy picker | For a selected fleet: two pickers in turn, the formation, then the strategy (confirmed: binary). Ours sets the formation as it is picked, and Cancel on the strategy picker keeps it (inferred). | Order H. |
+| Formation \ Strategy picker | For a selected fleet: two pickers in turn, the formation, then the strategy; the formation is set as soon as it is picked, and Cancel on the strategy picker keeps it (confirmed: binary, §7 Q118). Ours does the same. | Order H. |
 | Abandon Planet confirmation | Two questions: abandon the planet, then (with facilities) whether to scrap them; the answer becomes the colony's Abandon order (spec 02 §5, confirmed: binary). | Ctrl+A. |
 | Pick Object | Choose one planet, warp point, own object or target when the sector clicked holds several (§2.9), or the object a stellar manipulation acts on when the vehicle's sector holds several (below) (confirmed: binary). | Colonize, Warp, Drop Cargo, a pursuing Attack, Stellar Manipulation. |
 | Colony-type picker | Shown when a colonize order completes, if the empire option is on. | Colonize. |
@@ -336,8 +336,8 @@ vehicle's sector and a button for each of the 13 manipulations.
   ID` **equals** the vehicle's best `Create Constructed Planet` value (the largest Val 1 over
   all its abilities), and the order stores the chosen record's position in PlanetSize.txt,
   counted from 1 (confirmed: binary; corrected 2026-10-14, complete listing: not every world
-  up to the value). Our list offers them in PlanetSize.txt order and always shows the picker
-  (inferred, §7 Q114).
+  up to the value). The picker opens even when one size qualifies, its sizes in PlanetSize.txt
+  order (confirmed: binary, 2026-10-15, §7 Q114); ours too.
 - With Empire Options' "confirm stellar manipulation" on, a "Confirm Action" Yes/No names
   the effect; for Construct it names the size, asking whether to build that world around
   this star (§7 Q46). No gives no order.
@@ -1034,6 +1034,33 @@ fires no weapon writes why at the map's top left (out of range, reloading, no su
 weapon ticked). The original shows nothing then (§1.10.1 "Mouse"). Combat Options holds the
 same switch under its own "OpenSE4" heading (§1.10.3).
 
+**OpenSE4's tags option** (an OpenSE4 option, since 2026-10-15). Further down the OpenSE4
+rows, "Clear tags when selecting a ship elsewhere", off by default, kept with this computer's
+settings (`clearTagsElsewhere`, `clear_tags_elsewhere` in `classic_settings.toml`). Off, the
+tags last as the original keeps them (§2.5 "What clears the tags"); on, selecting one object
+(by a ship or fleet button or a Goto) in another sector than the one selected before clears
+them, so the next order goes to the object shown (`OptionsScreen` in
+`screens/settings_screen.cpp`, `MainWindow::selectVehicle`, `selectPlanet`).
+
+**OpenSE4's enemy designs option** (an OpenSE4 option, since 2026-10-15). "Show enemy designs'
+details", off by default, kept with this computer's settings (`enemyDesignDetails`,
+`enemy_design_details` in `classic_settings.toml`): on, the Designs window's enemy tabs show
+an enemy design's owner (in place of the design type), date, costs, Movement, Shields, Cargo
+Space and Supply Capacity as well, which the original leaves out (§7 Q93).
+
+**OpenSE4's held keys option** (an OpenSE4 option, since 2026-10-15). "Act once on held keys",
+off by default, kept with this computer's settings (`actOnceOnHeldKeys`,
+`act_once_on_held_keys` in `classic_settings.toml`): on, a main-window key held down acts once,
+but for the selection cycles and the movement log's single step, which repeat; off, every key
+repeats as the original's do (§3, §7 Q117).
+
+**The OpenSE4 rows, in order** (since 2026-10-15): Ship movement speed; the two ship movement
+lamps and "Also animate other empires' and simultaneous turns' moves"; "Say on the map why a
+click fired nothing"; "Explain failed orders" (spec 03 §8); "More in item reports" (§1.2);
+"Game Setup's Save To File saves the designs" (spec 08 §11.1 Q26); "Clear tags when selecting a
+ship elsewhere"; "Show enemy designs' details"; "Act once on held keys"; then the game's
+autosave choice. Every one is off by default but the speed (1x) and the first movement lamp.
+
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
 in brackets.
@@ -1551,7 +1578,7 @@ in the code and asked in §7 Q89–Q98.
   alphabetical order, the areas in data order under each; the heading over the boxes reads "1
   Current Project" or "N Current Projects"; the reorder window's rows are the areas' names; a
   right-click on an area or a project box opens the area's report. Ours since 2026-10-11 (the
-  green is the progress bar's #00FF00, inferred, §7 Q113); the description under the pointer
+  green is #00FF00, confirmed: binary, §7 Q113 (d)); the description under the pointer
   is ours. The original shows Tech Tree only when the game lets players see the complete tech
   tree (§1.2, spec 01 §2.2), and the project boxes of §7 Q92 (confirmed: binary); ours too
   since 2026-10-03 (`GameOptions::completeTechTree`).
@@ -1797,7 +1824,8 @@ Three groups, left to right [T][S]:
      and dim buttons do nothing.
 3. **Selection buttons**: three stacked "previous | icon | next" controls (48x24) cycling
    through ships, fleets and colonies, at the panel's top right: 48 px left of its right
-   edge, at (448,34) at 800x600 and (965,34) at 1024x768 (confirmed: binary).
+   edge, at (448,34) at 800x600 and (965,34) at 1024x768; they play no sound (confirmed:
+   binary).
    **The ship cycle** (confirmed: binary). The top selector's arrows, Space, Ctrl+N and
    Ctrl+B all run one command over the same ships: next (Space, Ctrl+N, the right arrow)
    or previous (Ctrl+B, the left arrow) through the vehicles in object order, wrapping
@@ -1808,13 +1836,41 @@ Three groups, left to right [T][S]:
    whatever the turn style (so a sentried ship with movement left is passed by in a
    turn-based game). The Empire Options' four Next/Previous switches then filter [T][S]:
    skip ships under construction, skip damaged ships, skip ships in fleets, and stop once
-   per location. "Stop once per location" keeps a table of the places the cycle has
-   stopped at and passes by a candidate whose place is in it; the table is emptied when
-   the cycle wraps round the list's end, and when the player or the direction changes.
-   Our client follows this since 2026-10-14 (`cycleShip`, `order_rules.hpp`). Its
-   choices (inferred, §7 Q115): the place of the ship the cycle leaves counts as visited,
-   so a press from a ship selected by a click goes to another place; "skip ships under
-   construction" has nothing to skip, as our ships appear finished.
+   per location. The cycle remembers the place in the game's object list of the last ship
+   it selected itself, not of a ship selected by a click or any other way, and a press goes
+   on from there; the memory is kept from turn to turn and reset only when the main window
+   is set up and when another player's turn begins on this computer. With nothing
+   remembered a press forward starts at the list's start, and a press backward one before
+   the list's end, so the last object is looked at last. "Stop once per location" keeps a
+   table of the places the cycle has stopped at (up to 100; beyond that no place is added)
+   and passes by a candidate whose place is in it; the place of a ship selected any other
+   way is not in it. The table is emptied when the walk passes either end of the list, and
+   when the player or the direction changes (corrected 2026-10-15, complete listing; §7
+   Q115). "Skip ships under construction" skips nothing in a normal game (§7 Q48). Our
+   client follows this since 2026-10-14, and since 2026-10-15 the place it goes on from
+   and the table's places (`cycleShip`, `ShipCycleMemory`, `order_rules.hpp`; before, a
+   press went on from the ship selected, whose place counted as visited).
+   **The fleet cycle** (confirmed: binary). The middle selector's arrows, Ctrl+F (next)
+   and Ctrl+D (previous) take the player's fleets by fleet number, 1 to 100, round the
+   end. A fleet counts only when one of the player's own objects in it still has movement
+   points left this turn, and the object selected is the first such member in the game's
+   object order, so the panel shows the Fleet Report (§2.5). The cycle remembers the last
+   fleet number it chose, reset only when another player's turn begins, and goes on from
+   it, not from the fleet selected. Our client follows since 2026-10-15 (`cycleFleet`,
+   `order_rules.hpp`), its fleet numbers the order the fleets were made in; before, it took
+   every fleet of the player in the game's fleet order from the fleet selected, and
+   selected the leader whether or not anything could move.
+   **The colony cycle** (confirmed: binary). The bottom selector's arrows, Ctrl+C (next)
+   and Ctrl+X (previous) take the player's colonies sorted by planet name, by character
+   code (letter case counts, so capitals come before small letters), A to Z, round the
+   end. The cycle remembers the colony it chose last by its system and sector, reset only
+   when another player's turn begins, and goes on from it, not from the selection. The
+   chosen colony's sector is then selected exactly as a click on it: one visible object
+   opens its report, several give the sector's list, and the tags are cleared. Our client
+   follows since 2026-10-15 (`cycleColony`, `order_rules.hpp`; before, it took the game's
+   colony order from the planet selected and opened the planet's report directly). With
+   two colonies in the remembered sector ours goes on past all of them, so the sector is
+   one stop (inferred, §7 Q125).
 
 **Hover hint** (confirmed: binary). Hovering a command or order button writes two
 centred lines of white text, with no box or border, straight over the system picture in
@@ -2353,9 +2409,13 @@ binary). Our client follows since 2026-10-14.
 ### 2.5 Ship list / report panel
 
 Shows either a list of everything at the selected location, or a single report (ship,
-planet, storm, fleet, system). Each list row has the object's 36x36 picture, its name,
-for ships the class (design) name, and for own objects a row of status icons on the
-right. Clicking a row replaces the list with that object's report and enables the order
+planet, storm, fleet, system). Each list row has the object's 36x36 picture, its name at
+x 40, for the player's own ships and bases "<design name> Class" on a second line at
+(46,16), and for own objects a row of status icons on the right. Unit groups have no
+class line, and other empires' vehicles show their name only, no design and no owner
+(confirmed: binary; corrected 2026-10-15, complete listing). Since 2026-10-15 ours follows
+(`MainWindow::reportPanel`); before, every vehicle showed its design, with "xN" for a
+group, and other empires' vehicles their owner's name in brackets. Clicking a row replaces the list with that object's report and enables the order
 buttons; an up-arrow button at the top right of the report returns to the list. Shift+click
 tags several ships (a green arrow is drawn on each) so one order goes to all of them;
 the group dissolves after the order; Shift+A tags all, Shift+C clears [T]. Tagging a ship
@@ -2363,6 +2423,20 @@ that is in a fleet tags the whole fleet; Shift+A tags every own object in the li
 fleets expanded; every left-click on a sector clears the tags, on the same sector too
 (confirmed: binary). The orders a tagged group can take are in §2.8, and how the tagged
 vehicles carry an order out is spec 03 §8 "Tagged vehicles".
+
+**What clears the tags** (confirmed: binary; corrected 2026-10-15, complete listing). Only
+Shift+C and a selection of a sector: a left-click on a sector, the colony buttons (they select
+the colony's sector, §2.3), the re-selection after an order to the group, the report's
+up-arrow, the Log's Goto to a location and the game's own re-selections. The ship cycle (Space,
+Ctrl+N, Ctrl+B, the top selector), the fleet cycle, a click on a row of the list and the Gotos
+that select one object (Ships\Units, Planets, Colonies) keep the tags while the panel shows the
+new object's report, and an order given then goes to the tagged group: the order takes the
+first tagged object before the selection (§2.8). What the panel draws over the report while
+tags exist was not traced (§7 Q124). Since 2026-10-15 ours follows (`MainWindow::selectVehicle`,
+`selectPlanet`): the object's report shows, with a line of ours over its foot that the next
+order goes to the tagged group (`MainWindow::taggedNote`). OpenSE4's option "Clear tags when
+selecting a ship elsewhere" (§1.9, off by default) clears the tags when the object selected
+stands in another sector than the one selected before, as ours did until then.
 
 **Fleets in the list** (confirmed: binary; observed, spec 07 session 7). The list holds the
 objects of the sector that the player sees, except that each of the player's own fleets is
@@ -2373,8 +2447,11 @@ fleet members included. So a sector holding one of the player's fleets and nothi
 player sees counts one object, and a click on it opens the Fleet Report at once (§2.4). The
 rows are sorted: stellar objects (planets, stars, warp points, storms) first; then by fleet
 number, highest first, vehicles in no fleet last; then by the owner's player number; then by
-hull, in VehicleSize.txt order, unit groups after ships; then by name, ignoring case. A
-left-click on a row opens its report (a fleet's row the Fleet Report), and so does a
+hull, in VehicleSize.txt order, unit groups after ships; then by name, ignoring case. The five
+keys apply to stellar objects too: after "stellar first" they tie on fleet number, then sort by
+owner number (unowned stars, warp points, storms, comets and uncolonized planets first,
+colonies by their owner's player number), then by name, compared in capitals (confirmed:
+binary; 2026-10-15, complete listing). A left-click on a row opens its report (a fleet's row the Fleet Report), and so does a
 right-click; Shift with the left button tags the row instead, a fleet's row tagging every
 member at the fleet's location.
 
@@ -2387,11 +2464,13 @@ report is shown in the panel, and the lit orders are the fleet's (§2.8). In the
 a left-click makes that member the fleet's leader (spec 03 §9) and redraws the list; a
 right-click opens the member's Ship Report as a popup window, on Detail like every report
 popup. Neither changes the panel, the order buttons or the selection. The up-arrow returns
-to the sector's list. Since 2026-10-05 our client follows (§7 Q110), with these choices of
-its own: the stellar objects are sorted among themselves by name (inferred); a fleet member
-selected any other way (the ship arrows, a Goto) shows the Fleet Report alone too
-(inferred, §7 Q111); and the Fleet Report ends with the fleet's order list, as our Ship
-Report does (an OpenSE4 addition).
+to the sector's list. Any selection of a member of one of the player's own fleets (the ship
+and fleet arrows, the Gotos, a sector holding that one object) shows the Fleet Report alone
+too (confirmed: binary, §7 Q111). Since 2026-10-05 our client follows (§7 Q110), and the
+Fleet Report ends with the fleet's order list, as our Ship Report does (an OpenSE4 addition).
+Since 2026-10-15 the stellar objects are sorted by the same keys, a colony counting its owner
+as the viewer sees it, and every name is compared in capitals (`sectorListRows`); before, the
+list drew the stellar objects in the system's order, sorted only by name elsewhere.
 
 **What replaces the report** (confirmed: binary; observed, spec 07 session 6). The panel
 changes only when the player selects something:
@@ -2623,9 +2702,10 @@ All of this subsection is (confirmed: binary).
 - The four movement-log buttons are lit in every simultaneous game, whatever is
   selected, and always dim in turn-based games.
 - Every other button depends only on the object whose report the right panel shows, or
-  on the tagged group. All are dim when nothing is selected; when the panel shows a list
-  of several objects, a system report, a star, a storm or a warp point; and when the
-  object belongs to another empire.
+  on the tagged group, which comes first: while tags exist the buttons are the group's,
+  whatever report the panel shows (§2.5 "What clears the tags"). All are dim when nothing
+  is selected; when the panel shows a list of several objects, a system report, a star, a
+  storm or a warp point; and when the object belongs to another empire.
 - A hotkey runs its order only when that order's button is lit. The exception is the
   four movement-log keys (Ctrl+P, Ctrl+O, Ctrl+I, Ctrl+U), which start the replay
   without checking their buttons (§7 Q51).
@@ -2741,11 +2821,15 @@ asks:
 The picked object becomes the order's target: Colonize gives Load Cargo (population, when the
 ship carries none), Move To and Colonize naming that planet; Warp gives Move To and Warp
 through that warp point; Drop Cargo delivers into that object; the pursuit follows that
-object. Load, Drop, Launch Remotely and Recover Remotely then ask the kind of cargo (§1.3);
-for Drop the destination comes first and the kind after it (inferred: which of the two the
-original asks first is not known). Nothing about the target is checked when it is picked; the order's own tests run when
-it is carried out (spec 03 §8). In a turn-based game the selected vehicle's orders then run at
-once.
+object. Load, Drop, Launch Remotely and Recover Remotely ask the kind of cargo when the sector
+is clicked (§1.3). Drop asks it first and gathers its candidates after, whatever the answer:
+Cancel on the kind still shows the Pick Object window when there are several candidates, and
+then no order is given; with no candidate the kind is still asked, and nothing is given
+(confirmed: binary; corrected 2026-10-15, complete listing). Nothing about the target is
+checked when it is picked; the order's own tests run when it is carried out (spec 03 §8). In a
+turn-based game the selected vehicle's orders then run at once. Since 2026-10-15 ours asks Drop
+Cargo's kind first (`MainWindow::chooseCargo`, `dropTo`); before, it asked the destination
+first.
 
 Since 2026-10-04 our client follows (§7 Q100), the Colonize candidates included: every planet
 of the clicked sector, hidden ones too, and one alone gives the order at once (spec 03 §19
@@ -2766,13 +2850,28 @@ and the turn is not being ended or the movement log replayed, and an order key o
 when its button is lit (§2.8; the movement-log keys are the exception). The main window
 has no Esc or Enter binding (confirmed: binary).
 
-A held key repeats: the main window acts on every key-down message the system sends, so
-holding Space keeps cycling through the ships and holding Ctrl+I keeps stepping the movement
-log's days (inferred: the usual key-down repeat, with nothing in the handlers telling a
-repeat apart). Our client differs: only the selection cycles (Space, Ctrl+N, Ctrl+B, Ctrl+F,
-Ctrl+D, Ctrl+C, Ctrl+X) and the movement log's single step repeat; a held window, order or
-End Turn key acts once, so that it never opens a window again, flips an order twice or ends
-several turns.
+**One modifier at a time** (confirmed: binary; 2026-10-15, complete listing). The main window
+reduces the held modifiers to one before it looks the key up: Shift first, then Alt, then Ctrl.
+So Ctrl+Shift+A acts as Shift+A (tag all), Ctrl+Alt+digit (AltGr on many keyboards) as
+Alt+digit, and a Ctrl key pressed with Shift held does nothing. Since 2026-10-15 ours does the
+same (`Bindings::pressedOneModifier`, `oneModifier`, `MainWindow::hotkeys`); before, a binding
+took only its exact modifiers (AltGr counting as Alt). A chord that one of OpenSE4's own bindings
+or a mod's key uses as it is held, such as Ctrl+Shift+N (the AI notes view), keeps its meaning.
+
+A held key repeats: the main window acts on every key-down message the system sends, repeats
+included, with no repeat test anywhere, so holding Space keeps cycling through the ships,
+holding Ctrl+I keeps stepping the movement log's days, and every other main-window key, End
+Turn too, acts again whenever no window is open and the main window is not busy (confirmed:
+binary; 2026-10-15, complete listing; §7 Q117). A window that opens at the turn's start then
+takes the following repeats (inferred). The rate is the system's own key repeat, as the
+player's system sets it: the original reads no rate of its own. Since 2026-10-15 ours does the
+same: every main-window key acts again on each repeat the system sends while it is held
+(`systemKeyRepeated` in `client/input.hpp`, noted from SDL's repeated key-down events; that
+they come at the rate the original's messages would is inferred). OpenSE4's option "Act once on
+held keys" (§1.9, off by default) keeps the rule ours had until then: only the selection cycles
+(Space, Ctrl+N, Ctrl+B, Ctrl+F, Ctrl+D, Ctrl+C, Ctrl+X) and the movement log's single step
+repeat; a held window, order or End Turn key acts once, so that it never opens a window again,
+flips an order twice or ends several turns.
 
 ### 3.1 Main window: orders
 
@@ -2841,8 +2940,8 @@ sector to the tagged minefields when it is not one; Ctrl+R removes it when it is
 | F11 | Empire Status |
 | F12 | End Turn |
 | Space or Ctrl+N / Ctrl+B | Next / previous ship: one cycle, the top selector's (§2.3) |
-| Ctrl+F / Ctrl+D | Next / previous fleet |
-| Ctrl+C / Ctrl+X | Next / previous colony |
+| Ctrl+F / Ctrl+D | Next / previous fleet with a member that can still move (§2.3) |
+| Ctrl+C / Ctrl+X | Next / previous colony by name, its sector selected as a click selects it (§2.3) |
 | Ctrl+P | Movement log replay, full |
 | Ctrl+O | Movement log replay, reload (rewind) |
 | Ctrl+I | Movement log replay, single step (one day) |
@@ -2877,7 +2976,7 @@ Every window opens modally. Keys each kind of window handles (confirmed: binary)
 
 | Window | Keys |
 |---|---|
-| Large dialogs (the 780-wide family: Log, Planets, Options and the rest) | Esc or Enter closes when the bottom button is Close; Esc closes when it is Cancel; otherwise no keys |
+| Large dialogs (the 780-wide family: Log, Planets, Options and the rest) | Esc or Enter closes when the bottom button is Close; Esc closes when it is Cancel; otherwise no keys. The keys close the window directly: only the bottom button runs the window's own closing step first, where it has one (below) |
 | Message boxes | Esc or Enter = OK. In Yes/No prompts Esc or Enter = **No**, Y = Yes, N = No. In a prompt offering Tactical and Strategic, T and S pick them |
 | Text prompts (Change Name and the like), the folder chooser, Create Fleet, galaxy-map notes | Esc cancels, Enter accepts (notes: saves the text) |
 | Game Menu | Esc = Close |
@@ -2890,6 +2989,20 @@ Every window opens modally. Keys each kind of window handles (confirmed: binary)
 | Intro | any key or click skips the opening logos |
 | TCP/IP host and player | Enter sends the chat line |
 | Selection pickers, check lists (Players, Scrap Facilities), Reorder lists, setup screens, ship and planet report pop-ups | no keys at all |
+
+**A large window's closing step** (confirmed: binary; 2026-10-15, complete listing). The bottom
+Close button of a large window runs the window's own closing step before closing it; Esc and
+Enter close the window without it. Two windows have such a step: Fleet Transfer, which deletes
+the fleets left without a member, and Cargo Transfer (a step of its own, not traced). So a fleet
+made with Create Fleet and left empty survives when Fleet Transfer is closed with Esc or Enter;
+the original disbands memberless fleets when a game is loaded. Since 2026-10-15 ours follows for
+Fleet Transfer: its Close button deletes the player's fleets with no member, Esc and Enter keep
+them (`Dialog::closedByKey`, `screens/fleet_transfer.cpp`); our Cargo Transfer has no closing
+step. Such a fleet lasts through turn processing until a saved game is loaded, as the
+original's does (spec 03 §9). OpenSE4's keyboard navigation (Tab and the arrows between a
+window's widgets) never takes these keys from the window: a window opens with its keyboard
+cursor hidden, so Enter closes it even after an Esc pressed in another window had shown the
+cursor (since 2026-10-15, `Dialog`; before, Enter could press the first row of the list).
 
 Discrepancies: the Readme calls the Ctrl+P/O/I/U family "Phase Replay". Our client binds
 every key of §3.1 and §3.2, rebindable in Settings → Controls, and Help → Hotkeys lists
@@ -4629,10 +4742,10 @@ something open; all are now settled from the executable:
     - **Skip ships under construction** skips ships whose status is Under Construction,
       which a ship has only from its creation until its components are first updated; a
       space yard runs that update at once (and every supply update does too), so in a
-      normal game the option skips nothing. This answer was not rechecked when the claims
-      that something is never read or never done were checked again on the complete
-      listing (2026-10-14); it rests on the listing that cut routines short at their
-      cleanup blocks, so a reader of the status may have been missed. To recheck.
+      normal game the option skips nothing. Rechecked on the complete listing (2026-10-15):
+      a ship is Under Construction only from its creation until its first component update,
+      the build completion runs that update at once, and nothing else sets the status, so
+      the answer stands.
     - **Save Empire** first asks whether to save the designs with the empire (Yes/No; Esc
       and Enter mean No), then opens the empire file picker. The file holds a copy of the
       empire with the game state cleared (research, intelligence, diplomacy, queues, log,
@@ -5731,8 +5844,11 @@ choices (inferred):
       at (4,150) with their three amounts. The part below (from (270,209)) holds Movement,
       Shields, Cargo Space and Supply Capacity (labels at x 4, values right-aligned at x 160,
       15 px apart), "(Insufficient technology)" in grey #A0A0A0 when it applies, and
-      "Components on Design" at (274,291) over the component grid. With Stats\Strategy on the
-      grid is hidden and the part shows Number Constructed, Number In Service, Number Lost,
+      "Components on Design" at (274,291) over the component grid. On the enemy tabs the
+      detail stops after the Size line: no Design Type, Date Created, "(Obsolete)", Cost,
+      Maintenance Cost, Movement, Shields, Cargo Space, Supply Capacity or "(Insufficient
+      technology)"; the component grid follows. Those lines are drawn on the own tabs only
+      (2026-10-15, complete listing). With Stats\Strategy on the grid is hidden and the part shows Number Constructed, Number In Service, Number Lost,
       Number Scrapped and Enemy Tonnage Destroyed (labels at x 6, values right-aligned at
       x 270, 15 px apart from y 97 of that part) and "Default Strategy" with its picker.
     - *Component grid:* at (276,308), 290×146: 36×36 cells, 8 to a row, 4 rows; **one cell
@@ -5741,8 +5857,7 @@ choices (inferred):
     Our client follows the answer since 2026-10-03. Our choices: the letter case is ignored in
     the alphabetical order; the hull's picture is drawn 36 px; the three amounts of Cost and
     Maintenance Cost right-aligned at x 172, 225 and 278 of the top part, each with its icon;
-    an enemy design shows its owner in place of its design type; the default strategy is a
-    drop-down; an obsolete design's button reads Make Current; a design just made is selected
+    the default strategy is a drop-down; an obsolete design's button reads Make Current; a design just made is selected
     and scrolled into view, and our notes (a design made, a refusal) go in the title strip.
     Hide Obsolete and Stats\Strategy are kept with the empire's options in the saved game, as
     the original keeps them (spec 08 §3.6.7), so the window opens again as it was left: ours
@@ -5752,9 +5867,10 @@ choices (inferred):
     saves), the buttons are lit as above, and the enemy tabs list as above; ours hid enemy
     designs their owner had made obsolete and listed eliminated empires' designs, lit
     Create and Stats\Strategy everywhere and dimmed Edit for a design in a queue. Ours still
-    opens on the tab of a design it was opened for, and writes "(Obsolete)" only for an own
-    design (whether another empire made a design obsolete is its own business; inferred,
-    §7 Q113).
+    opens on the tab of a design it was opened for. Since 2026-10-15 an enemy design's detail
+    stops after Size as the original's (`DesignsScreen::detail`); before, it showed the owner
+    in place of the design type, the date, both costs and the four figures, which OpenSE4's
+    option "Show enemy designs' details" (§1.9, off by default) still shows.
 94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
     Type", the same from every tab; the designer is a 780x475 window. Places in its content
     area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes
@@ -5845,9 +5961,9 @@ choices (inferred):
     report; a design opened while Condensed View is on is reordered only at its next added
     component, the strip merging its identical entries meanwhile; the size list's Abilities
     box shows the hull under the pointer, else the design's, a design being edited keeps its
-    hull listed, and Cancel clears a size chosen before (inferred, as in Design Type's list, §7 Q113);
-    Cancel in "Select Weapon Mount" picks Normal Mount, and the mount's name at x 319 is white
-    and reads "Normal Mount" without one (inferred, §7 Q113); blank lines of a name file are
+    hull listed, and Cancel clears a size chosen before (confirmed: binary, §7 Q113 (b));
+    Cancel in "Select Weapon Mount" picks Normal Mount (confirmed: binary, §7 Q113 (c)), and the
+    mount's name at x 319 is white and reads "Normal Mount" without one (inferred, §7 Q113); blank lines of a name file are
     left out; a mount's figures show under the pointer in its list. **Our client differs:**
     the words "Design Name" are only a hint in an empty box, and Create Design refuses an
     empty name in the "Design Warnings" box, so no design is named "Design Name" or nothing
@@ -6265,7 +6381,10 @@ ships attacking together are spec 03 §19 Q81 and Q82; the fleet in the sector l
      vehicle, which can be a member of one of the player's fleets. Does the original's panel
      then show the Fleet Report, as for the fleet's row of the list, or the member's own Ship
      Report? OpenSE4 shows the Fleet Report alone, whatever selected the member, so the
-     panel never shows a member's own report (inferred, §2.5).
+     panel never shows a member's own report (inferred, §2.5). **Answer** (confirmed: binary;
+     2026-10-15, complete listing): any selection of a member of one of the player's own
+     fleets (the ship arrows, the fleet arrows, the Gotos, a sector holding that one object)
+     shows the Fleet Report. Ours already does.
 
 **A player's report on v0.11.0 (2026-10-06).** Three points about ship movement at End Turn, in
 an imported turn-based game of the original.
@@ -6364,11 +6483,27 @@ an imported turn-based game of the original.
      (d) *Research.* Which green are queued areas drawn in? Ours: #00FF00.
      (e) *Intelligence.* In which order do the "Select Empire" lists give the empires, and
      do the sorted lists ignore the letter case? Ours: empire order; the case ignored.
+     **Answer** (confirmed: binary; 2026-10-15, complete listing): the empire picker (the
+     intelligence project's target and its second "empire" list, and the other places that
+     use the same picker) lists the known empires sorted by empire name, the letter case
+     ignored; so do the "Select Player" lists, and the ship, planet and technology lists
+     sort by name ignoring case too. Since 2026-10-15 ours sorts the intelligence lists and
+     Communicate's third-empire list so (`intelTargetList`, `empiresByName`); OpenSE4 has no
+     "Select Player" list of its own.
      (f) *Weapons Report.* Does a mount change the figures of a weapon whose type it does
      not take (a direct-fire mount and a missile)? Ours: no, that weapon keeps its plain
      figures.
      (g) *Designs.* Does the detail of an enemy design say "(Obsolete)" when its owner made
-     it obsolete? Ours: no, only an own design's does.
+     it obsolete? Ours: no, only an own design's does. **Answer** (confirmed: binary;
+     2026-10-15, complete listing): no; the enemy tabs' detail stops after the Size line
+     (Q93). Ours follows.
+     **Answers to (b), (c), (d) and (f)** (confirmed: binary; 2026-10-15, complete listing):
+     (b) the Abilities box follows the row under the pointer, a single left click picks and
+     closes, a right click opens the hull's report, and Cancel clears a size chosen before;
+     (c) Cancel picks the normal mount (the list's first row describes the standard mount;
+     the label at x 319 was not traced); (d) queued areas are pure green #00FF00, completed
+     ones #606060 with "Complete"; (f) a mount changes a weapon's figures only when it can
+     take that weapon. Ours already does all four.
 
 114. **The objects a stellar manipulation can be aimed at.** The Stellar Manipulation window
      takes its target from the vehicle's sector after the player confirms (§1.3), and asks
@@ -6377,11 +6512,11 @@ an imported turn-based game of the original.
      does the Construct size picker list the constructed worlds in PlanetSize.txt order, and
      appear when only one size qualifies? Our client lists every object of the kind, seen or
      not, and always shows the size picker, its sizes in file order (inferred).
-     **Answer, in part** (confirmed: binary, 2026-10-14): the targets are every object of the
-     kind in the vehicle's sector, with no sight test, in the system's object order, as ours;
-     the size picker lists only the records whose `Special Ability ID` equals the vehicle's
-     best value (§1.3). Whether the picker shows for a single size, and its order, stay open.
-     Since 2026-10-14 ours follows (`shipui::constructSizes`).
+     **Answer** (confirmed: binary, 2026-10-14 and 2026-10-15, complete listing): the targets
+     are every object of the kind in the vehicle's sector, with no sight test, in the system's
+     object order, as ours; the size picker lists only the records whose `Special Ability ID`
+     equals the vehicle's best value (§1.3), always opens, even for one size, and lists them in
+     PlanetSize.txt order. Since 2026-10-14 ours follows (`shipui::constructSizes`).
 
 **The REA parity audit's main window (2026-10-14).** The audit of the original's main window
 against the executable settled the ship cycle, the location keys, Set Patrol, Change Name,
@@ -6392,7 +6527,13 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      visited by "Stop once per location", so that a press from a ship the player selected
      with a click goes to another place. Does the original's table hold only the places the
      cycle itself stopped at? And does a press start from the selected ship, or from the last
-     ship the cycle selected?
+     ship the cycle selected? **Answer** (confirmed: binary; 2026-10-15, complete listing):
+     the table holds only the places the cycle stopped at, up to 100, and a press goes on
+     from the place in the object list of the last ship the cycle selected, kept from turn to
+     turn and reset when the main window is set up and when another player's turn begins; a
+     first press backward starts one before the list's end (§2.3). The fleet cycle and the
+     colony cycle likewise go on from what they chose last. Since 2026-10-15 ours follows
+     (`cycleShip`, `cycleFleet`, `cycleColony`, `order_rules.hpp`).
 116. **Set Patrol in a turn-based game.** Each point clicked adds its Move To at once. In a
      turn-based game every order given runs at once, so in ours the ship sets out for the
      first point as soon as it is clicked, and a point it reaches leaves the list before the
@@ -6407,9 +6548,16 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      before the route closes (`MainWindow::addPatrolPoint`, `finishPatrol`).
 117. **Held keys.** Which of the main window's keys repeat while held, and does End Turn?
      Ours repeats only the selection cycles and the movement log's single step (§3).
+     **Answer** (confirmed: binary; 2026-10-15, complete listing): every one, End Turn too: the
+     main window acts on every key-down message, repeats included, whenever no window is open
+     and it is not busy (§3). Since 2026-10-15 ours does the same, at the system's repeat rate
+     (inferred); acting once for windows, orders and End Turn, ours until then, is OpenSE4's
+     option "Act once on held keys" (§1.9).
 118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is
      picked; Cancel on the strategy picker that follows keeps it. Does the original keep the
-     formation, or change nothing unless both are picked?
+     formation, or change nothing unless both are picked? **Answer** (confirmed: binary;
+     2026-10-15, complete listing): the formation is set as soon as it is picked, and Cancel on
+     the strategy picker keeps it. Ours already does.
 
 **From implementing the REA parity audit's units package (2026-10-14).**
 
@@ -6431,7 +6579,9 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
        first.
      - *The pickers of Load, Drop, Launch and Recover Remotely.* For Drop Cargo, does the
        kind picker come before or after the Pick Object window? Ours asks the destination
-       first. Their titles and look are ours.
+       first. Their titles and look are ours. **Answer** (confirmed: binary; 2026-10-15,
+       complete listing): the kind first, then the destination, whatever the first answer
+       (§2.9). Since 2026-10-15 ours follows (`MainWindow::dropTo`).
      - *Races On Planet* for a colony of another empire: ours opened it for own colonies only.
        Settled by Q120: the original opens it for any colony, and ours does since 2026-10-14.
      - *The step bytes of the empire options* (spec 08 §3.6.7) are taken as the radio's
@@ -6542,3 +6692,18 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      tagged group's order the current square is selected again once its moves are shown
      (`MainWindow::followMove`'s corner and reselect markers, `marksAt`,
      `noteRedrawnSquares`). Before, the current sector stayed where it was.
+
+**The accuracy pass of 2026-10-15 (the interface).** Implementing the interface's findings left
+these open:
+
+124. **The report while tags exist.** The ship and fleet buttons and the Gotos keep the tags
+     while the panel shows the new object's report, and the next order goes to the tagged group
+     (§2.5 "What clears the tags", confirmed: binary). Does the panel mark the tags then (the
+     tagged count, the group, nothing)? Ours writes a line of its own over the report's foot,
+     "N tagged: the next order goes to them. Shift+C clears the tags." (inferred).
+125. **Two colonies in one sector and the colony cycle.** The colony cycle remembers the
+     colony it chose last by its system and sector (§2.3, confirmed: binary). Where two of the
+     player's colonies share a sector, which one does the next press go on from: the first of
+     them in the sorted list (so the cycle could stop at the other one again and again), or
+     the last? Ours goes on past every colony of that sector, forward from the last of them
+     and back from the first, so the sector, whose list shows both, is one stop (inferred).

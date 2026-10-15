@@ -67,7 +67,6 @@ private:
     std::string folderField_, folderError_;
     std::filesystem::path browsing_;      // Select Directory's current folder
     std::vector<std::string> folders_;    // its folders, ".." first
-    int pickedFolder_ = -1;
 };
 
 } // namespace opense4::client::classic

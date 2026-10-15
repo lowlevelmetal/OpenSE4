@@ -4,7 +4,13 @@ These are the default keys. Most of them can be changed in the Controls tab of t
 [Settings](settings#controls) window, and the Help window's [Hotkeys](help:hotkeys) tab always
 shows the keys as they are bound now. The keys of the main window work while no other window is
 open and no text field has the keyboard. An order key works only while its order button is lit;
-pointing at an order button shows its name and key at the top of the system panel.
+pointing at an order button shows its name and key at the top of the system panel. The main
+window counts one of `Shift`, `Alt` and `Ctrl` at a time, in that order: `Ctrl+Shift+A` tags all
+as `Shift+A` does, and `Ctrl+Alt+3` (`AltGr+3` on many keyboards) sets waypoint 3 as `Alt+3`
+does. OpenSE4's own keys with two modifiers, such as `Ctrl+Shift+N`, keep their meaning. A key
+held down acts again at your system's key repeat, as in the original, `F12` (End Turn) too;
+Options' "Act once on held keys" (under OpenSE4) makes every key but the selection keys and the
+movement log's single step act once however long you hold it.
 
 ## Windows
 
@@ -83,12 +89,12 @@ moves are being played, these keys are ignored.
 
 | Key | Action |
 |---|---|
-| `Space`, `Ctrl+N` | Next ship that can move and has no orders (turn-based games: has movement left); never a base, a mothballed ship or a ship on Sentry. Held down, it keeps going |
+| `Space`, `Ctrl+N` | Next ship that can move and has no orders (turn-based games: has movement left); never a base, a mothballed ship or a ship on Sentry. It goes on from the last ship it selected, whatever you selected since. Held down, it keeps going |
 | `Ctrl+B` | Previous ship, the same way |
-| `Ctrl+F`, `Ctrl+D` | Next, previous fleet |
-| `Ctrl+C`, `Ctrl+X` | Next, previous colony |
+| `Ctrl+F`, `Ctrl+D` | Next, previous fleet that can still move this turn, by fleet number |
+| `Ctrl+C`, `Ctrl+X` | Next, previous colony by name: its sector is selected as a click selects it |
 | `Shift+click` in the list of a sector | Tag a ship (a ship in a fleet tags the fleet), so that one order goes to every tagged ship |
-| `Shift+A`, `Shift+C` | Tag all your ships in the selected sector, clear the tags |
+| `Shift+A`, `Shift+C` | Tag all your ships in the selected sector, clear the tags (a click on a sector clears them too; the ship and fleet keys keep them) |
 | `Esc` | Cancel picking a place; otherwise clear the selection |
 
 ## Display

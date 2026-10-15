@@ -24,7 +24,7 @@ namespace {
 
 using S = ClassicSettings;
 
-constexpr std::array<BoolOption, 18> kBoolOptions{{
+constexpr std::array<BoolOption, 21> kBoolOptions{{
     {"animate_system_movement", &S::animateSystemMovement},
     {"animate_combat_movement", &S::animateCombatMovement},
     {"sound_on", &S::soundOn},
@@ -43,6 +43,9 @@ constexpr std::array<BoolOption, 18> kBoolOptions{{
     {"explain_failed_orders", &S::explainFailedOrders},
     {"report_extras", &S::reportExtras},
     {"setup_saves_designs", &S::setupSavesDesigns},
+    {"clear_tags_elsewhere", &S::clearTagsElsewhere},
+    {"enemy_design_details", &S::enemyDesignDetails},
+    {"act_once_on_held_keys", &S::actOnceOnHeldKeys},
 }};
 
 std::filesystem::path settingsFile() { return userDataDir() / "classic_settings.toml"; }

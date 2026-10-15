@@ -259,6 +259,43 @@ bool Bindings::pressed(Action a, bool repeat) const {
     return false;
 }
 
+bool Bindings::pressedOneModifier(Action a, bool repeat, const std::function<bool(const KeyChord&)>& taken) const {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput) return false;
+    for (const KeyChord& c : keys_[static_cast<size_t>(a)]) {
+        if (c.empty() || !(ImGui::IsKeyPressed(c.key, false) || (repeat && systemKeyRepeated(c.key)))) continue;
+        if (modifiersDown(c)) return true;
+        const KeyChord held{c.key, io.KeyCtrl, io.KeyShift, io.KeyAlt};
+        const KeyChord one = oneModifier(held);
+        if (one.ctrl == c.ctrl && one.shift == c.shift && one.alt == c.alt && !(taken && taken(held))) return true;
+    }
+    return false;
+}
+
+namespace {
+std::vector<ImGuiKey>& systemRepeats() {
+    static std::vector<ImGuiKey> keys;
+    return keys;
+}
+} // namespace
+
+void noteSystemKeyRepeat(ImGuiKey key) {
+    if (key != ImGuiKey_None) systemRepeats().push_back(key);
+}
+void clearSystemKeyRepeats() { systemRepeats().clear(); }
+bool systemKeyRepeated(ImGuiKey key) {
+    const std::vector<ImGuiKey>& keys = systemRepeats();
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
+KeyChord oneModifier(KeyChord held) {
+    KeyChord out{held.key, false, false, false};
+    if (held.shift) out.shift = true;
+    else if (held.alt) out.alt = true;
+    else if (held.ctrl) out.ctrl = true;
+    return out;
+}
+
 std::optional<KeyChord> capturePressedChord() {
     const ImGuiIO& io = ImGui::GetIO();
     for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {

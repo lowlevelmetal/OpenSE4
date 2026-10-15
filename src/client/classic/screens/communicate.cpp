@@ -354,7 +354,8 @@ private:
         ImGui::SetNextItemWidth(fieldW);
         const std::string label = draft_.thirdEmpire.valid() ? s.empire(draft_.thirdEmpire).name : std::string("Choose an empire");
         if (ImGui::BeginCombo("##third", label.c_str())) {
-            for (EmpireId k : knownEmpires(ui))
+            // By name, as the original's empire picker (spec 06 §7 Q113 (e)).
+            for (EmpireId k : empiresByName(s, knownEmpires(ui)))
                 if (k != target_ && ImGui::Selectable(s.empire(k).name.c_str(), k == draft_.thirdEmpire)) {
                     const bool auto_ = draft_.text == autoText_;
                     draft_.thirdEmpire = k;

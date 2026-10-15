@@ -91,6 +91,7 @@ struct InputEvent {
     float wheel = 0;             // notches, positive up
     ImGuiKey key = ImGuiKey_None;
     bool ctrl = false, shift = false, alt = false;   // the modifiers held (key events)
+    bool repeat = false;         // KeyDown: the system's repeat of a held key
     std::string text;            // Text
     WindowChange window = WindowChange::FocusLost;   // Window
     bool decisive = false;       // the press or key whose fate (lock) the step checks

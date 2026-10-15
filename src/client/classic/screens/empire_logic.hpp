@@ -20,6 +20,9 @@ namespace opense4::client::classic {
 
 // Empires `me` has met (Relation::contact), alive, in id order, without `me`.
 std::vector<game::EmpireId> contactedEmpires(const game::GameState& s, game::EmpireId me);
+// The empires sorted by name, the letter case ignored, as the original's
+// empire pickers list them (spec 06 §7 Q113 (e), confirmed: binary).
+std::vector<game::EmpireId> empiresByName(const game::GameState& s, std::vector<game::EmpireId> empires);
 // The Treaty Grid's code for a treaty (spec 06 §1.5, confirmed: binary):
 // War, NI, NA, Sub, Pro, TA, TR, MA, P; None has none (empty).
 std::string_view treatyCode(game::Treaty t);
@@ -299,12 +302,12 @@ std::vector<uint32_t> availableIntelProjects(const game::Rules& r, const game::E
 // One of the list windows an intelligence project asks for when `me` adds it
 // (spec 05 §2.1, confirmed: binary): its title and its rows, each the order a
 // click on it makes. `stage` 0 is "Select Empire", the living empires `me` is
-// in contact with, in empire order, with no "Any" row; stage 1 the second
-// list of the project's kind for `order.target`, its "Any ..." row first:
-// "Select Ship" (the target's vehicles `me` sees now), "Select Planet" (its
-// colonies `me` sees), "Select Technology" (the areas `me` can research now),
-// each sorted by name with the letter case ignored (ours), or "Select Empire"
-// (`me`'s other contacts, in empire order). `last`: a click on a row of this
+// in contact with, with no "Any" row; stage 1 the second list of the
+// project's kind for `order.target`, its "Any ..." row first: "Select Ship"
+// (the target's vehicles `me` sees now), "Select Planet" (its colonies `me`
+// sees), "Select Technology" (the areas `me` can research now) or "Select
+// Empire" (`me`'s other contacts). Every list is sorted by name with the
+// letter case ignored (confirmed: binary). `last`: a click on a row of this
 // list completes the order.
 struct IntelTargetRow {
     std::string label;

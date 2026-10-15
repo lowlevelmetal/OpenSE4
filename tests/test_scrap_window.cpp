@@ -10,7 +10,9 @@
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/scrap.hpp"
+#include "game/serialize.hpp"
 #include "game/turn.hpp"
+#include "temp_dir.hpp"
 
 #include <doctest/doctest.h>
 
@@ -636,7 +638,7 @@ TEST_CASE("scrap window: a self-destructed vehicle counts as scrapped, not lost"
 
 // ---- Create Fleet (spec 03 §9, confirmed: binary) ---------------------------------------------------
 
-TEST_CASE("fleet transfer: Create Fleet makes an empty fleet with a Greek name; turn processing drops it while empty") {
+TEST_CASE("fleet transfer: Create Fleet makes an empty fleet with a Greek name; it lasts through turns until a saved game is loaded") {
     const Rules& r = engineRules();
     GameState s = newGame(r, true);
     const Location home = homeOf(s, kMe);
@@ -674,16 +676,31 @@ TEST_CASE("fleet transfer: Create Fleet makes an empty fleet with a Greek name; 
     REQUIRE(apply(r, s, kMe, cmd::LeaveFleet{b}).ok);
     CHECK_FALSE(s.fleet(second));
     REQUIRE(s.fleet(alphaId));
-    // Turn processing deletes a fleet left empty (with no minister in charge of
-    // the other, which the ministers would manage).
+    // Turn processing keeps a fleet left empty, as the original does (with no
+    // minister in charge of the other, which the ministers would manage);
+    // loading a saved game disbands it (spec 03 §9, spec 08 §3.6.12).
     s.fleet(alphaId)->minister = false;
     const size_t before = s.fleets.size();
+    const FleetId empty = s.fleets.back().id;
+    REQUIRE(s.fleet(empty)->members.empty());
+    s.fleet(empty)->minister = false;
     TurnOptions o;
     o.aiForMissing = false;
     processTurn(r, s, {}, o);
-    CHECK(s.fleets.size() == before - 1);
+    CHECK(s.fleets.size() == before);
     CHECK(s.fleet(alphaId));
-    for (const Fleet& f : s.fleets) CHECK_FALSE(f.members.empty());
+    REQUIRE(s.fleet(empty));
+    CHECK(s.fleet(empty)->members.empty());
+    const test::TempDir dir("empty-fleet");
+    const std::filesystem::path file = dir / "empty-fleet.sav";
+    REQUIRE(saveGame(file, s, SaveInfo{}).has_value());
+    const auto loaded = loadGame(file);
+    REQUIRE(loaded.has_value());
+    const GameState& back = loaded->first;
+    CHECK(back.fleets.size() == before - 1);
+    CHECK(back.fleet(alphaId));
+    CHECK_FALSE(back.fleet(empty));
+    for (const Fleet& f : back.fleets) CHECK_FALSE(f.members.empty());
 }
 
 TEST_CASE("fleet transfer: the default names go Alpha to Kappa, then two words built as the original builds them") {

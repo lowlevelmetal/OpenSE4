@@ -47,6 +47,16 @@ std::vector<game::EmpireId> contactedEmpires(const game::GameState& s, game::Emp
     return out;
 }
 
+std::vector<game::EmpireId> empiresByName(const game::GameState& s, std::vector<game::EmpireId> empires) {
+    auto lower = [](std::string_view name) {
+        std::string out(name);
+        for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return out;
+    };
+    std::stable_sort(empires.begin(), empires.end(), [&](game::EmpireId a, game::EmpireId b) { return lower(s.empire(a).name) < lower(s.empire(b).name); });
+    return empires;
+}
+
 std::string_view treatyCode(Treaty t) {
     switch (t) {
         case Treaty::War: return "War";
@@ -964,8 +974,11 @@ IntelTargetList intelTargetList(const game::Rules& r, const game::GameState& s, 
         set(x.order);
         return x;
     };
+    // Every list here is sorted by name, the letter case ignored; the empire
+    // pickers too (spec 06 §7 Q113 (e), confirmed: binary).
     if (stage == 0) {
         for (game::EmpireId k : contactedEmpires(s, me)) out.rows.push_back(row(s.empire(k).name, [k](game::IntelProjectOrder& o) { o.target = k; }));
+        sortRowsByName(out.rows);
         out.last = kind == IntelTarget::Empire || kind == IntelTarget::None;
         return out;
     }
@@ -1002,7 +1015,7 @@ IntelTargetList intelTargetList(const game::Rules& r, const game::GameState& s, 
         case IntelTarget::ThirdEmpire:
             out.rows.push_back(row("Any Empire", [](game::IntelProjectOrder& o) { o.thirdEmpire = {}; }));
             for (game::EmpireId k : contactedEmpires(s, me))
-                if (k != order.target) out.rows.push_back(row(s.empire(k).name, [k](game::IntelProjectOrder& o) { o.thirdEmpire = k; }));
+                if (k != order.target) named.push_back(row(s.empire(k).name, [k](game::IntelProjectOrder& o) { o.thirdEmpire = k; }));
             break;
         case IntelTarget::None:
         case IntelTarget::Empire: break;

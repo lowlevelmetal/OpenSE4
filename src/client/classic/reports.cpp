@@ -217,12 +217,6 @@ std::string groupDesigns(const game::GameState& s, const game::Vehicle& v, size_
     return out;
 }
 
-std::string vehicleSummary(const UiContext& ui, const game::Vehicle& v) {
-    const game::GameState& s = ui.state();
-    std::string out = groupDesigns(s, v, 2);
-    if (v.owner != ui.session.player() && v.owner.valid()) out += " (" + s.empire(v.owner).name + ")";
-    return out;
-}
 
 ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo, bool* clicked) {
     // The image tabs of TabBtns.bmp: 72×30 cells; columns Detail, Comps, Cargo, Ability, Facil, Descr, Race, Tech;
