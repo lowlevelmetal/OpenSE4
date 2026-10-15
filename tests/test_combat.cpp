@@ -599,6 +599,15 @@ TEST_CASE("combat: the battle check - one-directional in turn-based games; colon
     CHECK_FALSE(combat::battleCheck(r, s, ar.loc, byMover));
     s.empire(ar.a).relation(ar.b).treaty = Treaty::War;
     s.vehicle(eye)->count = 0;
+    // Without the sensors A cannot see the cloaked ship; but once B has another
+    // object there that A sees, B's cloaked step starts a battle all the same:
+    // the watcher may see any object of the moving empire in the sector
+    // (corrected 2026-10-14, complete listing).
+    REQUIRE_FALSE(sight::canSeeVehicle(r, s, ar.a, *s.vehicle(lurker)));
+    CHECK_FALSE(combat::battleCheck(r, s, ar.loc, byLurker));
+    const VehicleId beacon = spawn(s, frigate(s, ar.b, "Beacon", 1, {}), ar.loc);
+    CHECK(combat::battleCheck(r, s, ar.loc, byLurker));
+    s.vehicle(beacon)->count = 0;
     s.removeDeadVehicles();
 
     // Simultaneous games: a colony alone never counts as the side that sees.

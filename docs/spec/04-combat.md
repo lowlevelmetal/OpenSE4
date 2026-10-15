@@ -59,7 +59,12 @@ Conventions:
 - **Who must see whom.** The check is one-directional: some empire of the moving group
   must see an object in the sector belonging to an empire it is hostile to. If the whole
   moving group is cloaked, another empire present there with an uncloaked object must
-  instead see one of the group's objects and be hostile to it. Mothballed ships,
+  instead be hostile to the moving empire and see **any** object of that empire in the
+  sector, not only one of the group's: a ship, a colony, a minefield or any other object
+  there (confirmed: binary; corrected 2026-10-14, complete listing). So when the moving
+  empire already has a visible object in the sector, the cloaked group's arrival starts a
+  battle. Since 2026-10-14 ours follows (`combat::battleCheck`); it used to test only the
+  group's own vehicles. Mothballed ships,
   planets and minefields all count as present; nothing is skipped for being mothballed,
   so a hostile group moving in on a lone mothballed ship it can see starts a battle.
 - **Seeing** follows the sight rules of spec 01 §6.3 for every object, colonies included,

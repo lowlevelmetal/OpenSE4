@@ -270,8 +270,9 @@ Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index);
 //     sector (a vehicle of any kind, mothballed ships and minefields
 //     included, or a colony) of an empire it is hostile to; when every member
 //     of the group is cloaked, another empire present with an uncloaked
-//     object (a vehicle or a colony) must instead see one of the group's
-//     vehicles and be hostile to the group's owner.
+//     object (a vehicle or a colony) must instead be hostile to the group's
+//     owner and see any object of that owner in the sector, the group's or
+//     another (corrected 2026-10-14).
 //   - Empty `group`: the check a simultaneous game makes of a sector after a
 //     day (tools and tests use it too). It passes when an empire with a
 //     vehicle or unit group in the sector whose cloaked flag is off sees an

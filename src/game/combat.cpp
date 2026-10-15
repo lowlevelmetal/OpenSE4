@@ -1360,7 +1360,9 @@ bool battleCheck(const Rules& r, const GameState& s, Location where, const Battl
     if (!cloaked) return seesHostile(mover, true);
     // A wholly cloaked group: another empire present with an uncloaked object
     // (a vehicle, a minefield included, or a colony that is not cloaked) must
-    // see one of the group's vehicles and be hostile to its owner.
+    // be hostile to the moving empire and see any of its objects in the
+    // sector, the group's or another: a vehicle of any kind or a colony (spec
+    // 04 §2, confirmed: binary; corrected 2026-10-14, complete listing).
     std::vector<EmpireId> watchers;
     for (const Vehicle* v : here)
         if (v->owner != mover && v->status != VehicleStatus::Cloaked) watchers.push_back(v->owner);
@@ -1368,8 +1370,10 @@ bool battleCheck(const Rules& r, const GameState& s, Location where, const Battl
         if (c->owner != mover && !c->cloaked) watchers.push_back(c->owner);  // a cloaked colony is not uncloaked (spec 01 §6.9)
     for (EmpireId e : watchers) {
         if (!hostile(s, e, mover)) continue;
-        for (const Vehicle* v : group)
-            if (detail::visibleTo(r, s, e, *v)) return true;
+        for (const Vehicle* v : here)
+            if (v->owner == mover && detail::visibleTo(r, s, e, *v)) return true;
+        for (const Colony* c : colonies)
+            if (c->owner == mover && detail::colonyVisibleTo(r, s, e, c->planet)) return true;
     }
     return false;
 }
