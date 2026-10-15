@@ -9,8 +9,10 @@
 #include "game/turn.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <format>
+#include <map>
 #include <optional>
 
 // Population (docs/spec/02 §2-4): growth, replicants, domes, plague,
@@ -216,6 +218,130 @@ int64_t triggerValue(const ruleset::HappinessModel* m, std::string_view trigger)
     return 0;
 }
 
+// ---- Mood reports (spec 02 §4 "Mood reports", confirmed: binary) ----------------------------------
+
+// The causes the Planetary Minister reports, in the order the reports go out:
+// the happiness record's entries, a cause for each kind of change.
+enum class Cause : uint8_t {
+    HomeworldLost, PlanetLost, PlanetColonized, OurPlanetCaptured, EnemyPlanetCaptured,
+    TreatyWar, TreatyNonIntercourse, TreatyNone, TreatyNonAggression, TreatySubjugatedSub, TreatyProtectorateSub,
+    TreatySubjugatedDom, TreatyProtectorateDom, TreatyTrade, TreatyTradeResearch, TreatyMilitaryAlliance, TreatyPartnership,
+    ShipLosses, ShipConstruction, BattleWin, BattleLoss, BattleStalemate, EnemyShips, OurShips, EnemyTroops, OurTroops,
+    PopulationKilled, FacilityConstruction, Plague, Count
+};
+using CauseTotals = std::array<int64_t, static_cast<size_t>(Cause::Count)>;  // tenths of a percent
+
+struct CauseName {
+    std::string_view trigger;  // a Happiness.txt entry that counts for it
+    Cause cause;
+};
+constexpr std::array<CauseName, 36> kCauseTriggers{{
+    {"Homeworld Lost", Cause::HomeworldLost},
+    {"Any Planet Lost", Cause::PlanetLost},
+    {"Any Planet Colonized", Cause::PlanetColonized},
+    {"Any Our Planet Captured", Cause::OurPlanetCaptured},
+    {"Any Enemy Planet Captured", Cause::EnemyPlanetCaptured},
+    {"New Treaty War", Cause::TreatyWar},
+    {"New Treaty Non Intercourse", Cause::TreatyNonIntercourse},
+    {"New Treaty None", Cause::TreatyNone},
+    {"New Treaty Non Aggression", Cause::TreatyNonAggression},
+    {"New Treaty Subjugated (Sub)", Cause::TreatySubjugatedSub},
+    {"New Treaty Protectorate (Sub)", Cause::TreatyProtectorateSub},
+    {"New Treaty Subjugated (Dom)", Cause::TreatySubjugatedDom},
+    {"New Treaty Protectorate (Dom)", Cause::TreatyProtectorateDom},
+    {"New Treaty Trade", Cause::TreatyTrade},
+    {"New Treaty Trade and Research", Cause::TreatyTradeResearch},
+    {"New Treaty Military Alliance", Cause::TreatyMilitaryAlliance},
+    {"New Treaty Partnership", Cause::TreatyPartnership},
+    {"Any Ship Lost", Cause::ShipLosses},
+    {"Ship Lost in System", Cause::ShipLosses},
+    {"Any Ship Constructed", Cause::ShipConstruction},
+    {"Ship Constructed", Cause::ShipConstruction},
+    {"Battle in System - Win", Cause::BattleWin},
+    {"Battle in Sector - Win", Cause::BattleWin},
+    {"Battle in System - Loss", Cause::BattleLoss},
+    {"Battle in Sector - Loss", Cause::BattleLoss},
+    {"Battle in System - Stalemate", Cause::BattleStalemate},
+    {"Battle in Sector - Stalemate", Cause::BattleStalemate},
+    {"Enemy Ship in System", Cause::EnemyShips},
+    {"Enemy Ship in Sector", Cause::EnemyShips},
+    {"Our Ship in System", Cause::OurShips},
+    {"Our Ship in Sector", Cause::OurShips},
+    {"Enemy Troops on Planet", Cause::EnemyTroops},
+    {"Our Troops on Planet", Cause::OurTroops},
+    {"1M Population Killed", Cause::PopulationKilled},
+    {"Facility Constructed", Cause::FacilityConstruction},
+    {"Planet Plagued", Cause::Plague},
+}};
+
+std::optional<Cause> causeOf(std::string_view trigger) {
+    for (const CauseName& c : kCauseTriggers)
+        if (datafile::keysEqual(c.trigger, trigger)) return c.cause;
+    return std::nullopt;
+}
+
+// Our own words for each cause, as the reports end them.
+std::string_view causePhrase(Cause c) {
+    switch (c) {
+        case Cause::HomeworldLost: return "the loss of our homeworld";
+        case Cause::PlanetLost: return "the loss of our planets";
+        case Cause::PlanetColonized: return "our new colonies";
+        case Cause::OurPlanetCaptured: return "the capture of our planets";
+        case Cause::EnemyPlanetCaptured: return "our capture of enemy planets";
+        case Cause::TreatyWar: return "the new war";
+        case Cause::TreatyNonIntercourse: return "the treaty of non-intercourse";
+        case Cause::TreatyNone: return "the end of a treaty";
+        case Cause::TreatyNonAggression: return "the non-aggression pact";
+        case Cause::TreatySubjugatedSub: return "our subjugation";
+        case Cause::TreatyProtectorateSub: return "our becoming a protectorate";
+        case Cause::TreatySubjugatedDom: return "our subjugation of another empire";
+        case Cause::TreatyProtectorateDom: return "our new protectorate";
+        case Cause::TreatyTrade: return "the trade alliance";
+        case Cause::TreatyTradeResearch: return "the trade and research alliance";
+        case Cause::TreatyMilitaryAlliance: return "the military alliance";
+        case Cause::TreatyPartnership: return "the partnership";
+        case Cause::ShipLosses: return "the loss of our ships";
+        case Cause::ShipConstruction: return "the building of ships";
+        case Cause::BattleWin: return "victory in battle";
+        case Cause::BattleLoss: return "defeat in battle";
+        case Cause::BattleStalemate: return "an undecided battle";
+        case Cause::EnemyShips: return "enemy ships nearby";
+        case Cause::OurShips: return "our ships nearby";
+        case Cause::EnemyTroops: return "enemy troops on our soil";
+        case Cause::OurTroops: return "our troops among them";
+        case Cause::PopulationKilled: return "the deaths of our people";
+        case Cause::FacilityConstruction: return "the building of facilities";
+        case Cause::Plague: return "plague";
+        case Cause::Count: break;
+    }
+    return {};
+}
+
+void addCause(CauseTotals& totals, std::optional<Cause> cause, int64_t tenths) {
+    if (cause) totals[static_cast<size_t>(*cause)] += tenths;
+}
+
+// One report per cause whose total, truncated to whole percent, is above 20
+// (growing unhappy) or below −20 (growing happier): Politics entries that
+// Goto `where` (spec 02 §4, confirmed: binary).
+void reportMoods(TurnContext& ctx, EmpireId e, const CauseTotals& totals, std::optional<SystemId> system) {
+    GameState& s = ctx.state;
+    for (size_t i = 0; i < totals.size(); ++i) {
+        const int64_t pct = totals[i] / 10;
+        if (pct >= -20 && pct <= 20) continue;
+        const bool unhappy = pct > 20;
+        const std::string_view phrase = causePhrase(static_cast<Cause>(i));
+        const std::string people = system ? std::format("the people of the {} system", s.galaxy.system(*system).name) : std::string("our people");
+        std::string text = std::format("The Planetary Minister reports that {} are growing {} because of {}.", people,
+                                       unhappy ? "unhappy" : "happier", phrase);
+        std::optional<Location> where;
+        if (system) where = Location{*system, Sector{kSystemCenter, kSystemCenter}};
+        LogEntry* entry = ctx.log(e, LogCategory::Politics, unhappy ? "Population Growing Unhappy" : "Population Growing Happier", std::move(text),
+                                  where, unhappy ? "PopulationAngry" : "PopulationHappy");
+        if (!system) logGoto(entry, LogGoto::None);
+    }
+}
+
 // Ships and bases in a system that count for happiness: not destroyed, cloaked or mothballed.
 struct Presence {
     int ourSector = 0, ourSystem = 0, enemySector = 0, enemySystem = 0;
@@ -237,13 +363,17 @@ Presence presenceAt(const Rules& r, const GameState& s, const Colony& c) {
     return p;
 }
 
-void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::span<const MoodEvent> events) {
+// Updates one colony's anger; adds what each cause gave it (its sector and
+// system events, ships present, troops and plague) to `causes`, and returns
+// whether its anger changed.
+bool updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::span<const MoodEvent> events, CauseTotals& causes) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     const ruleset::HappinessModel* model = modelOf(r, s.empire(c.owner).race);
     const auto v = [&](std::string_view key) { return triggerValue(model, key); };
     const Location where = locationOf(s.galaxy, c.planet);
     int64_t total = empireWide;  // tenths of a percent
+    const int before = c.anger;
 
     // 1. Drift towards Indifferent; other races resent their rulers.
     int64_t own = 0;
@@ -267,22 +397,26 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
         const int64_t d = v(ev.trigger) * std::max(1, ev.count);
         if (d == 0) continue;
         const Scope scope = scopeOf(ev.trigger);
+        bool counts = false;
         if (scope == Scope::System) {
             SystemId sys = ev.system;
             if (!sys.valid() && ev.planet.valid() && ev.planet.index() < s.galaxy.objects.size()) sys = s.galaxy.object(ev.planet).system;
-            if (sys == where.system) total += d;
-        } else if (scope == Scope::Location && ev.planet.valid() && ev.planet.index() < s.galaxy.objects.size() &&
-                   locationOf(s.galaxy, ev.planet) == where) {
-            total += d;
+            counts = sys == where.system;
+        } else if (scope == Scope::Location && ev.planet.valid() && ev.planet.index() < s.galaxy.objects.size()) {
+            counts = locationOf(s.galaxy, ev.planet) == where;
         }
+        if (!counts) continue;
+        total += d;
+        addCause(causes, causeOf(ev.trigger), d);
     }
 
     // 4. Ships present, counted per ship; the sector value replaces the system one.
     const Presence p = presenceAt(r, s, c);
-    if (p.enemySector > 0) total += v("Enemy Ship in Sector") * p.enemySector;
-    else total += v("Enemy Ship in System") * p.enemySystem;
-    if (p.ourSector > 0) total += v("Our Ship in Sector") * p.ourSector;
-    else total += v("Our Ship in System") * p.ourSystem;
+    const int64_t enemies = p.enemySector > 0 ? v("Enemy Ship in Sector") * p.enemySector : v("Enemy Ship in System") * p.enemySystem;
+    const int64_t friends = p.ourSector > 0 ? v("Our Ship in Sector") * p.ourSector : v("Our Ship in System") * p.ourSystem;
+    total += enemies + friends;
+    addCause(causes, Cause::EnemyShips, enemies);
+    addCause(causes, Cause::OurShips, friends);
 
     // 5. Troops (confirmed: binary): troops another empire landed that still
     //    fight for the planet count once as enemies, whatever the treaty; they
@@ -292,23 +426,37 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
     int64_t ourTroops = 0;
     for (const UnitStack& u : c.cargo.units)
         if (u.count > 0 && combat::isTroopDesign(r, s, u.design)) ourTroops += u.count;
-    if (!combat::invaders(r, s, c).empty()) total += v("Enemy Troops on Planet");
-    total += v("Our Troops on Planet") * ourTroops;
+    const int64_t invaded = combat::invaders(r, s, c).empty() ? 0 : v("Enemy Troops on Planet");
+    const int64_t garrison = v("Our Troops on Planet") * ourTroops;
+    total += invaded + garrison;
+    addCause(causes, Cause::EnemyTroops, invaded);
+    addCause(causes, Cause::OurTroops, garrison);
 
     // 6. Plague.
-    if (c.plagueLevel > 0) total += v("Planet Plagued");
+    if (c.plagueLevel > 0) {
+        total += v("Planet Plagued");
+        addCause(causes, Cause::Plague, v("Planet Plagued"));
+    }
 
     // Whole percent (truncated), plus the colony's own happiness facilities (positive angers).
     int64_t change = total / 10 + sumValue1(workingAbilities(r, s, c), AbilityKind::PlanetChangePopulationHappiness);
     if (model) {
-        // The data gives the negative limit as a negative number; a positive one is read the same (inferred).
-        if (change < 0) change = std::max<int64_t>(change, -std::abs(model->maxNegativeChange) / 10);
-        else change = std::min<int64_t>(change, model->maxPositiveChange / 10);
+        // A negative change below the stored negative limit ÷ 10 becomes that
+        // limit, with its sign as stored: a positive limit turns every calming
+        // change into that many points of anger (spec 02 §4, confirmed: binary).
+        const int64_t calmest = model->maxNegativeChange / 10;
+        if (change < 0) {
+            if (change < calmest) change = calmest;
+        } else {
+            change = std::min<int64_t>(change, model->maxPositiveChange / 10);
+        }
     }
     setAnger(r, s, c, static_cast<int>(std::clamp<int64_t>(c.anger + change, -kMaxAnger, 2 * kMaxAnger)));
-    if (moodFromAnger(c.anger) == Mood::Rioting)
+    // A rioting colony with people logs it (spec 02 §4, confirmed: binary).
+    if (moodFromAnger(c.anger) == Mood::Rioting && c.totalPopulation() > 0)
         ctx.log(c.owner, LogCategory::Misc, std::format("Riots on {}", s.galaxy.object(c.planet).name),
                 "The population produces nothing, builds nothing and does not grow until calm returns.", where, "PlanetRiots");
+    return c.anger != before;
 }
 
 } // namespace
@@ -415,12 +563,28 @@ void updateHappiness(TurnContext& ctx, EmpireId e) {
     const Race& race = s.empire(e).race;
     const ruleset::HappinessModel* model = modelOf(r, race);
     int64_t empireWide = 0;
+    CauseTotals wide{};
     for (const MoodEvent& ev : events)
-        if (scopeOf(ev.trigger) == Scope::Empire) empireWide += triggerValue(model, ev.trigger) * std::max(1, ev.count);
+        if (scopeOf(ev.trigger) == Scope::Empire) {
+            const int64_t d = triggerValue(model, ev.trigger) * std::max(1, ev.count);
+            empireWide += d;
+            addCause(wide, causeOf(ev.trigger), d);
+        }
     empireWide -= racialEffect(r, race, RacialEffect::Happiness) / 5;
     std::erase_if(events, [](const MoodEvent& ev) { return scopeOf(ev.trigger) == Scope::Empire; });
 
-    for (ObjectId planet : coloniesOf(s, e)) updateColonyAnger(ctx, *s.colony(planet), empireWide, events);
+    // The reports (spec 02 §4, confirmed: binary): the empire-wide events'
+    // causes first, then each colony's riot entry as it is updated, then, in
+    // system order, each system where one of our colonies changed its anger,
+    // by what each cause gave that system's colonies.
+    reportMoods(ctx, e, wide, std::nullopt);
+    std::map<SystemId, std::pair<CauseTotals, bool>> systems;
+    for (ObjectId planet : coloniesOf(s, e)) {
+        auto& [causes, changed] = systems[s.galaxy.object(planet).system];
+        if (updateColonyAnger(ctx, *s.colony(planet), empireWide, events, causes)) changed = true;
+    }
+    for (const auto& [sys, report] : systems)
+        if (report.second) reportMoods(ctx, e, report.first, sys);
 }
 
 void applySystemAbilities(TurnContext& ctx, EmpireId e) {

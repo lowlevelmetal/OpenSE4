@@ -739,7 +739,7 @@ problem, 25, 26 and 52 planet value or conditions changed, 29 / 30 / 31 / 37 new
 component / facility / hull / intelligence project (key = data position), 32 / 33 gift
 given / received, 34 / 35 contact made / lost, 36 order failed or warning (key =
 object), 40 scrap or retrofit result (key = design), 42 damage while moving, 43 treaty
-lost, 47 atmosphere changed, 48 / 49 population happy / angry, 51 new stellar
+lost, 47 atmosphere changed, 48 / 49 population happier / growing unhappy (the mood reports of spec 02 §4), 51 new stellar
 construction, 57 counter-intelligence success, 58 unit launch or recovery warning, 59
 password reset. For entries OpenSE4 makes itself, export kind 36 with picture key 0 and
 no other empire: that kind shows a generic picture and does not count for anger.

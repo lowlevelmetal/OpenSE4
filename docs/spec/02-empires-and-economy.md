@@ -694,10 +694,49 @@ logged since the last update (each event carries a count):
 - `change = trunc(total / 10)` in whole percent, plus the sum of `Planet - Change
   Population Happiness` Val1 on the colony (positive values make it angrier).
 - A negative change is limited to `trunc(Max Negative Anger Change / 10)`, a positive one
-  to `trunc(Max Positive Anger Change / 10)`.
+  to `trunc(Max Positive Anger Change / 10)`. For the negative side the rule is exactly:
+  a negative change below the stored value ÷ 10 (truncated) is replaced by that value, with
+  its sign as stored. A positive stored value thus turns every calming change into that
+  many points of anger; the stock values are negative (confirmed: binary; corrected
+  2026-10-14, complete listing: our engine used minus the absolute value, inferred).
 - `anger = clamp(anger + change, 0, 100)`, then at most 80 for a capital (§2).
 - Changes smaller than 10 tenths in total are lost each turn, because of the truncation.
-- A colony that is rioting after the update logs a riot message to its owner.
+- A colony that is rioting after the update, and has population, logs a riot message to its
+  owner: category Misc, an event-style entry (confirmed: binary; corrected 2026-10-14,
+  complete listing: a colony without people logs none).
+
+**Mood reports** (confirmed: binary; added 2026-10-14, complete listing). The update
+writes reports to the empire's own log, a computer player's included, by cause. The causes
+are the happiness record's entries, in this order: the five planet events (`Homeworld
+Lost`, `Any Planet Lost`, `Any Planet Colonized`, `Any Our Planet Captured`, `Any Enemy
+Planet Captured`), the twelve `New Treaty …` values in the order of §1.8, ship losses (`Any
+Ship Lost`, `Ship Lost in System`), ship construction (`Any Ship Constructed`, `Ship
+Constructed`), the three battle results (`… - Win`, `… - Loss`, `… - Stalemate`, in system
+or sector), enemy ships near, our ships near, enemy troops, our troops, population killed,
+facility construction and plague (the `Planet Plagued` event and a plagued colony's own
+term). Each cause has a short phrase of its own.
+- **Empire-wide**, right after the empire-wide sum: for each cause in turn, the cause's
+  total from the empire-wide events alone, truncated to whole percent; above 20 a
+  "Population Growing Unhappy" entry says that the Planetary Minister reports the general
+  population growing unhappy because of that cause, below −20 a "Population Growing
+  Happier" entry that it has grown happier because of it. The Happiness characteristic's
+  calm is not a cause.
+- **Per system**, after every colony is updated: for each system, in system order, where at
+  least one of the empire's colonies changed its anger this update, and each cause in turn,
+  the cause's contributions summed over the empire's colonies in that system (their sector
+  and system events, ships present, troops and plague; not the drift, the empire-wide part
+  or the colonies' own happiness facilities), truncated to whole percent: above 20 the same
+  "Unhappy" entry naming that system's population, below −20 the "Happier" one.
+- The entries are category Politics, of the original's entry kind 49 (unhappy, picture
+  `PopulationAngry`) or 48 (happier, picture `PopulationHappy`), with a Goto to the system.
+- **Order in the log**: the empire-wide reports, then each colony's riot entry as it is
+  updated, then the per-system reports.
+- The wording is ours. An empire-wide report names no system and has no Goto, and a
+  per-system one goes to the system's centre sector (inferred, question 57).
+- Since 2026-10-14 ours follows all of this (`economy_population.cpp` `updateHappiness`,
+  `reportMoods`, `updateColonyAnger`); before, the update wrote no reports, logged a riot
+  for a colony without people, and replaced a negative change only by minus the stored
+  value's absolute size.
 
 **Later the same turn**, after construction, the best `Change Population Happiness -
 System` Val1 in each system is subtracted from the anger of every colony of the owner
@@ -1964,3 +2003,9 @@ must change.
     commands can come from any client. No difference in play is expected.
     *Corrected 2026-10-13* (REA audit, confirmed: binary): a facility item is also refused
     when the facility is not researched; the full list is §6.5 "Acceptance".
+57. **Where the mood reports point** (§4 "Mood reports", raised 2026-10-14 when the
+    complete listing showed the reports). The reports go to the system they name; which
+    system and sector an empire-wide report records, if any, and which sector a per-system
+    one records, were not read. Our engine gives an empire-wide report no location and no
+    Goto, and a per-system one the system's centre sector (`reportMoods`, inferred). To
+    verify in the executable.

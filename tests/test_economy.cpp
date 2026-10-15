@@ -1824,12 +1824,13 @@ TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
 
 namespace {
 
-// A mood model in tenths of a percent, with room for large changes.
-std::unique_ptr<Rules> moodRules() {
-    return tweakedRules([](ruleset::Ruleset& rs) {
+// A mood model in tenths of a percent, with room for large changes (the limits
+// may be given).
+std::unique_ptr<Rules> moodRules(int maxPositive = 200, int maxNegative = -150) {
+    return tweakedRules([&](ruleset::Ruleset& rs) {
         auto& m = rs.happinessModels[0];
-        m.maxPositiveChange = 200;   // +20 % a turn at most
-        m.maxNegativeChange = -150;  // -15 %
+        m.maxPositiveChange = maxPositive;   // +20 % a turn at most
+        m.maxNegativeChange = maxNegative;   // -15 %
         m.triggers = {{"Any Ship Lost", 20},
                       {"Any Planet Colonized", 15},
                       {"Battle in System - Loss", 100},
@@ -1852,14 +1853,14 @@ std::unique_ptr<Rules> moodRules() {
 }
 
 struct MoodWorld {
-    std::unique_ptr<Rules> rules = moodRules();
-    GameState s = newGame(*rules);
+    std::unique_ptr<Rules> rules;
+    GameState s;
     Colony* home = nullptr;
     Colony* moon = nullptr;
     Colony* far = nullptr;
     SystemId sys;
 
-    MoodWorld() {
+    explicit MoodWorld(std::unique_ptr<Rules> withRules = moodRules()) : rules(std::move(withRules)), s(newGame(*rules)) {
         s.vehicles.clear();
         home = &plainHome(*rules, s, {});
         sys = s.galaxy.object(home->planet).system;
@@ -1944,6 +1945,81 @@ TEST_CASE("economy: happiness clamps, capitals, the Happiness characteristic and
     // A large negative change is limited to Max Negative Anger Change / 10.
     populationTurn(r, w.s, {{kMe, "Facility Constructed", w.s.galaxy.object(w.far->planet).system, w.far->planet, 5}});
     CHECK(w.far->anger == 43 - 15);
+}
+
+TEST_CASE("economy: a positive Max Negative Anger Change turns every calming change into anger (spec 02 §4, confirmed: binary)") {
+    MoodWorld w(moodRules(200, 50));  // +5 % as stored
+    const Rules& r = *w.rules;
+    populationTurn(r, w.s, {{kMe, "Facility Constructed", w.s.galaxy.object(w.far->planet).system, w.far->planet, 1}});
+    CHECK(w.far->anger == 45);   // a calming −5 % became +5 %
+    CHECK(w.home->anger == 40);  // no change at all stays none
+}
+
+TEST_CASE("economy: the Planetary Minister reports moods by cause, after the riots (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    const SystemId farSys = w.s.galaxy.object(w.far->planet).system;
+    w.moon->anger = 89;
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s,
+                   {{kMe, "New Treaty War", {}, {}, 1},                         // +50 %: empire-wide, reported
+                    {kMe, "Any Ship Lost", {}, {}, 11},                         // +22 %: empire-wide, reported
+                    {kMe, "Any Planet Colonized", {}, {}, 1},                   // +1.5 %: not
+                    {kMe, "Battle in System - Loss", w.sys, {}, 1},             // +10 % on home and on the moon
+                    {kMe, "Battle in Sector - Loss", w.sys, w.home->planet, 1}, // +3 % at home: 23 % in the system
+                    {kMe, "Facility Constructed", farSys, w.far->planet, 5}});  // −25 % in the far system
+    const auto& log = w.s.empire(kMe).log;
+    std::vector<std::string> rows;
+    for (const LogEntry& l : log)
+        if (l.title.starts_with("Population Growing") || l.title.starts_with("Riots on")) rows.push_back(l.title + " | " + l.text);
+    const std::string homeName = w.s.galaxy.system(w.sys).name, farName = w.s.galaxy.system(farSys).name;
+    REQUIRE(rows.size() == 5);
+    // Empire-wide reports first, in the causes' order, then the riot, then the
+    // systems in system order.
+    CHECK(rows[0] == "Population Growing Unhappy | The Planetary Minister reports that our people are growing unhappy because of the new war.");
+    CHECK(rows[1] == "Population Growing Unhappy | The Planetary Minister reports that our people are growing unhappy because of the loss of our ships.");
+    CHECK(rows[2].starts_with("Riots on " + w.s.galaxy.object(w.moon->planet).name));
+    const std::string unhappy = "Population Growing Unhappy | The Planetary Minister reports that the people of the " + homeName +
+                                " system are growing unhappy because of defeat in battle.";
+    const std::string happier = "Population Growing Happier | The Planetary Minister reports that the people of the " + farName +
+                                " system are growing happier because of the building of facilities.";
+    if (w.sys < farSys) {
+        CHECK(rows[3] == unhappy);
+        CHECK(rows[4] == happier);
+    } else {
+        CHECK(rows[3] == happier);
+        CHECK(rows[4] == unhappy);
+    }
+    for (const LogEntry& l : log) {
+        if (!l.title.starts_with("Population Growing")) continue;
+        CHECK(l.category == LogCategory::Politics);
+        CHECK(l.picture == (l.title.ends_with("Unhappy") ? "PopulationAngry" : "PopulationHappy"));
+        if (l.text.find("our people") != std::string::npos) {
+            CHECK_FALSE(l.location.has_value());
+            CHECK(l.target == LogGoto::None);
+        } else {
+            REQUIRE(l.location.has_value());
+            CHECK(l.target == LogGoto::Location);
+        }
+    }
+
+    // A system none of whose colonies changed its anger is not reported.
+    MoodWorld still(moodRules(0));  // no colony may get angrier
+    still.s.empire(kMe).log.clear();
+    populationTurn(*still.rules, still.s, {{kMe, "Battle in System - Loss", still.sys, {}, 3}});
+    CHECK(still.home->anger == 40);
+    CHECK_FALSE(logged(still.s, kMe, "Population Growing"));
+}
+
+TEST_CASE("economy: a colony without people logs no riot (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    w.far->population.clear();
+    w.far->anger = 95;
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s);
+    CHECK(moodFromAnger(w.far->anger) == Mood::Rioting);
+    CHECK_FALSE(logged(w.s, kMe, "Riots on"));
 }
 
 TEST_CASE("economy: ships present count per ship; allies count as ours") {
