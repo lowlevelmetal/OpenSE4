@@ -428,8 +428,22 @@ Trim values, since some have trailing spaces.
   The `Palace` ability plays no part (§1.5).
 - When a colony's population dies out (for example to plague), the colony is removed.
   Each planet value then drops by `Planet Value Percent Loss After Owner Death` (§1.2),
-  and the owner gets `Homeworld Lost` if the colony's type is `Homeworld` (the first of
-  the game's built-in colony types, §10), else `Any Planet Lost` (confirmed: binary).
+  and the owner gets `Homeworld Lost` if the colony's type is `Homeworld`, else `Any Planet
+  Lost` (confirmed: binary). The test compares the colony type, as written, with the game's
+  own built-in name `Homeworld`, the name every starting planet gets (§9), not with
+  `DefaultColonyTypes.txt` (confirmed: binary; corrected 2026-10-14, complete listing:
+  this said "the first of the game's built-in colony types"; the same in the stock data).
+- **That is the only place `Homeworld Lost` and `Any Planet Lost` are logged**
+  (confirmed: binary; corrected 2026-10-14, complete listing). A planet taken in ground
+  combat logs `Any Our Planet Captured` for the loser and `Any Enemy Planet Captured` for
+  the captor (§4), and nothing else. A planet destroyed (by an event, a stellar
+  manipulation or a star's shockwave), a planet that rebels and founds an empire, and a
+  planet that an intelligence project makes join another empire log no happiness event at
+  all. Since 2026-10-14 ours follows (`economy::colonyDiesOut` alone logs the two;
+  `combat_ground.cpp` `capturePlanet`, `movement_stellar.cpp` `loseColony` and `events.cpp`
+  `breakAway` and the rebellion's join no longer do); before, the loser of a captured
+  capital got both, `Any Planet Lost` came with every capture, rebellion and destruction,
+  and `Homeworld Lost` with a rebel or captured capital and a destroyed Homeworld.
 
 **Domes.** A colony is domed if any race on it cannot breathe the atmosphere. A domed
 colony uses the `… Domed` capacities [M/D]. Edge cases:
@@ -1464,8 +1478,8 @@ homeworld and the extra ones alike, is set up the same way:
 - Conditions are not changed: they stay as generated (spec 01 §5.6).
 - **Colony.** Any previous owner is removed. The planet becomes a colony of the empire's
   race at its **maximum population**. Every starting planet, the extra ones included, is a
-  capital (anger at most 80, §2) with colony type `Homeworld`, so losing any of them logs
-  `Homeworld Lost`.
+  capital (anger at most 80, §2) with colony type `Homeworld`, so any of them whose people
+  die out logs `Homeworld Lost` (§2).
 - **Facilities.** For each role the empire's best known facility is used (the facility
   whose ability value, or tech level, is highest). They are added in this order while the
   planet has free facility slots:

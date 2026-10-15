@@ -238,7 +238,7 @@ void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId plane
     c.planet = planet;
     c.owner = e.id;
     c.homeworld = true;
-    c.colonyType = "Homeworld";
+    c.colonyType = std::string(kHomeworldColonyType);
     c.foundedTurn = 0;
     c.population.push_back({e.id, 0});
     s.colonies[planet.index()] = std::move(c);

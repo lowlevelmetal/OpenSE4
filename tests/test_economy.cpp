@@ -1758,14 +1758,19 @@ TEST_CASE("economy: a colony whose people all die is removed and its planet lose
     CHECK(countMood(moods, "Homeworld Lost") == 0);
     CHECK(logged(s, kMe, "wiped out"));
 
-    // A colony of the first default colony type counts as a homeworld.
-    Colony& d = addColony(s, kMe, planet, 400);
-    d.colonyType = r.data().names.colonyTypes.front();
-    d.plagueLevel = 6;
-    ctx.moodEvents.clear();
-    economy::processPlanets(ctx, kMe);
-    CHECK(countMood(ctx.moodEvents, "Homeworld Lost") == 1);
-    CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 0);
+    // The colony type "Homeworld", the game's own built-in name as written,
+    // counts as a homeworld; the data file's first colony type does not
+    // (spec 02 §2, confirmed: binary).
+    for (const auto& [type, home] : {std::pair<std::string, bool>{"Homeworld", true}, {r.data().names.colonyTypes.front(), false}, {"homeworld", false}}) {
+        CAPTURE(type);
+        Colony& d = addColony(s, kMe, planet, 400);
+        d.colonyType = type;
+        d.plagueLevel = 6;
+        ctx.moodEvents.clear();
+        economy::processPlanets(ctx, kMe);
+        CHECK(countMood(ctx.moodEvents, "Homeworld Lost") == (home ? 1 : 0));
+        CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == (home ? 0 : 1));
+    }
 }
 
 TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
@@ -2085,7 +2090,9 @@ TEST_CASE("economy: a rebel planet founds a new computer empire and becomes its 
     CHECK_FALSE(s.empire(id).relation(kMe).contact);  // it meets the empires that detect it
     CHECK(s.empire(id).relation(kMe).treaty == Treaty::None);
     for (const Empire& e : s.empires) CHECK(e.relations.size() == s.empires.size());
-    CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 1);
+    // The former owner logs no happiness event for it (spec 02 §2, confirmed: binary).
+    CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 0);
+    CHECK(countMood(ctx.moodEvents, "Homeworld Lost") == 0);
     std::vector<EmpireOrders> none;
     processTurn(r, s, none);  // the new empire takes part in the next turn
 }

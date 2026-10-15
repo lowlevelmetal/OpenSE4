@@ -92,6 +92,9 @@ constexpr bool treatySharesSight(Treaty t) { return t == Treaty::Partnership; }
 // Anger is one whole percent per colony, 0 (calm) to 100 (confirmed: binary).
 inline constexpr int kMaxAnger = 100;
 inline constexpr int kCapitalMaxAnger = 80;   // capitals never riot (spec 02 §2)
+// The colony type every starting planet gets, the game's own built-in name,
+// which alone decides `Homeworld Lost` (spec 02 §2, §9, confirmed: binary).
+inline constexpr std::string_view kHomeworldColonyType = "Homeworld";
 inline constexpr int kNewColonyAnger = 25;    // a new colony starts Happy (spec 02 §2)
 inline constexpr int kEmotionlessAnger = 35;  // any change to an Emotionless colony sets this (spec 02 §4)
 enum class Mood : uint8_t { Jubilant, Happy, Indifferent, Unhappy, Angry, Rioting };

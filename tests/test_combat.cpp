@@ -1951,9 +1951,10 @@ TEST_CASE("combat: ground combat captures a planet") {
     CHECK_FALSE(after->invader.valid());
     CHECK(after->militia == -1);
     CHECK(combat::invaders(r, s, *after).empty());
+    // The two capture events and no planet-lost event (spec 02 §2, confirmed: binary).
     CHECK(moodCount(ctx, ar.b, "Any Our Planet Captured") == 1);
-    CHECK(moodCount(ctx, ar.b, "Homeworld Lost") == 1);
-    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 1);
+    CHECK(moodCount(ctx, ar.b, "Homeworld Lost") == 0);
+    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 0);
     CHECK(moodCount(ctx, ar.a, "Any Enemy Planet Captured") == 1);
     CHECK(std::any_of(s.empire(ar.a).log.begin(), s.empire(ar.a).log.end(), [](const LogEntry& l) { return l.category == LogCategory::Combat; }));
     // Both histories list the capture under the other empire, at the planet.

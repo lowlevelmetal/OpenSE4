@@ -365,9 +365,10 @@ void colonyDiesOut(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     Colony* c = s.colony(planet);
     if (!c) return;
     const EmpireId owner = c->owner;
-    // `Homeworld Lost` when the colony had the first default colony type (confirmed: binary).
-    const auto& types = r.data().names.colonyTypes;
-    const bool home = types.empty() ? c->homeworld : datafile::keysEqual(c->colonyType, types.front());
+    // `Homeworld Lost` when the colony type is the game's own built-in name
+    // "Homeworld", as written, whatever DefaultColonyTypes.txt holds; this is
+    // the only place either loss event is logged (spec 02 §2, confirmed: binary).
+    const bool home = c->colonyType == kHomeworldColonyType;
     SpaceObject& p = s.galaxy.object(planet);
     const int64_t loss = r.setting("Planet Value Percent Loss After Owner Death", 10);
     for (size_t k = 0; k < 3; ++k)

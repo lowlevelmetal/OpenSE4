@@ -636,7 +636,6 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     // never reused (confirmed: binary).
     if (!col || !living(s, col->owner) || s.empires.size() >= kMaxEmpires) return {};
     const EmpireId former = col->owner;
-    const bool home = col->homeworld;
     const int64_t people = col->totalPopulation();
     const SpaceObject& obj = s.galaxy.object(planet);
     const SystemId system = obj.system;
@@ -740,8 +739,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     s.empires.push_back(std::move(e));
     for (Empire& x : s.empires) x.relations.resize(s.empires.size());
 
-    ctx.mood(former, "Any Planet Lost");
-    if (home) ctx.mood(former, "Homeworld Lost");
+    // The former owner logs no happiness event for it (spec 02 §2, confirmed: binary).
     diplomacy::transferColony(s, planet, id);
     Colony& c = *s.colony(planet);
     // The whole population, of every race, becomes one group of its own
@@ -1055,8 +1053,6 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             // binary). `victim` is not used past this point: a new empire
             // invalidates references into GameState::empires.
             if (!col || s.empires.size() >= kMaxEmpires) return out;
-            const EmpireId owner = col->owner;
-            const bool home = col->homeworld;
             const bool intel = living(s, t.source);
             if (!intel || rng.range(1, 4) == 1) {
                 if (!breakAway(ctx, t.object).valid()) return out;
@@ -1065,9 +1061,8 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
                 // check covers it (spec 05 §3.1, confirmed: binary).
                 if (intel) diplomacy::firstContactIn(ctx, s.galaxy.object(t.object).system);
             } else if (rng.range(1, 4) == 1) {
+                // No happiness event for the former owner (spec 02 §2, confirmed: binary).
                 diplomacy::transferColony(s, t.object, t.source);
-                ctx.mood(owner, "Any Planet Lost");
-                if (home) ctx.mood(owner, "Homeworld Lost");
             } else {
                 return out;
             }

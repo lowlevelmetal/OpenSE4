@@ -1077,7 +1077,7 @@ TEST_CASE("events: stellar events") {
     CHECK(s.galaxy.warpPoints(away).size() == warpPoints);
     CHECK(s.colony(planet) == nullptr);
     CHECK(s.vehicle(doomed) == nullptr);  // it left the game in the pass
-    CHECK(hasMood(ctx, kA, "Any Planet Lost"));
+    CHECK_FALSE(hasMood(ctx, kA, "Any Planet Lost"));  // a destroyed planet logs none (spec 02 §2)
 }
 
 TEST_CASE("events: a colony that breaks away mid-turn becomes an empire that plays on") {
