@@ -22,6 +22,7 @@
 
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
+#include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
@@ -33,6 +34,7 @@
 #include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
+#include "game/turn_internal.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
@@ -218,6 +220,7 @@ public:
     void run() {
         for (int day = 1; day <= kDaysPerTurn; ++day) {
             day_ = day;
+            ctx_.dayUnderWay = day;
             newDay();
             const std::vector<ObjectRef> order = refreshObjectOrder();
             for (const ObjectRef& ref : order) {
@@ -265,6 +268,7 @@ public:
             }
             if (ctx_.movementDay) ctx_.movementDay(day, s_);
         }
+        ctx_.dayUnderWay = 0;
         // The ministers' Seek orders last the movement phase (spec 05 §7.5).
         endSeeks([](const Vehicle&) { return true; });
     }
@@ -732,7 +736,7 @@ private:
     template <class LogIt>
     void tell(EmpireId owner, std::string title, std::string text, LogIt&& logIt) {
         if (live_ && live_->ask && owner == live_->empire) {
-            ctx_.messages.push_back(PlayerMessage{owner, std::move(title), std::move(text)});
+            ctx_.messages.push_back(PlayerMessage{owner, std::move(title), std::move(text), ctx_.liveSteps.size()});
             return;
         }
         logIt();
@@ -1120,7 +1124,7 @@ private:
         MovementStep st;
         st.day = live_ ? 0 : day_;
         st.owner = g.owner;
-        st.lead = g.lead;
+        st.lead = spriteOf(g);
         st.fleet = g.fleet;
         st.from = where(g);
         st.to = next;
@@ -1128,9 +1132,24 @@ private:
         if (!via.valid() && st.from.system == next.system) st.heading = headingFor(st.from.sector, next.sector);
         else if (const Vehicle* lead = s_.vehicle(g.lead)) st.heading = lead->heading % 8;
         st.liveSteps = ctx_.liveSteps.size();
+        st.messages = ctx_.messages.size();
         for (VehicleId id : g.members)
             if (const Vehicle* v = s_.vehicle(id); v && alive(*v)) st.members.push_back(id);
         if (!st.members.empty()) ctx_.movementStep(st);
+    }
+
+    // The vehicle whose mini stands for the group in the client's animation
+    // (MovementStep::lead, spec 06 §2.4, confirmed: binary): for a fleet the
+    // member first in its sector's list of objects, which ours keeps as the
+    // system's list (Vehicle::arrival, then object order); otherwise the lead.
+    VehicleId spriteOf(const Group& g) const {
+        if (!g.fleet.valid() || g.tagged) return g.lead;
+        const Vehicle* first = nullptr;
+        for (VehicleId id : g.members)
+            if (const Vehicle* v = s_.vehicle(id); v && alive(*v) && v->fleet == g.fleet &&
+                                                   (!first || std::pair(v->arrival, v->slot) < std::pair(first->arrival, first->slot)))
+                first = v;
+        return first ? first->id : g.lead;
     }
 
     void arrive(Group& g) {
@@ -1628,7 +1647,7 @@ private:
     // picture OrdersNotCompleted (spec 06 §4.1).
     Exec colonizeFailed(const Group& g, std::string_view why) {
         if (live_) {
-            if (live_->ask) ctx_.messages.push_back(PlayerMessage{g.owner, "Colonize", std::string(why)});
+            if (live_->ask) ctx_.messages.push_back(PlayerMessage{g.owner, "Colonize", std::string(why), ctx_.liveSteps.size()});
         } else {
             const Location here = where(g);
             ctx_.log(g.owner, LogCategory::Misc, "Unable to Colonize",
@@ -2238,6 +2257,26 @@ private:
         const EntryQuestion q = g.tagged ? EntryQuestion{{}, {}, next, live_->tagged} : EntryQuestion{g.fleet.valid() ? VehicleId{} : g.lead, g.fleet, next, {}};
         if (live_->allowed && *live_->allowed == q) return false;
         if (!enemiesAt(g.owner, next)) return false;
+        // At the start of the player's turn the pass waits for the answer: a
+        // call that stops asks now, and the call made again with the answer
+        // carries it out here, before any later group moves.
+        if (live_->stops && ctx_.battles && ctx_.battles->answers) {
+            TurnContext::Battles& b = *ctx_.battles;
+            if (b.next >= b.answers->size()) {
+                BattleQuestion stop;
+                stop.kind = BattleQuestion::Kind::Enter;
+                stop.where = next;
+                stop.humans = {g.owner};
+                stop.participants = {g.owner};
+                stop.index = b.next;
+                stop.entry = q;
+                throw game::detail::BattleQuestionRaised{std::move(stop), ctx_.liveSteps, ctx_.messages};
+            }
+            if ((*b.answers)[b.next++].enter.value_or(true)) return false;
+            // Declined: the order fails, as the answer given later does (cmd::EnterSector).
+            (void)apply(r_, s_, g.owner, cmd::EnterSector{q.vehicle, q.fleet, q.where, false, q.tagged});
+            return true;
+        }
         if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);
         return true;
     }

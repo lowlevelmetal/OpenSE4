@@ -1194,10 +1194,11 @@ std::vector<HostSession::StateBlob> HostSession::redactedState() const {
     return views;
 }
 
-void HostSession::sendState(Peer& peer, bool gameStart, bool resync) {
+void HostSession::sendState(Peer& peer, bool gameStart, bool resync, const EmpireMoves* moves) {
     proto::State m;
     m.turn = state_->turn;
     m.empire = empireOfSlot(peer.slot);
+    if (moves && moves->first == m.empire) m.moves = moves->second;
     m.gameStart = gameStart;
     const size_t view = m.empire.valid() && m.empire.index() + 1 < stateCache_.size() ? m.empire.index() : stateCache_.size() - 1;
     m.state = *stateCache_[view];
@@ -1208,9 +1209,11 @@ void HostSession::sendState(Peer& peer, bool gameStart, bool resync) {
     peer.conn.send(MsgType::State, m);
 }
 
-void HostSession::broadcastState(bool gameStart) {
+void HostSession::broadcastState(bool gameStart, const EmpireMoves* moves) {
     for (auto& p : peers_)
-        if (p->welcomed && !p->closing) sendState(*p, gameStart);
+        if (p->welcomed && !p->closing) sendState(*p, gameStart, false, moves);
+    // The hosting player's own, for its animation (HostTransport).
+    if (moves && moves->first.valid() && moves->first == localEmpire()) localMoves_.append(moves->second);
 }
 
 void HostSession::refreshTurnStatus() {
@@ -1447,6 +1450,7 @@ game::LiveOptions HostSession::liveOptions() const {
     game::LiveOptions o;
     for (size_t i = 0; i < slots_.size() && state_ && i < state_->empires.size(); ++i)
         if (slots_[i]->info.kind == SlotKind::Human && slots_[i]->info.aiControl) o.computerPlays.push_back(game::EmpireId{static_cast<uint32_t>(i)});
+    if (std::vector<game::MovementStep>* into = collecting_) o.movementStep = [into](const game::MovementStep& st) { into->push_back(st); };
     return o;
 }
 
@@ -1487,9 +1491,14 @@ game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<g
     const size_t battlesBefore = state_->combats.size();
     game::GameState before = *state_;
     game::TurnResult all;
+    // The player's own moves, for its animation (protocol 10).
+    EmpireMoves moves{empire, {}};
     try {
         for (const game::Command& c : commands) {
-            game::TurnResult r = game::applyLive(rules_, *state_, empire, c);
+            std::vector<game::MovementStep> steps;
+            game::TurnResult r =
+                game::applyLive(rules_, *state_, empire, c, nullptr, [&steps](const game::MovementStep& st) { steps.push_back(st); });
+            moves.second.append(ownMovesOf(empire, steps, r.liveSteps));
             for (auto& x : r.rejected) all.rejected.push_back(std::move(x));
             for (auto& q : r.questions) all.questions.push_back(q);
             for (auto& m : r.messages) all.messages.push_back(std::move(m));
@@ -1510,8 +1519,9 @@ game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<g
         stateCache_[e.index()] = std::make_shared<const std::vector<uint8_t>>(game::serializeState(game::redactForEmpire(rules_, *state_, e)));
         emit(EventType::StateUpdated, e == empire ? std::string("its own commands") : std::string("a battle"), playerName(e), kNoSlot, e,
              state_->turn);
+        if (e == empire && e == localEmpire()) localMoves_.append(moves.second);
         if (e.index() >= slots_.size()) continue;
-        if (Peer* p = peerOfSlot(*slots_[e.index()]); p && !p->closing) sendState(*p, false);
+        if (Peer* p = peerOfSlot(*slots_[e.index()]); p && !p->closing) sendState(*p, false, false, &moves);
     }
     return all;
 }
@@ -1555,12 +1565,25 @@ std::expected<void, std::string> HostSession::turnBasedStep(const std::function<
 
     game::GameState before = *state_;
     game::TurnResult result;
+    // The steps of the call, for the animation of the next player's own moves
+    // at the start of its turn (protocol 10): the call ends with that start,
+    // or a second call made after a stand-in's game turn does.
+    std::vector<game::MovementStep> steps;
+    std::vector<game::LiveStep> liveSteps;
+    struct Collect {
+        std::vector<game::MovementStep>*& into;
+        ~Collect() { into = nullptr; }
+    } collect{collecting_};
     try {
+        collecting_ = &steps;
         result = step();
+        liveSteps = result.liveSteps;
         // A step that stopped between game turns (a stand-in played the last
         // human's turn) goes on to the next player who plays.
         if (!state_->gameOver && !state_->playerTurn.started && anyHumanToPlay()) {
+            steps.clear();
             game::TurnResult more = game::resumeTurnBased(rules_, *state_, liveOptions());
+            liveSteps = more.liveSteps;
             for (auto& x : more.rejected) result.rejected.push_back(std::move(x));
             for (auto& m : more.messages) result.messages.push_back(std::move(m));
         }
@@ -1583,7 +1606,12 @@ std::expected<void, std::string> HostSession::turnBasedStep(const std::function<
              kNoSlot, state_->winner, state_->turn);
     }
     beginTurn();
-    broadcastState(false);
+    // The moves of the human whose turn has started, its own (its orders carried over).
+    std::optional<EmpireMoves> moves;
+    if (const game::EmpireId next = activeEmpire(); next.valid() && state_->playerTurn.started && state_->empire(next).kind == game::PlayerKind::Human &&
+                                                    !liveOptions().computerPlaysFor(next))
+        moves = EmpireMoves{next, ownMovesOf(next, steps, liveSteps)};
+    broadcastState(false, moves ? &*moves : nullptr);
     broadcastTurnStatus();
     if (state_->turn != turnBefore) emit(EventType::NewTurn, {}, {}, kNoSlot, {}, state_->turn);
     const game::EmpireId now = activeEmpire();

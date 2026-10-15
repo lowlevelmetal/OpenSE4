@@ -5,8 +5,10 @@
 
 #include "game/setup.hpp"
 #include "game/state.hpp"
+#include "game/turn.hpp"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,7 +16,7 @@
 namespace opense4::net {
 
 inline constexpr uint16_t kDefaultPort = 6720;       // TCP, as in the classic game
-inline constexpr uint32_t kProtocolVersion = 9;
+inline constexpr uint32_t kProtocolVersion = 10;
 inline constexpr uint32_t kNoSlot = 0xffffffffu;
 inline constexpr size_t kMaxPlayerNameLength = 32;
 inline constexpr size_t kMaxChatLength = 500;
@@ -57,6 +59,24 @@ struct LobbyInfo {
 };
 
 // ---- Turns -----------------------------------------------------------------------------------
+
+// Turn-based games (protocol 10): the receiving player's own moves that came
+// with a State, as the host's engine made them, for the animation of its own
+// moves on its own computer (docs/spec/06 §2.4 "Moves as they are made",
+// §2.7): its groups' steps (game::MovementStep, mines striking them
+// included) and where its view follows (game::LiveStep), in the order made;
+// MovementStep::liveSteps counts the LiveSteps of this list. Only the
+// player's own vehicles and colonies, at squares it saw them pass: nothing
+// the redacted state would not show it.
+struct OwnMoves {
+    std::vector<game::MovementStep> steps;
+    std::vector<game::LiveStep> liveSteps;
+    bool empty() const { return steps.empty() && liveSteps.empty(); }
+    // Appends `more`, made after these.
+    void append(OwnMoves more);
+};
+// The moves of empire `e`'s own groups among an engine call's steps and LiveSteps.
+OwnMoves ownMovesOf(game::EmpireId e, std::span<const game::MovementStep> steps, std::span<const game::LiveStep> liveSteps);
 
 struct EmpireTurnStatus {
     game::EmpireId empire;

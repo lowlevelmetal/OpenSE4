@@ -53,7 +53,9 @@ click item:report:ship nth=1
 wait 2
 key M
 click sector:9,3
-wait 20
+# The main window takes no key until the moves of a map click's order are over (spec 06 §2.4).
+wait-gone sector:gliding
+wait 2
 key B
 wait-window stellar-manipulation
 click item:"Destroy Planet"

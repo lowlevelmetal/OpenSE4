@@ -2013,6 +2013,65 @@ attack ships had 9 movement and the colony ship 8.
 Since 2026-10-05 our client follows the original in all three (spec 03 §19 Q81, Q82; spec 06
 §7 Q110).
 
+## Session 8: ship movement in the system window (2026-10-14)
+
+Four points that the executable left to watch (spec 06 §2.4 "Moves as they are made", §2.7,
+§7 Q112, Q123). Version 1.95 under Wine 11.19, in the harness of session 6 (a copy of the
+install, its own prefix, a nested 1024x768 display, XTest input on that display only),
+recorded losslessly at 60 frames a second and compared frame by frame. A Quick Start
+(Terran), one human against the computer players it rolled, turn-based, with "Animate ship
+movement in system window" on and the stock Settings; three attack ships of speed 6 built at
+the homeworld, the game saved so that each try started alike. Under Wine every animation
+frame lasts about 16 ms (session 3): a slide square about 0.8 s, a 5° turn step about 16 ms.
+
+- **The turn draws nothing.** When a step needs a new heading, the screen stands still for
+  the turn's time, pixel for pixel: the ship at its old heading, or a stack with its count
+  and the yellow marks. Then the old square is redrawn without the ship, and the mini is
+  there at its new heading as the slide's first frame. No recorded frame showed an angle in
+  between. A quarter turn stood still about 0.28 s, a half-turn about 0.58 s, an eighth
+  about 0.15 s, none when the heading stayed: about 0.3 s per 90°, which fits 5° a frame at
+  16 ms. The same still pause came at a turn's start and at a bend of a route; straight on,
+  the squares slid one after another with no gap. A ship leaving a stack left it with its
+  count one lower and no marks when its slide began.
+- **The current sector after a move** (Q123). After a move order's run (a Move To given by a
+  click on the map, and Resupply given by its order button), the current sector was (0, 0),
+  told by the coordinate line: Range only over a current sector holding something seen, and
+  counted from it. The moving ship's report stayed open and was refreshed at the end of its
+  moves; its orders stayed lit. The marks left its starting square when its slide began and
+  were drawn nowhere afterwards, not on (0, 0) with one of our ships there either, whose
+  Range then read 5 over (5, 5) and 12 over (12, 12). With a tagged ship, the tags were
+  cleared after the moves and (0, 0) selected: our ship's report and marks there, or the
+  system's report and no marks when (0, 0) was empty. When nothing moved (a ship with no
+  movement left; a tagged group holding the homeworld colony) the current sector and the
+  marks stayed. At a turn's start each object's selection made its own square current, so
+  the marks ended on the last object that moved.
+- **Input during an order's moves.** After a Move To given by a map click, a click on a
+  planet, F3, the Designs button and End Turn all did nothing during the six-square move or
+  after it, and moving the pointer over the map did not update the coordinate line; only
+  the buttons' hover hints were written. After Resupply given by its order button, a click
+  on a planet selected it at once while the ship slid on (the refresh at the end showed the
+  planet's report); F3 opened Designs and the move stood still until Close, then went on
+  from where it stopped; End Turn brought up Confirm End Turn with the move standing still:
+  No let it finish, Yes ended the turn inside the move (the computer players' turns and the
+  next turn's start ran in about a fifth of a second, its Log opened), and after the Log the
+  interrupted ship slid one square more and the program showed an access violation; after
+  OK the ship stayed where it stopped, and the order buttons and keys did nothing until the
+  program was restarted, a saved game loaded included. Only F3 and End Turn were tried
+  there.
+- **A turn's start.** Two ships held Move To orders from the turn before. After End Turn and
+  the computer players' turns the home system came back; the first ship in object order was
+  selected (its report, lit orders, marks), stood still for its turn, slid square by square
+  (a still pause at a bend), and right after its last square the second was selected and
+  slid its square; then the Log opened. They never moved together. A click on a planet, F3,
+  F4 and End Turn during the moves did nothing, then or after the Log. A computer player's
+  ship that had reached a warp point of the home system in its turn was simply there.
+
+Not settled: whether the jump to (0, 0) needs movement left or a step taken (every case
+without a step also had no movement); Windows' own frame length (spec 06 §7 Q112); keys
+other than F3, F12 and a second order button during an order button's moves; input during
+the first pass after a game is loaded. Since 2026-10-14 our client follows what was seen
+(spec 06 §2.4, §7 Q112, Q123).
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
@@ -2083,3 +2142,8 @@ Session 7 (2026-10-05): the harness of session 6 on display :8, with a scratch X
 Shift held over a click; the game came from an OpenSE4 export (a training game of our own made
 for it, saved with Save for SE IV) copied into the scratch copy's save folder. The captures,
 the scenario and the exported file are in `reference/observe/2026-10-05/` (not tracked).
+
+Session 8 (2026-10-14): the harness of session 6 under Wine 11.19, recorded at 60 frames a
+second with a lossless codec and compared frame by frame; saved games at a few points so that
+each try started from the same state. Captures and notes are in
+`reference/observe/2026-10-14-glides/` (not tracked).

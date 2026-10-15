@@ -4588,6 +4588,33 @@ TEST_CASE("movement: a fleet's step is reported once, with its members in the gr
     CHECK(steps[0].day < steps[1].day);
 }
 
+TEST_CASE("movement: a fleet's step names as its sprite the member first in its system's list, not the one that acts for it") {
+    // Spec 06 §2.4 (confirmed: binary): the mini that stands for a fleet's
+    // step is the member that comes first in its sector's list of objects
+    // (ours: the system's list, Vehicle::arrival), not the member whose list
+    // is carried out (the first in object order with orders).
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId first = w.spawn(w.ship(kA, "First", 5, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId second = w.spawn(w.ship(kA, "Second", 5, {"Test Quantum Reactor"}), at(a, 0, 6));
+    REQUIRE(w.v(first).slot < w.v(second).slot);
+    w.v(first).arrival = ++w.s.arrivals;   // came into the system after the other
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::CreateFleet{"Pack", {first, second}}).ok);
+    const FleetId fleet = w.s.fleets.back().id;
+    fleetGets(w, fleet, {moveTo(a, 2, 6)});
+    REQUIRE(fleetOrderHolder(w.s, *w.s.fleet(fleet))->id == first);   // it acts for the fleet
+    std::vector<MovementStep> steps;
+    TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+    ctx.movementStep = [&](const MovementStep& st) { steps.push_back(st); };
+    movement::startTurn(ctx);
+    movement::runMovementAndCombat(ctx, {});
+    REQUIRE_FALSE(steps.empty());
+    for (const MovementStep& st : steps) {
+        CHECK(st.fleet == fleet);
+        CHECK(st.lead == second);
+    }
+}
+
 TEST_CASE("movement: a turn-based Colonize at a planet the ship cannot settle fails on arrival with a message, not a log entry") {
     // Spec 03 §8 (confirmed: binary): nothing is checked when the order is
     // given; on arrival the human whose turn it is reads the reason in a

@@ -19,6 +19,7 @@
 #include <exception>
 #include <format>
 #include <fstream>
+#include <map>
 #include <random>
 #include <string_view>
 #include <thread>
@@ -180,6 +181,7 @@ bool ClassicSession::myTurn() const {
 
 const std::vector<game::EntryQuestion>& ClassicSession::questions() const {
     static const std::vector<game::EntryQuestion> none;
+    if (!entryStop_.empty()) return entryStop_;
     return myTurn() ? state_.playerTurn.questions : none;
 }
 
@@ -433,6 +435,18 @@ std::expected<bool, std::string> ClassicSession::masterLoginMatches(std::string_
 }
 
 void ClassicSession::answer(bool enter) {
+    if (!entryStop_.empty()) {
+        // The call stopped at the question: made again with the answer, it
+        // carries the group on (or fails its order) and then the rest of the
+        // turn's start (spec 03 §6.2, spec 06 §2.4).
+        if (call_ == Call::None) return;
+        entryStop_.clear();
+        game::BattleAnswer a;
+        a.enter = enter;
+        answers_.push_back(std::move(a));
+        runCall();
+        return;
+    }
     if (questions().empty()) return;
     const game::EntryQuestion q = questions().front();  // the answer drops it (applyLive, or issue() on a network copy)
     issue(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, enter, q.tagged});
@@ -459,32 +473,79 @@ void ClassicSession::takeResult(const game::TurnResult& result) {
         if (empire == player_) notices_.push_back(text);
 }
 
-void ClassicSession::takeLive(game::TurnResult& res) {
-    // Only the local player's own, while its turn is in progress (spec 03 §8).
-    if (!myTurn()) return;
-    for (game::PlayerMessage& m : res.messages)
-        if (m.empire == player_) messages_.push_back(std::move(m));
-}
-
-void ClassicSession::queueMoves(const game::TurnResult& res, bool turnStart) {
+void ClassicSession::queueMoves(const game::TurnResult& res, bool turnStart, bool provisional) {
     // The view follows only the local player's own groups, while its turn is
-    // in progress (spec 06 §2.7); each LiveStep goes before the steps made
-    // after it (MovementStep::liveSteps).
+    // in progress (spec 06 §2.7), and those groups' steps are the only ones
+    // the original animates (§2.4); the messages its own orders raise come
+    // in their place (spec 03 §8). Each LiveStep and message goes before the
+    // steps made after it (MovementStep::liveSteps, messages), and a message
+    // before the LiveSteps made after it (PlayerMessage::liveSteps).
+    // A call a battle stopped hands on what it made before the stop; the call
+    // made again with the answers makes the same again first, and only the
+    // rest is handed on then (queuedSteps_ and the rest).
     const bool follows = turnBased() && myTurn();
-    size_t live = 0;
-    auto followUpTo = [&](size_t upTo) {
-        for (; live < upTo && live < res.liveSteps.size(); ++live)
-            if (const game::LiveStep& st = res.liveSteps[live]; follows && st.empire == player_) moves_.push_back(ShownMove{std::nullopt, st, turnStart});
+    size_t live = queuedLive_, said = queuedMessages_;
+    auto upTo = [&](size_t lives, size_t messages) {
+        for (;;) {
+            const bool nextLive = live < lives && live < res.liveSteps.size();
+            const bool nextMessage = said < messages && said < res.messages.size();
+            if (!nextLive && !nextMessage) return;
+            if (nextMessage && (!nextLive || res.messages[said].liveSteps <= live)) {
+                if (const game::PlayerMessage& m = res.messages[said]; follows && m.empire == player_)
+                    moves_.push_back(ShownMove{std::nullopt, std::nullopt, false, false, m, provisional});
+                ++said;
+            } else {
+                if (const game::LiveStep& st = res.liveSteps[live]; follows && st.empire == player_)
+                    moves_.push_back(ShownMove{std::nullopt, st, turnStart, true, std::nullopt, provisional});
+                ++live;
+            }
+        }
     };
-    for (game::MovementStep& st : callSteps_) {
-        followUpTo(st.liveSteps);
-        moves_.push_back(ShownMove{std::move(st), std::nullopt, false});
+    for (size_t i = queuedSteps_; i < callSteps_.size(); ++i) {
+        game::MovementStep& st = callSteps_[i];
+        upTo(st.liveSteps, st.messages);
+        const bool own = follows && st.owner == player_;
+        moves_.push_back(ShownMove{std::move(st), std::nullopt, false, own, std::nullopt, provisional});
     }
-    followUpTo(res.liveSteps.size());
+    upTo(res.liveSteps.size(), res.messages.size());
+    if (provisional) {
+        queuedSteps_ = callSteps_.size();
+        queuedLive_ = live;
+        queuedMessages_ = said;
+    } else {
+        forgetQueued();
+    }
     callSteps_.clear();
     // Nobody takes them in a session without a main window (tests, automation): only the newest are kept.
     constexpr size_t kKept = 30'000;
     if (moves_.size() > kKept) moves_.erase(moves_.begin(), moves_.begin() + std::ptrdiff_t(moves_.size() - kKept));
+}
+
+void ClassicSession::keepOwnVehicles(const game::GameState& before) {
+    // The human players' (hotseat: the session passes to the next one in the call).
+    callBefore_.clear();
+    for (const game::Vehicle& v : before.vehicles)
+        if (v.count > 0 && v.owner.valid() && v.owner.index() < before.empires.size() && before.empire(v.owner).kind == game::PlayerKind::Human)
+            callBefore_.push_back(v);
+}
+
+void ClassicSession::noteGone(const std::vector<game::MovementStep>& steps) {
+    // Where each one's last step took it.
+    std::map<game::VehicleId, game::Location> last;
+    for (const game::MovementStep& st : steps)
+        if (st.kind == game::MovementStep::Kind::Move)
+            for (const game::VehicleId id : st.members) last[id] = st.to;
+    for (game::Vehicle& v : callBefore_) {
+        const auto to = last.find(v.id);
+        if (v.owner != player_ || to == last.end()) continue;
+        if (const game::Vehicle* now = state_.vehicle(v.id); now && now->count > 0) continue;
+        v.location = to->second;
+        gone_.push_back(std::move(v));
+    }
+    callBefore_.clear();
+    // Nobody takes them in a session without a main window: only the newest are kept.
+    constexpr size_t kKept = 1'000;
+    if (gone_.size() > kKept) gone_.erase(gone_.begin(), gone_.begin() + std::ptrdiff_t(gone_.size() - kKept));
 }
 
 void ClassicSession::resumeTurnBased() { beginCall(Call::Resume); }
@@ -565,11 +626,13 @@ void ClassicSession::setComputerControl(const std::vector<std::pair<game::Empire
 
 void ClassicSession::beginCall(Call call, std::optional<game::Command> command) {
     call_ = call;
+    forgetQueued();
     callCommand_ = std::move(command);
     callBattles_ = state_.combats.size();
     answers_.clear();
     fought_.clear();
     battle_.reset();
+    entryStop_.clear();
     noteMovesBefore(call);
     runCall();
 }
@@ -664,10 +727,10 @@ void ClassicSession::pollJob() {
         std::rethrow_exception(job->failure);
     }
     // A battle that stops the processing leaves the game as it was: the copy goes.
-    if (!job->result.battle) {
-        state_ = std::move(job->state);
-        callSteps_ = std::move(job->steps);
-    }
+    if (!job->result.battle) keepOwnVehicles(state_);
+    if (!job->result.battle) state_ = std::move(job->state);
+    // A battle's stop: the steps made before it, shown up to the battle.
+    callSteps_ = std::move(job->steps);
     finishCall(std::move(job->result));
 }
 
@@ -682,6 +745,7 @@ void ClassicSession::runCall() {
     }
     game::TurnResult res;
     if (call_ != Call::None) ++engineCalls_;
+    keepOwnVehicles(state_);
     const game::MovementObserver observe = [this](const game::MovementStep& st) { callSteps_.push_back(st); };
     auto live = [&] {
         game::LiveOptions o = liveOptions();
@@ -715,8 +779,18 @@ void ClassicSession::runCall() {
 void ClassicSession::finishCall(game::TurnResult res) {
     ++revision_;
     if (res.battle) {
-        // The game is as before the call; its steps come again with the answer.
-        callSteps_.clear();
+        // The game is as before the call; its steps come again with the
+        // answer. Those made before the stop are shown up to the battle first
+        // (spec 06 §2.4 "Order"), and the call made again hands on the rest.
+        queueMoves(res, call_ == Call::EndTurn || call_ == Call::Resume, true);
+        callBefore_.clear();
+        if (res.battle->kind == game::BattleQuestion::Kind::Enter && res.battle->entry) {
+            // The Attack Sector question at the start of the player's turn: asked now (questions()).
+            entryStop_ = {*res.battle->entry};
+            log::info("The Attack Sector question for system {} ({}, {}) stops the turn's start", res.battle->where.system.value,
+                      res.battle->where.sector.x, res.battle->where.sector.y);
+            return;
+        }
         // The call stopped at a battle (or ground fight) to show; the game is as it was.
         battle_ = std::move(res.battle);
         log::info("A battle at system {} ({}, {}) stops the turn to be shown ({} human side(s))", battle_->where.system.value,
@@ -756,7 +830,6 @@ void ClassicSession::finishCall(game::TurnResult res) {
     };
     switch (call) {
         case Call::Issue: {
-            takeLive(res);
             // Attack Sector questions stay in the game (GameState::playerTurn.questions).
             // PBEM: the host replays every command given, refused ones too (a
             // refused answer still settles its question), so all are kept.
@@ -773,7 +846,6 @@ void ClassicSession::finishCall(game::TurnResult res) {
         case Call::EndTurn:
             nextHuman();
             takeResult(res);
-            takeLive(res);
             clearOrders();
             waiting_ = false;
             if (onNewTurn) onNewTurn();
@@ -781,7 +853,6 @@ void ClassicSession::finishCall(game::TurnResult res) {
         case Call::Resume:
             nextHuman();
             takeResult(res);
-            takeLive(res);
             break;
         case Call::Process:
             // A simultaneous turn: the new turn begins for the first human.
@@ -801,6 +872,7 @@ void ClassicSession::finishCall(game::TurnResult res) {
         case Call::None: break;
     }
     // The moves to show, once the session belongs to the player whose turn it is.
+    noteGone(callSteps_);
     queueMoves(res, call == Call::EndTurn || call == Call::Resume);
     callCommand_.reset();
     movesBefore_.revision = revision_;
@@ -814,11 +886,14 @@ void ClassicSession::dropCall(std::string_view why) {
     call_ = Call::None;
     movesBefore_ = {};
     callSteps_.clear();
+    callBefore_.clear();
+    forgetQueued();
     callCommand_.reset();
     callOrders_.clear();
     answers_.clear();
     fought_.clear();
     battle_.reset();
+    entryStop_.clear();
     if (tactical_ && tactical_->kind == TacticalFight::Kind::Game) tactical_.reset();
     ++revision_;
 }
@@ -827,6 +902,7 @@ void ClassicSession::answerBattle(game::BattleAnswer answer) {
     if (!battle_ || call_ == Call::None) return;
     answers_.push_back(std::move(answer));
     battle_.reset();
+    entryStop_.clear();
     runCall();
 }
 
@@ -963,6 +1039,7 @@ void ClassicSession::poll() {
     const bool wasMine = myTurn();
     const uint32_t oldTurn = state_.turn;
     const size_t oldBattles = state_.combats.size();
+    keepOwnVehicles(state_);
     auto before = keepMoves_ ? std::make_shared<const game::GameState>(std::move(state_)) : nullptr;
     state_ = std::move(*s);
     ++revision_;
@@ -975,6 +1052,14 @@ void ClassicSession::poll() {
     const bool starts = mine && (!wasMine || state_.turn != oldTurn);
     if (starts) beginTurn();  // our turn starts
     waiting_ = !mine;
+    // Our own moves the host carried out, for their animation (protocol 10):
+    // our commands', or our turn start's (spec 06 §2.4).
+    net::OwnMoves own = transport_->takeOwnMoves();
+    noteGone(own.steps);
+    callSteps_ = std::move(own.steps);
+    game::TurnResult carried;
+    carried.liveSteps = std::move(own.liveSteps);
+    queueMoves(carried, starts);
     // Our copy had our commands given, not carried out; at the start of our
     // turn our vehicles got their movement back first.
     movesBefore_ = before ? MovesBefore{std::move(before), starts, revision_} : MovesBefore{};
@@ -1029,10 +1114,14 @@ void ClassicSession::replaceState(game::GameState s) {
     turnStart_.reset();
     movesBefore_ = {};
     callSteps_.clear();
+    callBefore_.clear();
+    forgetQueued();
+    gone_.clear();
     moves_.clear();   // the moves of the game it replaces
     strategic_.clear();
     call_ = Call::None;
     battle_.reset();
+    entryStop_.clear();
     answers_.clear();
     callOrders_.clear();
     tactical_.reset();

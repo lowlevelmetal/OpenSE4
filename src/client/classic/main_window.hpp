@@ -14,6 +14,7 @@
 #include "client/classic/screens/ships_common.hpp"
 #include "client/classic/sector_view.hpp"
 #include "client/classic/ship_glides.hpp"
+#include "client/classic/turn_start.hpp"
 #include "client/classic/ui.hpp"
 #include "gfx/renderer2d.hpp"
 
@@ -41,7 +42,21 @@ public:
     // right after an engine call sees its moves (turn_start.hpp).
     bool movesShowing(UiContext& ui);
     // The player skipped them: every ship is drawn on its square at once.
-    void showMovesAtOnce() { glides_.finish(); }
+    void showMovesAtOnce() {
+        glides_.finish();
+        marksApart_.reset();
+    }
+    // How the order whose moves are shown was given: what the main window
+    // takes meanwhile (mainWindowTakes, turn_start.hpp).
+    OrderGiven orderGiven() const { return orderGiven_; }
+    // A window or question opened over the main window while an order's
+    // moves are shown holds them where they are until it closes (observed).
+    void holdMoves(bool hold) { holdMoves_ = hold; }
+    // The messages the player's own orders raised (ClassicSession::ShownMove::
+    // message) that the moves shown have reached, in order: each is shown
+    // then, as the original shows it where it comes among the moves (a
+    // minefield's after its explosion, spec 06 §2.4). Taking them forgets them.
+    std::vector<game::PlayerMessage> takeMessages() { return std::exchange(reachedMessages_, {}); }
     // The ending windows due at this start of a turn, in the order they are
     // shown (finale.hpp); nothing until the next start of a turn. The caller
     // opens them when the turn's start lets it (turn_start.hpp).
@@ -62,8 +77,8 @@ public:
     // Input scripts (docs/BUILDING.md "Input scripts"): the sectors of the
     // shown system that a query names, as frame rectangles in row order
     // ("3,4", or words joined by + and negated by !: empty, home, colony,
-    // planet, colonizable, star, warp-point, ship, enemy, selected, gliding,
-    // line, line-start, any),
+    // planet, colonizable, star, warp-point, ship, enemy, selected, marked,
+    // gliding, waiting, line, line-start, any),
     // and the sector at a frame point; the galaxy panel's systems a query
     // names ("12", home, shown, explored, any, joined and negated the same
     // way), as frame points, in the order of their ids.
@@ -263,13 +278,58 @@ private:
     // Turn-based games: the view follows the player's own objects whose
     // orders ran during its turn (spec 06 §2.7), as their moves are shown:
     // the session's LiveSteps, markers in the glides' queue.
+    // Also, in the queue's order: a run of the player's own that moves
+    // makes the shown system's top-left square current before its first
+    // step (`corner`, spec 06 §7 Q123, observed); after a tagged group's
+    // order the current square is selected again once its moves are shown
+    // (`reselect`, §7 Q52, observed).
     struct PendingFollow {
+        enum class Kind { Follow, Corner, Reselect, Message };
         game::LiveStep step;
         bool turnStart = false;
+        Kind kind = Kind::Follow;
+        std::optional<game::PlayerMessage> message;
     };
     void followMove(UiContext& ui, uint64_t id);
     std::map<uint64_t, PendingFollow> follows_;
     uint64_t nextFollow_ = 1;
+    void enqueueFollow(PendingFollow f);
+    bool reselectAfterMoves_ = false;   // a tagged group's order was given (orderDone)
+    std::vector<game::PlayerMessage> reachedMessages_;
+    // How the order whose moves are shown was given (orderGiven()), and
+    // whether a window over the main window holds them; their clock, which
+    // stands still while they are held.
+    OrderGiven orderGiven_ = OrderGiven::None;
+    bool takes(MainWindowInput input) const { return mainWindowTakes(orderGiven_, input); }
+    bool holdMoves_ = false;
+    double glideClock_ = 0.0, glideClockAt_ = -1.0;
+    double glideTime(const UiContext& ui);
+    // The yellow marks (spec 06 §2.4, §7 Q123, observed): they go with each
+    // selection to the current square, but when a move run makes the
+    // top-left square current they stay where they were drawn until that
+    // square is redrawn (a slide leaving it, a step ending on it), and they
+    // come on the current square only when it is selected or redrawn.
+    struct MarksApart {
+        std::optional<game::Sector> at;
+        uint64_t epoch = 0;   // the selection they belong to (selectionEpoch_)
+    };
+    std::optional<MarksApart> marksApart_;
+    uint64_t selectionEpoch_ = 0;   // clearSelection() counts
+    std::optional<game::Sector> marksAt() const;
+    bool sectorMarked(const UiContext& ui, game::Sector sec) const;
+    // The slides drawn last frame (their lead, squares and start), to see which squares are redrawn.
+    struct Slide {
+        game::VehicleId lead;
+        game::Sector from, to;
+        double start = 0.0;
+        bool operator==(const Slide&) const = default;
+    };
+    std::vector<Slide> slides_;
+    void noteRedrawnSquares();
+    // The player's own vehicles destroyed on their way, drawn until their steps are shown (ClassicSession::takeGone).
+    std::map<game::VehicleId, game::Vehicle> gone_;
+    uint64_t goneRevision_ = 0, sectorsGone_ = 0;
+    const game::Vehicle* shownVehicle(const UiContext& ui, game::VehicleId id) const;
     // Ctrl+P, Ctrl+I, Ctrl+O, Ctrl+U: builds this turn's log first if needed.
     void startReplay(UiContext& ui, OrderId id);
     // What each sector of the shown system draws this frame.
@@ -325,6 +385,9 @@ private:
     // A window, question or the picker is open: the panels take no input (update()).
     bool inputBlocked_ = false;
     ImGuiWindowFlags blockedFlags() const { return inputBlocked_ ? int(ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs) : 0; }
+    // ... or an order given by a click on the map has its moves shown: the report panel takes none either.
+    bool panelsBlocked_ = false;
+    ImGuiWindowFlags panelFlags() const { return panelsBlocked_ ? int(ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs) : 0; }
     int orderPage_ = 0;   // the order strip's page at 800x600 (§2.3)
 
     // The movement line's route, worked out again when the game or the report

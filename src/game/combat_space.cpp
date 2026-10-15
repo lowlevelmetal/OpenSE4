@@ -4121,7 +4121,7 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
                 q.participants = battle.empires();
                 q.state = std::move(before);
                 q.index = ask->next;
-                throw game::detail::BattleQuestionRaised{std::move(q)};
+                throw game::detail::BattleQuestionRaised{std::move(q), ctx.liveSteps, ctx.messages};
             }
             const BattleAnswer& answer = (*ask->answers)[ask->next++];
             std::vector<EmpireId> players;

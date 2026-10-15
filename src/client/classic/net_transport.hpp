@@ -76,6 +76,7 @@ public:
     void playCommand(const game::Command& c) override;
     void endPlayerTurn() override;
     std::optional<game::GameState> pollState() override;
+    net::OwnMoves takeOwnMoves() override { return host_->takeLocalMoves(); }
     std::string status() const override;
     NetLog& log() override { return log_; }
     void chat(std::string_view text) override;
@@ -100,6 +101,7 @@ public:
     void playCommand(const game::Command& c) override;
     void endPlayerTurn() override;
     std::optional<game::GameState> pollState() override;
+    net::OwnMoves takeOwnMoves() override { return client_->takeMoves(); }
     std::string status() const override;
     NetLog& log() override { return log_; }
     void chat(std::string_view text) override { client_->chat(text); }

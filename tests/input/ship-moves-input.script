@@ -1,0 +1,98 @@
+# Input while an order's moves are shown (spec 06 §2.4 "Input", observed in the original) and
+# the current sector after a move (§7 Q123, observed), on a training game of our own
+# (tests/input/learn-moves): turn-based, two attack ships at home (sector 4,6).
+# - A Move To given by a click on the map: until its moves are over, a key (F3) and a click on
+#   a command button (Designs) do nothing, then or after. Once the ship has moved, the
+#   top-left square is the current sector: no yellow marks anywhere, the ship's report still
+#   open, its orders lit.
+# - A Move To Waypoint given by its key (Ctrl+1, as its order button): a key gets through in the
+#   middle of the moves: F3 opens Designs, and the moves stand still while it is open; closed,
+#   they go on.
+# - End Turn in the middle of such moves asks first, the moves standing still; Yes shows them at
+#   once and ends the turn (the original fails there).
+# - Nothing of a turn is drawn: right after the order the ship is still on its square.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
+
+wait-lesson moves
+wait 5
+click tag:lesson:hide
+# The slowest speed, so that each move lasts long enough to be caught in the middle.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+drag item:"Ship movement speed"@50%,50% in=options to item:"Ship movement speed"@1,50% in=options
+key Escape
+wait-closed options
+# Waypoints 1 and 2, three and six squares north of home.
+key Escape
+wait 3
+key Alt+1
+wait-until { picking = "location" }
+click sector:4,3
+wait 3
+key Alt+2
+wait-until { picking = "location" }
+click sector:4,0
+wait 3
+
+# The first ship: Move To five squares east, given by a click on the map.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+assert-present sector:marked+home
+key M
+wait-until { picking = "move-to" }
+click sector:9,6
+# A new ship faces up: first a quarter turn, of which nothing is drawn.
+assert-present sector:gliding+home
+assert-present sector:marked+home
+key F3
+wait 2
+click tag:command:designs
+wait 3
+assert-present sector:gliding
+assert-no-window designs
+wait-gone sector:gliding
+wait 5
+assert-no-window designs
+# Moved: the top-left square is current, with no marks on it or anywhere; the report is the ship's.
+assert-inside sector:selected sector:0,0
+assert-absent sector:marked
+assert-present item:Comps
+assert { selected = "ship" }
+
+# The second ship, still at home: Ctrl+1, Move To Waypoint 1 by its key, three squares north.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+key Ctrl+1
+wait 1
+assert-present sector:gliding
+# A key gets through: Designs opens, and the move stands still under it.
+key F3
+wait-window designs
+wait 30
+assert-present sector:gliding
+screenshot held.png
+key Escape
+wait-closed designs
+wait-gone sector:gliding
+wait 3
+
+# Waypoint 2 by its key, three squares more; End Turn in the middle asks, the move standing still.
+key Ctrl+2
+wait 1
+assert-present sector:gliding
+key F12
+wait 20
+assert-present sector:gliding
+click item:Yes
+wait 5
+assert-absent sector:gliding
+wait-turn 1
+click tag:log:close optional
+wait 3

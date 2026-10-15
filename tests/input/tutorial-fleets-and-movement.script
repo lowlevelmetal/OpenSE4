@@ -69,8 +69,10 @@ wait-step 9
 assert { route = true }
 assert { order = "move-to", design_type = "Attack Ship" }
 assert-present tag:panel:system
-# 9 Movement lines: Ctrl+L shows them (a game starts with them off).
+# 9 Movement lines: Ctrl+L shows them (a game starts with them off), once the fleet's moves are
+# over (the main window takes no key during the moves of an order a map click gave, spec 06 §2.4).
 assert { not = { movement_lines = true } }
+wait-gone sector:gliding
 key Ctrl+L
 wait-step 10
 assert { movement_lines = true }

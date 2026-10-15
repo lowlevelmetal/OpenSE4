@@ -30,7 +30,9 @@
 // the game); when the window closes the session makes the same call again
 // with the answers so far, which fights the battle the same way on the real
 // game and carries on, so the reports, log entries and everything after the
-// battle come only then. A turn-based game also stops at the colony owner's
+// battle come only then. The moves the stopped call made before the battle
+// are handed on at once (takeMoves, marked provisional) and shown before it;
+// the call made again hands on only the rest. A turn-based game also stops at the colony owner's
 // end-of-turn ground combat when one of the two empires is human: the
 // question holds the fight, shown in the Ground Combat window after a notice.
 // Network and PBEM games never stop (their host fights every battle at once);
@@ -52,6 +54,7 @@
 #include "game/state.hpp"
 #include "game/tactical.hpp"
 #include "game/turn.hpp"
+#include "net/types.hpp"
 
 #include <expected>
 #include <filesystem>
@@ -79,6 +82,9 @@ public:
     // Returns a newly processed state when one has arrived (turn-based games:
     // also within a turn).
     virtual std::optional<game::GameState> pollState() = 0;
+    // Turn-based games: the player's own moves that came with the states
+    // pollState() returned (protocol 10), in order. Taking them forgets them.
+    virtual net::OwnMoves takeOwnMoves() { return {}; }
     virtual std::string status() const = 0;
 };
 
@@ -151,7 +157,10 @@ public:
     bool myTurn() const;
     // Turn-based games: moves of the player's ships that stopped before a
     // sector with enemies, oldest first; answer() gives the Attack Sector
-    // answer to the first (spec 03 §6.2).
+    // answer to the first (spec 03 §6.2). At the start of the player's turn
+    // in a local or hotseat game the call stops at the question, as the
+    // original's pass waits for it (game::BattleQuestion::Kind::Enter): it is
+    // the only question then, and the answer carries the call on.
     const std::vector<game::EntryQuestion>& questions() const;
     void answer(bool enter);
     // Battles for the local player to watch in the Strategic Combat window
@@ -266,10 +275,6 @@ public:
 
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }
-    // Turn-based games: messages the player's own orders raised as they were
-    // carried out here (a failed Colonize, shown in a message box titled
-    // "Colonize", spec 03 §8), oldest first; taking them forgets them.
-    std::vector<game::PlayerMessage> takeMessages() { return std::exchange(messages_, {}); }
     // Called after a new turn begins (for the Log window auto-open etc.).
     std::function<void()> onNewTurn;
 
@@ -282,15 +287,40 @@ public:
     // the view following the player's own groups (`follow`: a group's run
     // starts there, or it jumped through a warp point), marked `turnStart`
     // when it came with the start of the player's turn (orders carried over)
-    // rather than with an order just given. A call a battle stopped made
-    // none: it is made again with the answer. Network and e-mail games' new
-    // states come without them. Taking them forgets them.
+    // rather than with an order just given. `original`: a step the original
+    // animates, one made for the human player whose turn it is in a
+    // turn-based game (spec 06 §2.4); the others only with OpenSE4's option.
+    // A call a battle stopped made none: it is made again with the answer. A
+    // network game's host sends the player's own steps and LiveSteps of a
+    // turn-based game with its new state (net::OwnMoves, protocol 10), its
+    // commands' and its turn start's; other players' moves, a simultaneous
+    // turn's and an e-mail game's new states come without them. Taking them
+    // forgets them.
+    // Also, in their place among the moves, the messages the player's own
+    // orders raised as they were carried out here (`message`: a failed
+    // Colonize in a box titled "Colonize", a minefield's "Minefield", spec 03
+    // §8, spec 06 §2.4), shown as the moves reach them.
     struct ShownMove {
         std::optional<game::MovementStep> step;
         std::optional<game::LiveStep> follow;
         bool turnStart = false;
+        bool original = false;
+        std::optional<game::PlayerMessage> message;
+        // Made before a battle stopped the call, the game still as before it:
+        // shown up to the battle, which waits for them (spec 06 §2.4
+        // "Order"); the call made again with the answers hands on the rest.
+        bool provisional = false;
     };
+    // An engine call is under way: stopped at a battle, or a turn processed
+    // on its own thread.
+    bool callUnderWay() const { return call_ != Call::None; }
     std::vector<ShownMove> takeMoves() { return std::exchange(moves_, {}); }
+    // The player's own vehicles those steps name that the call removed from
+    // the game (destroyed on the way: mines, a battle), as they were before
+    // it, placed where their last step took them: the animation draws them
+    // until their steps are shown (spec 06 §2.4: the square is redrawn
+    // without them after the strike). Taking them forgets them.
+    std::vector<game::Vehicle> takeGone() { return std::exchange(gone_, {}); }
 
     // The game as the last engine call that carried orders out found it, for
     // the movement line drawn while its moves are shown (docs/spec/06 §2.4
@@ -480,14 +510,21 @@ private:
     bool waiting_ = false;
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
-    std::vector<game::PlayerMessage> messages_;
     // The steps of the engine call under way (runCall), and what takeMoves() gives.
     std::vector<game::MovementStep> callSteps_;
     std::vector<ShownMove> moves_;
-    // Takes a turn-based call's messages for the local player.
-    void takeLive(game::TurnResult& res);
-    // Adds the finished call's steps and the local player's own LiveSteps to moves_, in order.
-    void queueMoves(const game::TurnResult& res, bool turnStart);
+    // The human players' vehicles before the call under way, and the
+    // player's own it removed that its steps name (takeGone()).
+    std::vector<game::Vehicle> callBefore_, gone_;
+    void keepOwnVehicles(const game::GameState& before);
+    void noteGone(const std::vector<game::MovementStep>& steps);
+    // Adds the finished call's steps and the local player's own LiveSteps and
+    // messages to moves_, in order; `provisional` for a call a battle
+    // stopped, whose part handed on is counted so that the call made again
+    // hands on only the rest.
+    void queueMoves(const game::TurnResult& res, bool turnStart, bool provisional = false);
+    size_t queuedSteps_ = 0, queuedLive_ = 0, queuedMessages_ = 0;
+    void forgetQueued() { queuedSteps_ = queuedLive_ = queuedMessages_ = 0; }
     std::string autosaveNote_;
     // Turn-based games: the game turn whose autosave was written (or whose
     // first human turn this session began in): one autosave per game turn.
@@ -507,6 +544,8 @@ private:
     std::vector<game::EmpireOrders> callOrders_;   // Process: the humans' (already applied) orders
     size_t callBattles_ = 0;                  // GameState::combats before the call
     std::vector<game::BattleAnswer> answers_;
+    // The Attack Sector question that stopped the call under way (questions()).
+    std::vector<game::EntryQuestion> entryStop_;
     game::CommandResult issued_;              // the result of the last Issue call that finished
     std::optional<game::BattleQuestion> battle_;
     std::unique_ptr<TacticalFight> tactical_;

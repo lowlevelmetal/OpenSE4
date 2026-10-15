@@ -201,6 +201,93 @@ TEST_CASE("turn-based: a human is asked before entering a sector with enemies; e
     }
 }
 
+TEST_CASE("turn-based: at a turn's start the pass waits for the Attack Sector answer; the groups after it move only then") {
+    // Spec 03 §6.2, spec 06 §2.4: the original's pass asks as the group
+    // reaches the sector, and the next objects act only once it is answered.
+    // A call that can stop (local games) stops at the question as at a
+    // battle; one that cannot (a network or e-mail game's host) leaves it
+    // open and goes on.
+    Duel d;
+    d.w.spawn(d.w.ship(kB, "Picket", 1, {"Test Laser"}), at(d.a, 1, 6));
+    const VehicleId scout = d.w.spawn(d.w.ship(kA, "Scout", 3), at(d.a, 0, 9));
+    fuel(d.w, scout);
+    resumeTurnBased(d.r(), d.s());
+    REQUIRE(d.s().playerTurn.empire == kA);
+    // Orders carried over to A's next turn: the runner into the picket's square, the scout east.
+    d.w.v(d.runner).orders = {moveTo(d.a, 1, 6)};
+    d.w.v(scout).orders = {moveTo(d.a, 3, 9)};
+    endPlayerTurn(d.r(), d.s(), kA);
+    REQUIRE(d.s().playerTurn.empire == kB);
+    const GameState bTurn = d.s();
+
+    struct Run {
+        TurnResult res;
+        std::vector<MovementStep> steps;
+        GameState state;
+    };
+    auto run = [&](const std::vector<BattleAnswer>* answers) {
+        Run out{{}, {}, bTurn};
+        LiveOptions o;
+        o.movementStep = [&](const MovementStep& st) { out.steps.push_back(st); };
+        out.res = endPlayerTurn(d.r(), out.state, kB, o, answers);
+        return out;
+    };
+    auto firstStepOf = [](const std::vector<MovementStep>& steps, VehicleId id) {
+        for (size_t i = 0; i < steps.size(); ++i)
+            if (std::find(steps[i].members.begin(), steps[i].members.end(), id) != steps[i].members.end()) return i;
+        return steps.size();
+    };
+
+    // No answer yet: the call stops at the question, the game as it was, the scout not moved.
+    const std::vector<BattleAnswer> none;
+    const Run asked = run(&none);
+    REQUIRE(asked.res.battle.has_value());
+    CHECK(asked.res.battle->kind == BattleQuestion::Kind::Enter);
+    REQUIRE(asked.res.battle->entry.has_value());
+    CHECK(*asked.res.battle->entry == EntryQuestion{d.runner, {}, at(d.a, 1, 6)});
+    CHECK(stateChecksum(asked.state) == stateChecksum(bTurn));
+    CHECK(firstStepOf(asked.steps, scout) == asked.steps.size());
+    REQUIRE_FALSE(asked.res.liveSteps.empty());   // the runner's run had started
+    CHECK(asked.res.liveSteps.back().vehicle == d.runner);
+
+    // Declined: the runner's order fails there, and the scout moves after.
+    BattleAnswer no;
+    no.enter = false;
+    const std::vector<BattleAnswer> declined{no};
+    const Run off = run(&declined);
+    CHECK_FALSE(off.res.battle.has_value());
+    CHECK(off.state.playerTurn.empire == kA);
+    CHECK(off.state.vehicle(d.runner)->orders.empty());
+    CHECK(off.state.vehicle(d.runner)->location == at(d.a, 0, 6));
+    CHECK(off.state.vehicle(scout)->location == at(d.a, 3, 9));
+    CHECK(off.state.playerTurn.questions.empty());
+
+    // Entered: the battle comes next (fought by the strategies with its answer), then the scout's moves.
+    BattleAnswer yes;
+    yes.enter = true;
+    const std::vector<BattleAnswer> entered{yes};
+    const Run in = run(&entered);
+    REQUIRE(in.res.battle.has_value());
+    CHECK(in.res.battle->kind == BattleQuestion::Kind::Choose);
+    CHECK(firstStepOf(in.steps, scout) == in.steps.size());
+    const std::vector<BattleAnswer> fought{yes, BattleAnswer{}};
+    const Run done = run(&fought);
+    CHECK_FALSE(done.res.battle.has_value());
+    REQUIRE_FALSE(done.state.combats.empty());
+    CHECK(done.state.combats.back().location == at(d.a, 1, 6));
+    const size_t intoBattle = firstStepOf(done.steps, d.runner);
+    REQUIRE(intoBattle < done.steps.size());
+    CHECK(firstStepOf(done.steps, scout) > intoBattle);
+    CHECK(done.state.vehicle(scout)->location == at(d.a, 3, 9));
+
+    // A call that cannot stop: the question stays open and the scout has moved already.
+    const Run host = run(nullptr);
+    CHECK_FALSE(host.res.battle.has_value());
+    CHECK(host.state.playerTurn.questions == std::vector<EntryQuestion>{EntryQuestion{d.runner, {}, at(d.a, 1, 6)}});
+    CHECK(host.state.vehicle(d.runner)->orders.size() == 1);
+    CHECK(host.state.vehicle(scout)->location == at(d.a, 3, 9));
+}
+
 TEST_CASE("turn-based: live steps go around an enemy's square on the way, without a question") {
     Duel d;
     d.w.spawn(d.w.ship(kB, "Picket", 1, {"Test Laser"}), at(d.a, 1, 6));

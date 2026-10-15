@@ -89,12 +89,15 @@ class MovementReplay {
 public:
     static constexpr int kDays = MovementLog::kDays;
     // The animation of an entry in the shown system (§7 Q62, confirmed:
-    // binary), counted in frames: the mini first turns the shorter way
-    // (clockwise for a half-turn) 5° a frame, 9 frames per 45°, with 10 ms
-    // after each, then slides 1 px a frame along the longer axis, 36 frames a
-    // sector at 800x600 and 50 at 1024x768, with 1 ms after each. The frames
-    // come by the time elapsed, at those waits divided by the player's speed
-    // (MovementPace, as the glides of moves as they are made).
+    // binary), counted in frames: first the turn the shorter way (clockwise
+    // for a half-turn), 5° a frame, 9 frames per 45°, with 10 ms after each,
+    // during which nothing is drawn: the vehicle stays on its square as it
+    // was, at its old heading (held()); then the slide, 1 px a frame along
+    // the longer axis, 36 frames a sector at 800x600 and 50 at 1024x768,
+    // with 1 ms after each, the mini at its new heading from the first frame
+    // (motion()). The frames come by the time elapsed, at those waits divided
+    // by the player's speed (MovementPace, as the glides of moves as they are
+    // made).
     static constexpr int kDegreesPerTurnFrame = MovementPace::kDegreesPerTurnFrame;
 
     void setLog(std::shared_ptr<const MovementLog> log);
@@ -139,14 +142,22 @@ public:
 
     // The vehicles at this point of the replay, at their places.
     const std::vector<game::Vehicle>& vehicles() const { return view_; }
-    // A vehicle whose entry is animated now or later this day: where it is
-    // drawn (in sector units: a square's centre is (x + 0.5, y + 0.5)) and its
-    // angle (degrees clockwise from up).
+    // A vehicle whose entry slides now: where its mini is drawn (in sector
+    // units: a square's centre is (x + 0.5, y + 0.5)) and its angle (degrees
+    // clockwise from up).
     struct Motion {
         Vec2 at;
         double angle = 0.0;
     };
     std::optional<Motion> motion(game::VehicleId v) const;
+    // A vehicle whose entry is to come this day, or turning now: it is drawn
+    // on the square the entry starts from, among what that square shows, at
+    // the heading it had before the entry.
+    struct Held {
+        game::Location at;
+        int heading = 0;
+    };
+    std::optional<Held> held(game::VehicleId v) const;
     // The heading (0..7) of a turning mini at this point of the replay: at Day
     // 0 the one the vehicle had when the turn began (§7 Q62).
     int heading(game::VehicleId v) const;
@@ -160,12 +171,15 @@ private:
         game::VehicleId id;
         game::Location from, to;
         double angle0 = 0.0, angle1 = 0.0;  // degrees, the shorter way round (clockwise for a half-turn)
+        int heading0 = 0;                   // the heading before it (0..7)
         int turnFrames = 0, slideFrames = 0;
         double start = 0.0, end = 0.0;      // once the day's animations began (started_)
     };
     void reset();
     void applyDay(const Frame& f);
     void rebuildView();
+    // The entry of `v` animated now or still to come this day, and how many of its frames are drawn.
+    const Animation* current(game::VehicleId v, int& frame) const;
 
     std::shared_ptr<const MovementLog> log_;
     Mode mode_ = Mode::Off;

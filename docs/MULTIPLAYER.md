@@ -361,11 +361,17 @@ The host runs the game. Choose "Turn-based" as the turn style in the host form, 
   turn order.
 - **Each command is carried out on the host at once.** The client sends it, the host
   carries it out with the game rules, and the player gets their new view of the game at
-  once, then the result: which commands were refused and why.
+  once, then the result: which commands were refused and why. The new view comes with the
+  player's own moves as the host made them, and so does the view at the start of the
+  player's turn (its orders carried over), so the player's game shows them square by
+  square, one group after another, the view following, as on one computer.
 - **Attack Sector questions.** When a move stops before a sector with enemy forces, the
   player is asked whether to enter it (spec 03 §6.2). The question is part of the game
   state. It survives a reconnect, a saved game and a host restart, and the other players
-  never see it (inferred).
+  never see it (inferred). At the start of the player's turn the host does not wait for the
+  answer in the middle of carrying out the orders: the groups after the asking one carry out
+  theirs, and the question waits in the game. The original, and OpenSE4 on one computer, ask
+  it there and move the later groups only after it (spec 03 §19 Q55).
 - **Other players** get their view of the game each time the turn passes to the next
   player. A player who took part in a battle fought in someone else's turn gets their
   view at once, and can watch the battle (inferred). The others see nothing of the turn
@@ -1048,7 +1054,16 @@ message type and payload encrypted with XChaCha20-Poly1305, then the 16-byte tag
    `Admin` requests. The host sends `Lobby` after every change.
 6. At the start and after every turn, the host sends `State`: the turn, the
    player's empire, a complete `serializeState()` blob with its own checksum, and a
-   serial number that grows with every `State` the host sends.
+   serial number that grows with every `State` the host sends. In a turn-based game the
+   `State` that the player's own commands or the start of its turn made also carries the
+   moves of the player's own groups as the host's engine made them (`OwnMoves`, protocol
+   10): each step of a group (its members, the vehicle whose mini stands for it, the two
+   squares, the heading, the warp point of a jump; mines striking it), and where the
+   player's view follows (each object whose orders start to run, each warp jump), in
+   order. The player's game shows them square by square and its view follows them, as
+   on one computer (docs/spec/06 §2.4, §2.7). Only the player's own vehicles and
+   colonies are named, at squares they passed: nothing the player's view of the game
+   does not hold.
 7. Each turn the player sends `SubmitOrders`, a `serializeOrders()` blob of an
    `EmpireOrders` for the current turn. A later submission replaces an earlier one.
    The host answers `OrdersAck` and sends everyone a `TurnStatus` saying who has
@@ -1105,6 +1120,11 @@ and the computer players' strategies and treaty rules (GitHub issues #13, #17, #
 spec answers corrected on 2026-10-14). A client of 0.13.0 would work out turn-based moves
 differently from the host and fall out of step, so the two releases refuse each other.
 0.13.0's saves load.
+Protocol 10 came after 0.14.1, with the save format still 10: `State` carries a turn-based
+player's own moves (`OwnMoves`: `game::MovementStep` and `game::LiveStep` lists) after the
+`resync` flag, so that a network player's own moves are shown as they were made, where
+they used to glide straight to where they ended. Protocol 10 does not play with 0.14.x.
+0.14.x's saves load.
 
 ### Save format
 

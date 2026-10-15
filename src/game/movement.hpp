@@ -239,6 +239,14 @@ struct LiveMove {
     bool ask = false;
     // An answered question: that group enters that sector without asking.
     std::optional<EntryQuestion> allowed;
+    // The start of a human player's turn (`ask`): in a call that stops
+    // (TurnContext::battles) a question stops it as a battle does
+    // (BattleQuestion::Kind::Enter), and the call made again takes its
+    // answer there (BattleAnswer::enter), so that the groups after it move
+    // only once it is answered, as the original's pass waits (spec 03 §6.2,
+    // spec 06 §2.4). A call that cannot stop (a network or e-mail game's
+    // host) leaves the question open in GameState::playerTurn and goes on.
+    bool stops = false;
 };
 
 // A turn-based player's turn starts: the empire's vehicles regain their

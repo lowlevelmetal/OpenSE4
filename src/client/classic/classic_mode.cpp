@@ -1046,6 +1046,10 @@ void ClassicMode::endTurn() {
     // (every window and question is modal), and the battle's window must not
     // be closed under it.
     if (!session_ || session_->waitingForOthers() || session_->tactical() || session_->battleQuestion()) return;
+    // Ended in the middle of an order's moves (an order button's, spec 06
+    // §2.4 "Input"): they are shown at once first. The original ends the
+    // turn inside them and then fails (observed); ours does not.
+    main_.showMovesAtOnce();
     audio().play("endturn");
     screens_.clear();
     parentOf_.clear();
@@ -1293,18 +1297,30 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         openScreen(session_->tactical()->players.empty() ? ScreenId::StrategicCombat : ScreenId::TacticalCombat, {});
     // Battles to watch in the Strategic Combat window, one after another.
     for (size_t i : session_->takeStrategicBattles()) strategicQueue_.push_back(i);
-    // A failed Colonize and the like: a message box over the view (spec 03 §8).
-    for (game::PlayerMessage& m : session_->takeMessages()) messageBoxes_.push_back(std::move(m));
+    // A window or question opened over the main window while an order's
+    // moves are shown holds them where they are until it closes (spec 06
+    // §2.4 "Input", observed); one already open when they began (the window
+    // that gave the order) does not. Decided before the moves are played on
+    // in this frame, from the windows the last frame left open.
+    const size_t over = screens_.size() + pendingOpen_.size() + messageBoxes_.size() + (confirmEndTurn_ ? 1 : 0) + (quitAsked_ ? 1 : 0);
+    if (!movesWereShowing_) windowsUnderMoves_ = over;
+    windowsUnderMoves_ = std::min(windowsUnderMoves_, over);
+    main_.holdMoves(movesWereShowing_ && over > windowsUnderMoves_);
     // What a turn's start shows comes after its moves, in the original's
     // order (turn_start.hpp): the battles to watch, the endings, the
     // questions, the Log last. Meanwhile the main window waits, and a click or
     // a key shows the moves at once.
     TurnStartGate gate = turnStartGate(ui);
+    movesWereShowing_ = gate.movesShowing;
+    // A failed Colonize, a minefield and the like: a message box over the
+    // view where the moves shown reach it (spec 03 §8, spec 06 §2.4), which
+    // holds them until it is answered.
+    for (game::PlayerMessage& m : main_.takeMessages()) messageBoxes_.push_back(std::move(m));
     // The press shows the moves and does nothing else: no main-window input in
     // this frame, and what waited for the moves opens in the next (a key must
     // not also close the Log it let open).
     bool skipped = false;
-    if (gate.hold && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+    if (gate.hold && messageBoxes_.empty() && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
                       ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || capturePressedChord())) {
         main_.showMovesAtOnce();
         turnStarting_ = false;
@@ -1336,7 +1352,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
     if (choosing) drawColonyTypeChoice(ui, *choosing);
-    if (!messageBoxes_.empty() && gate.questions && !battleAsking) drawMessageBox(ui);
+    if (!messageBoxes_.empty() && !battleAsking) drawMessageBox(ui);
     // The last turn is over: once its moves and battles are shown (spec 05 §6).
     if (completed && gate.endings && !battleAsking && screens_.empty() && messageBoxes_.empty()) drawGameCompleted(ui);
 

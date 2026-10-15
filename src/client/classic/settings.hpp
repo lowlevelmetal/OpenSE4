@@ -56,6 +56,13 @@ struct ClassicSettings {
     // replay (ship_glides.hpp, movement_replay.hpp). `ship_movement` in the
     // file: "one-group-at-a-time" or "all-at-once".
     bool shipsMoveAllAtOnce = false;
+    // Whose moves the system window animates (Options, under OpenSE4): the
+    // original animates only the moves made for the human player whose turn
+    // it is in a turn-based game (spec 06 §2.4); on, the other empires' moves
+    // the player sees and a simultaneous turn's moves at the next turn's
+    // start are animated too. Off by default: those ships are simply drawn on
+    // their new squares. `animate_other_moves` in the file.
+    bool animateOthersMoves = false;
     // Sound effects and music fade out while the game's window is in the
     // background (another window has the focus, or it is minimized), the
     // music pausing where it is. On by default.

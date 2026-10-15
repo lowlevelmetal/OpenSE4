@@ -48,7 +48,8 @@ MovementRecorder::MovementRecorder(const game::GameState& start) {
 }
 
 void MovementRecorder::step(const game::MovementStep& st) {
-    if (st.day < 1) return;
+    // Moves only: mines striking a group make no entry (§7 Q51).
+    if (st.day < 1 || st.kind != game::MovementStep::Kind::Move) return;
     if (int(log_.days.size()) < st.day) log_.days.resize(size_t(st.day));
     // One entry per member, in the group's order (§7 Q62). A vehicle that
     // appeared during the day is added by day(); its steps before that are
@@ -284,6 +285,7 @@ void MovementReplay::applyDay(const Frame& f) {
         a.from = m.from;
         a.to = m.to;
         a.angle0 = turns ? before * 45.0 : 0.0;
+        a.heading0 = turns ? before : 0;
         const int delta = turns ? ((heading(m.id) - before) % 8 + 8) % 8 : 0;   // eighths clockwise
         // The shorter way round; a half-turn goes clockwise.
         const int signedEighths = delta > 4 ? delta - 8 : delta;
@@ -315,21 +317,30 @@ void MovementReplay::rebuildView() {
     }
 }
 
-std::optional<MovementReplay::Motion> MovementReplay::motion(game::VehicleId v) const {
+const MovementReplay::Animation* MovementReplay::current(game::VehicleId v, int& frame) const {
     for (const Animation& a : anims_) {
         if (a.id != v || (started_ && now_ >= a.end)) continue;   // another's, or over
-        // Still to come this day: where the entry starts.
-        if (!started_ || now_ < a.start) return Motion{cellCenter(a.from.sector), a.angle0};
-        const int frame = animPace_.framesDrawn(a.turnFrames, a.slideFrames, now_ - a.start);
-        if (frame <= a.turnFrames) {
-            const double step = a.angle1 >= a.angle0 ? kDegreesPerTurnFrame : -kDegreesPerTurnFrame;
-            return Motion{cellCenter(a.from.sector), frame == a.turnFrames ? a.angle1 : a.angle0 + step * frame};
-        }
-        const int slid = frame - a.turnFrames;
-        const float t = std::clamp(float(slid) / float(a.slideFrames), 0.0f, 1.0f);
-        return Motion{lerp(cellCenter(a.from.sector), cellCenter(a.to.sector), t), a.angle1};
+        // Still to come this day: no frame drawn yet.
+        frame = !started_ || now_ < a.start ? 0 : animPace_.framesDrawn(a.turnFrames, a.slideFrames, now_ - a.start);
+        return &a;
     }
-    return std::nullopt;
+    return nullptr;
+}
+
+std::optional<MovementReplay::Motion> MovementReplay::motion(game::VehicleId v) const {
+    int frame = 0;
+    const Animation* a = current(v, frame);
+    if (!a || frame <= a->turnFrames) return std::nullopt;   // to come, or turning: drawn on its square (held)
+    const int slid = frame - a->turnFrames;
+    const float t = std::clamp(float(slid) / float(a->slideFrames), 0.0f, 1.0f);
+    return Motion{lerp(cellCenter(a->from.sector), cellCenter(a->to.sector), t), a->angle1};
+}
+
+std::optional<MovementReplay::Held> MovementReplay::held(game::VehicleId v) const {
+    int frame = 0;
+    const Animation* a = current(v, frame);
+    if (!a || frame > a->turnFrames) return std::nullopt;
+    return Held{a->from, a->heading0};
 }
 
 int MovementReplay::heading(game::VehicleId v) const {

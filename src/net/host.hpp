@@ -34,6 +34,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace opense4::net {
@@ -144,6 +145,11 @@ public:
     const game::GameState* state() const { return state_ ? &*state_ : nullptr; }
     game::EmpireId localEmpire() const;
     game::EmpireId empireOfSlot(uint32_t slot) const;
+    // Turn-based games: the hosting player's own moves that came with its
+    // last new views of the game (its commands carried out, the start of its
+    // turn), as a joined player gets them with its State (OwnMoves,
+    // protocol 10). Taking them forgets them.
+    OwnMoves takeLocalMoves() { return std::exchange(localMoves_, {}); }
     const TurnStatus& turnStatus() const { return turnStatus_; }
     // Orders for any empire (the host may play any empire's turn).
     std::expected<void, std::string> submitOrders(game::EmpireOrders orders);
@@ -224,8 +230,11 @@ private:
     void broadcastLobby();
     void refreshTurnStatus();
     void broadcastTurnStatus();
-    void sendState(Peer& peer, bool gameStart, bool resync = false);
-    void broadcastState(bool gameStart);
+    // `moves`: a turn-based engine call's moves of one empire's own groups,
+    // sent with that empire's State (or kept for the hosting player).
+    using EmpireMoves = std::pair<game::EmpireId, OwnMoves>;
+    void sendState(Peer& peer, bool gameStart, bool resync = false, const EmpireMoves* moves = nullptr);
+    void broadcastState(bool gameStart, const EmpireMoves* moves = nullptr);
     void beginTurn();
     bool allOrdersIn() const;
     using StateBlob = std::shared_ptr<const std::vector<uint8_t>>;
@@ -233,8 +242,10 @@ private:
     void notifyPlayer(game::EmpireId empire, const std::string& text);
     void notifyMessages(const game::TurnResult& result);
     void notifyRejections(const game::TurnResult& result, uint32_t turn);
-    // Turn-based games.
+    // Turn-based games. The steps of the engine call under way go to `collecting_` when set.
     game::LiveOptions liveOptions() const;
+    std::vector<game::MovementStep>* collecting_ = nullptr;
+    OwnMoves localMoves_;
     bool anyHumanToPlay() const;
     std::string playerName(game::EmpireId empire) const;
     game::TurnResult runLive(game::EmpireId empire, const std::vector<game::Command>& commands);

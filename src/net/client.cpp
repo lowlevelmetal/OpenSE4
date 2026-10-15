@@ -316,6 +316,7 @@ void ClientSession::handleFrame(uint8_t type, std::span<const uint8_t> payload, 
             const bool first = !state_ || phase_ != ClientPhase::Playing || m.gameStart;
             const bool sameTurn = state_ && state_->turn == s->turn;
             state_ = std::move(*s);
+            moves_.append(std::move(m.moves));
             stateSerial_ = m.serial;
             empire_ = m.empire;
             phase_ = ClientPhase::Playing;

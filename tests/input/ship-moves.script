@@ -3,8 +3,9 @@
 # own (tests/input/learn-moves): turn-based, two attack ships at home.
 # - On a computer that never started a simultaneous game the movement lines are off (spec 06
 #   §1.9); Ctrl+L switches them on.
-# - A Move To runs at once: the ship glides as far as its movement goes while the player plays
-#   on; its movement line is the route as it stood before the move, from the square it left.
+# - A Move To runs at once: the ship glides as far as its movement goes (the main window taking
+#   no map click or key meanwhile, ship-moves-input.script); its movement line is the route as
+#   it stood before the move, from the square it left.
 # - At End Turn the turn's start moves the ship first, the main window waiting meanwhile; the
 #   Log (a research project completed) opens only once the glide is over. Afterwards the line
 #   is worked out again (the ship arrived: no line).

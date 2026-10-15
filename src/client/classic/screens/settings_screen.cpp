@@ -102,7 +102,9 @@ bool movementSpeedRow(UiContext& ui, ClassicSettings& s) {
     return true;
 }
 
-// OpenSE4's ship movement (ship_glides.hpp): pick one of the two lamps.
+// OpenSE4's ship movement (ship_glides.hpp): pick one of the two lamps for
+// how groups follow each other; then a lamp of its own for whose moves are
+// animated.
 bool shipMovementRows(UiContext& ui, ClassicSettings& s) {
     bool changed = false;
     const char* tip = "How the moves of different ships and fleets follow each other in the system window,\n"
@@ -121,6 +123,12 @@ bool shipMovementRows(UiContext& ui, ClassicSettings& s) {
         changed = true;
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+    // Whose moves are animated (ship_glides.hpp): the original animates only the player's own.
+    changed |= lampToggle(ui, "Also animate other empires' and simultaneous turns' moves", &s.animateOthersMoves);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The original animates only your own ships' moves, in your turn of a turn-based game.\n"
+                          "On: the other empires' moves you see, and a simultaneous turn's moves at the start\n"
+                          "of the next turn, turn and slide too. Off: those ships are simply on their new squares.");
     return changed;
 }
 

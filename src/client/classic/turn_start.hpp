@@ -34,8 +34,24 @@ struct TurnStartGate {
     bool endings = false;     // the endings due may open
     bool questions = false;   // the questions, the picker and the message boxes may be shown
     bool log = false;         // the Log may open (with new entries and the Empire Option on)
+    bool movesShowing = false;   // TurnStartFacts::movesShowing, as it was
 };
 
 TurnStartGate turnStartGate(const TurnStartFacts& f);
+
+// While the moves of an order given during the turn are shown, the main
+// window takes input as the original does (spec 06 §2.4 "Input"): after an
+// order given by a click on the map (a target picked there), none at all
+// until its moves are over: map clicks, keys, the command and order buttons,
+// the selectors, the report panel and End Turn (observed), only the buttons'
+// hover hints; after an order given by an order button (or, ours, its key,
+// inferred), everything but a second order button (confirmed: binary): a
+// map click selects at once, a window opens and holds the moves until it is
+// closed, End Turn asks and, on Yes, ends the turn once the moves are shown
+// (observed; the original fails there). At a turn's start the moves come
+// with turnStartGate's hold instead.
+enum class OrderGiven { None, ByMapClick, ByOrderButton };
+enum class MainWindowInput { MapClick, Key, Button, OrderButton, EndTurn };
+bool mainWindowTakes(OrderGiven given, MainWindowInput input);
 
 } // namespace opense4::client::classic

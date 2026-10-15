@@ -760,7 +760,9 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   seen); declining stops the move and fails the order. The approach steps of an Attack ask like
   any other step. No question is asked for a group made only of drones, or when every member is
   cloaked. Computer players' groups let their AI decide, and in simultaneous games groups simply
-  enter.
+  enter. The question is asked within the step, before it is made, so at the start of a human's
+  turn the pass of its objects waits for the answer: the group enters (and fights) or its order
+  fails, and only then does the next object act (confirmed: binary; §19 Q55).
 - A ship whose space yard has items in its construction queue cannot move or warp; the order fails.
 - Fighters stay in their system. Satellites, mines, troops and platforms never move by themselves.
   Drones move only by orders: an Attack order makes them pursue their target (§8, §12).
@@ -2324,7 +2326,22 @@ All rules in this section are (confirmed: binary).
     included; any object of a hostile empire in the next sector that the owner can see counts,
     mines and colonies included if seen; never for drone-only groups or groups whose members are
     all cloaked; warp jumps never ask; the approach steps of an Attack ask like any step (§6.2)
-    (confirmed: binary).
+    (confirmed: binary). The question is asked within the step into the sector, so at the start
+    of a human's turn the pass of its objects waits for the answer, and the next object acts
+    only after the group has entered (and fought) or its order has failed (confirmed: binary,
+    2026-10-14: the turn-start pass carries each object's run out synchronously, spec 06 §2.4).
+    Our engine used to record the question, stop the group before the sector and go on with
+    the next objects, the answer carrying the group on later (`cmd::EnterSector`), so the
+    groups after it moved before it entered. Since 2026-10-14 ours waits where the call can
+    stop, in local and hotseat games: the turn's start stops at the question as it stops at a
+    battle (`LiveMove::stops`, `BattleQuestion::Kind::Enter`), the player answers, and the call
+    made again carries the answer out in its place (`BattleAnswer::enter`; declining fails the
+    order as `cmd::EnterSector` does) before the next object acts. A network or e-mail game's
+    host cannot wait for a remote player in the middle of its call: there the question stays
+    open in the game (`GameState::playerTurn.questions`), the next objects act, and the answer
+    comes as a command, as before (OpenSE4's own, docs/PARITY_GAPS.md). Orders given during the
+    turn ask as before: the group stops and the question waits for its answer, nothing else
+    running meanwhile.
 56. **Fighter recovery in turn-based games (§12):** **Answer:** recovery is refused while the
     group's MP left are below its maximum (§12) (confirmed: binary), which the engine's reading
     matches.

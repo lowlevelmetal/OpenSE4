@@ -23,6 +23,24 @@
 #include <string>
 #include <vector>
 
+namespace opense4::game {
+
+// The moves a State carries (net::OwnMoves, protocol 10).
+template <class Ar>
+void io(Ar& ar, MovementStep& m) {
+    // `messages` stays with the host: a network player reads its messages as notices.
+    uint32_t live = static_cast<uint32_t>(m.liveSteps);
+    serial::fields(ar, m.day, m.owner, m.members, m.lead, m.fleet, m.from, m.to, m.warp, m.heading, live, m.kind, m.destroyed);
+    if constexpr (Ar::kReading) {
+        m.liveSteps = live;
+        m.messages = 0;
+        if (m.kind != MovementStep::Kind::Move && m.kind != MovementStep::Kind::MinesStruck) ar.fail("unknown kind of step");
+    }
+}
+template <class Ar> void io(Ar& ar, LiveStep& m) { serial::fields(ar, m.empire, m.vehicle, m.fleet, m.planet, m.at, m.jump); }
+
+} // namespace opense4::game
+
 namespace opense4::net {
 
 // Serialization of the public types (types.hpp).
@@ -42,6 +60,7 @@ template <class Ar>
 void io(Ar& ar, TurnStatus& t) {
     game::serial::fields(ar, t.turn, t.processing, t.secondsLeft, t.turnBased, t.active, t.empires);
 }
+template <class Ar> void io(Ar& ar, OwnMoves& m) { game::serial::fields(ar, m.steps, m.liveSteps); }
 
 } // namespace opense4::net
 
@@ -220,6 +239,10 @@ struct State {
     std::vector<uint8_t> state;   // serializeState()
     uint32_t serial = 0;          // increasing per host: what BaseState::serial refers to
     bool resync = false;          // sent again after a desync (Desync came first)
+    // Turn-based games: the player's own moves the engine call that made
+    // this state carried out (its commands, or the start of its turn), for
+    // its animation (protocol 10).
+    OwnMoves moves;
 };
 
 // The host found the player's copy of the game different from what it sent
@@ -281,7 +304,7 @@ template <class Ar> void io(Ar& ar, PlayCommands& m) { game::serial::fields(ar, 
 template <class Ar> void io(Ar& ar, EndTurn& m) { game::serial::fields(ar, m.turn, m.request); }
 template <class Ar> void io(Ar& ar, PlayResult& m) { game::serial::fields(ar, m.request, m.turn, m.ok, m.text, m.refused); }
 template <class Ar> void io(Ar& ar, Admin& m) { game::serial::fields(ar, m.action, m.slot, m.value, m.setup, m.text); }
-template <class Ar> void io(Ar& ar, State& m) { game::serial::fields(ar, m.turn, m.empire, m.gameStart, m.state, m.serial, m.resync); }
+template <class Ar> void io(Ar& ar, State& m) { game::serial::fields(ar, m.turn, m.empire, m.gameStart, m.state, m.serial, m.resync, m.moves); }
 template <class Ar> void io(Ar& ar, Desync& m) { game::serial::fields(ar, m.turn, m.parts, m.text); }
 template <class Ar> void io(Ar& ar, OrdersAck& m) { game::serial::fields(ar, m.turn, m.ok, m.text); }
 template <class Ar> void io(Ar& ar, Chat& m) { game::serial::fields(ar, m.from, m.text); }

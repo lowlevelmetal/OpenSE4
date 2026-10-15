@@ -801,6 +801,7 @@ TEST_CASE("main window: the session hands on each call's steps in order, with wh
     Location at = home;
     for (size_t i = 1; i < moves.size(); ++i) {
         REQUIRE(moves[i].step);
+        CHECK(moves[i].original);   // the player's own, in its turn: the original animates it
         const MovementStep& st = *moves[i].step;
         CHECK(st.members == std::vector<VehicleId>{ship});
         CHECK(st.lead == ship);
@@ -823,8 +824,152 @@ TEST_CASE("main window: the session hands on each call's steps in order, with wh
     REQUIRE((run + 1)->step);
     CHECK((run + 1)->step->members.front() == ship);
     CHECK((run + 1)->step->from == at);
-    for (const ClassicSession::ShownMove& m : next)
+    for (const ClassicSession::ShownMove& m : next) {
         if (m.follow) CHECK(m.follow->empire == kMe);
+        // Only our own steps are the original's to animate; the computer players' are not.
+        if (m.step) CHECK(m.original == (m.step->owner == kMe));
+    }
+}
+
+TEST_CASE("main window: a message the player's order raises comes in its place among the moves: a minefield's after the strike (spec 06 §2.4)") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);
+    start.options.simultaneous = false;
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod"});
+    Vehicle& v = addTestVehicle(start, *rules, runner, home);
+    v.supply = 1000;
+    const VehicleId ship = v.id;
+    // Another empire's minefield two squares along the row.
+    const int dx = home.sector.x > 6 ? -1 : 1;
+    const Location mined{home.system, Sector{home.sector.x + 2 * dx, home.sector.y}};
+    const EmpireId other{1u};
+    const DesignId mine = addTestDesign(start, *rules, other, "Mine", "Test Mine Hull", {"Test Warhead"});
+    addTestVehicle(start, *rules, mine, mined).count = 3;
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    (void)session.takeMoves();
+    // Into it: a route goes round a minefield it knows of unless it is the destination.
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, mined}}, false}).ok);
+    std::vector<ClassicSession::ShownMove> moves = session.takeMoves();
+    // A minefield the ship sees may ask first; the answer carries it in.
+    if (!session.questions().empty()) {
+        session.answer(true);
+        for (ClassicSession::ShownMove& m : session.takeMoves()) moves.push_back(std::move(m));
+    }
+    const auto struck = std::find_if(moves.begin(), moves.end(),
+                                     [](const ClassicSession::ShownMove& m) { return m.step && m.step->kind == MovementStep::Kind::MinesStruck; });
+    REQUIRE(struck != moves.end());
+    CHECK(struck->original);
+    CHECK(struck->step->to == mined);
+    const auto box = std::find_if(moves.begin(), moves.end(), [](const ClassicSession::ShownMove& m) { return m.message.has_value(); });
+    REQUIRE(box != moves.end());
+    CHECK(box->message->title == "Minefield");
+    CHECK(box > struck);   // after the explosion
+    for (auto it = box; it != moves.end(); ++it) CHECK_FALSE((it->step && it->step->kind == MovementStep::Kind::Move && it->step->members.front() == ship));
+}
+
+TEST_CASE("main window: a battle that stops the call comes after the moves that led to it; the call made again hands on the rest (spec 06 §2.4)") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);
+    start.options.simultaneous = false;
+    start.options.noTacticalCombat = false;
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod", "Test Laser"});
+    Vehicle& v = addTestVehicle(start, *rules, runner, home);
+    v.supply = 1000;
+    const VehicleId ship = v.id;
+    // Another empire's armed ship two squares along the row (the ship moves two a turn).
+    const int dx = home.sector.x > 6 ? -1 : 1;
+    const Location enemyAt{home.system, Sector{home.sector.x + 2 * dx, home.sector.y}};
+    const EmpireId other{1u};
+    const DesignId picket = addTestDesign(start, *rules, other, "Picket", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod", "Test Laser"});
+    addTestVehicle(start, *rules, picket, enemyAt).supply = 1000;
+    for (Empire& e : start.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    (void)session.takeMoves();
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, enemyAt}}, false}).ok);
+    std::vector<ClassicSession::ShownMove> moves = session.takeMoves();
+    // The Attack Sector question; the answer carries the ship in, and the battle stops the call.
+    if (!session.questions().empty()) {
+        session.answer(true);
+        for (ClassicSession::ShownMove& m : session.takeMoves()) moves.push_back(std::move(m));
+    }
+    REQUIRE(session.battleQuestion().has_value());
+    CHECK(session.state().vehicle(ship)->location != enemyAt);   // the game as before the call
+    // The steps before the stop, the step into the battle's sector last, are handed on already.
+    std::vector<MovementStep> steps;
+    for (const ClassicSession::ShownMove& m : moves)
+        if (m.step) steps.push_back(*m.step);
+    REQUIRE_FALSE(steps.empty());
+    CHECK(steps.back().to == enemyAt);
+    CHECK(std::any_of(moves.begin(), moves.end(), [](const ClassicSession::ShownMove& m) { return m.step && m.provisional && m.original; }));
+    // The battle fought by the strategies; the call made again hands on only what came after.
+    session.answerBattle(BattleAnswer{});
+    CHECK_FALSE(session.battleQuestion().has_value());
+    for (const ClassicSession::ShownMove& m : session.takeMoves()) {
+        CHECK_FALSE(m.provisional);
+        if (m.step && m.step->kind == MovementStep::Kind::Move) CHECK_FALSE((std::find(m.step->members.begin(), m.step->members.end(), ship) != m.step->members.end()));
+    }
+}
+
+TEST_CASE("main window: at a turn's start the session asks the Attack Sector question in its place, and the groups after it move then (spec 06 §2.4)") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);
+    start.options.simultaneous = false;
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod", "Test Laser"});
+    const int dx = home.sector.x > 6 ? -1 : 1;
+    const int dy = home.sector.y > 6 ? -1 : 1;
+    Vehicle& first = addTestVehicle(start, *rules, runner, home);
+    first.supply = 1000;
+    const VehicleId ship = first.id;
+    Vehicle& second = addTestVehicle(start, *rules, runner, home);
+    second.supply = 1000;
+    const VehicleId other = second.id;
+    // Another empire's armed ship one square along the row; orders carried over to our next turn.
+    const Location enemyAt{home.system, Sector{home.sector.x + dx, home.sector.y}};
+    const DesignId picket = addTestDesign(start, *rules, EmpireId{1u}, "Picket", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Supply Pod", "Test Laser"});
+    addTestVehicle(start, *rules, picket, enemyAt).supply = 1000;
+    for (Empire& e : start.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    // Each ship first uses up its movement (two squares) this turn; the orders given then wait for the next.
+    const Location up{home.system, Sector{home.sector.x, home.sector.y - 2 * dy}};
+    const Location back{home.system, Sector{home.sector.x - 2 * dx, home.sector.y}};
+    const Location away{home.system, Sector{home.sector.x - 2 * dx, home.sector.y + 2 * dy}};
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, up}}, false}).ok);
+    REQUIRE(session.issue(cmd::SetOrders{other, {}, {Order{OrderKind::MoveTo, back}}, false}).ok);
+    REQUIRE(session.state().vehicle(ship)->location == up);
+    REQUIRE(session.state().vehicle(other)->location == back);
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, enemyAt}}, false}).ok);
+    REQUIRE(session.issue(cmd::SetOrders{other, {}, {Order{OrderKind::MoveTo, away}}, false}).ok);
+    REQUIRE(session.questions().empty());
+    (void)session.takeMoves();
+    session.endTurn();
+    // The turn's start stops at the question: asked now, the game as before the call.
+    REQUIRE(session.questions().size() == 1);
+    CHECK(session.questions().front().vehicle == ship);
+    CHECK(session.questions().front().where == enemyAt);
+    CHECK(session.callUnderWay());
+    const std::vector<ClassicSession::ShownMove> before = session.takeMoves();
+    CHECK(std::none_of(before.begin(), before.end(), [&](const ClassicSession::ShownMove& m) {
+        return m.step && std::find(m.step->members.begin(), m.step->members.end(), other) != m.step->members.end();
+    }));
+    // Declined: the call goes on, and the other ship's moves come after.
+    session.answer(false);
+    CHECK_FALSE(session.callUnderWay());
+    CHECK(session.questions().empty());
+    CHECK(session.state().vehicle(ship)->orders.empty());
+    const std::vector<ClassicSession::ShownMove> after = session.takeMoves();
+    CHECK(std::any_of(after.begin(), after.end(), [&](const ClassicSession::ShownMove& m) {
+        return m.step && m.original && std::find(m.step->members.begin(), m.step->members.end(), other) != m.step->members.end();
+    }));
 }
 
 TEST_CASE("main window: the movement log replay's keys") {
@@ -897,6 +1042,9 @@ TEST_CASE("main window: the movement log replay's keys") {
 }
 
 TEST_CASE("main window: the replay animates each entry on its own, frame by frame, from the turn's headings (spec 06 §7 Q62)") {
+    // Nothing of a turn is drawn: the vehicle stays on its square at its old
+    // heading for the turn's frames, and slides at its new heading (§2.4,
+    // confirmed: binary; observed).
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
@@ -929,15 +1077,20 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     replay.play();
     CHECK(replay.heading(ship) == 2);   // Day 0: the heading kept by the engine, not up
     f.now = 10.0;
-    replay.update(f);   // day 1 applied; its entries wait for their animations
-    REQUIRE(replay.motion(ship));
-    REQUIRE(replay.motion(mate));
+    replay.update(f);   // day 1 applied; its entries wait for their animations, on their square
+    CHECK_FALSE(replay.motion(ship));
+    REQUIRE(replay.held(ship));
+    CHECK(replay.held(ship)->at == where);
+    CHECK(replay.held(ship)->heading == 2);
+    REQUIRE(replay.held(mate));
     CHECK(replay.animating());
     // Already facing east: no turn frames, 50 slide frames, by the time
     // elapsed at the original's waits (1 ms a frame, spec 06 §7 Q62).
     replay.update(f);   // the first entry's first frame
     CHECK(replay.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
-    CHECK(replay.motion(mate)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));   // waits its turn
+    CHECK_FALSE(replay.held(ship));
+    CHECK_FALSE(replay.motion(mate));   // waits its turn, on its square
+    CHECK(replay.held(mate)->at == where);
     // A step key during the day's animations is ignored.
     replay.step();
     f.now = 10.0205;
@@ -998,16 +1151,21 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     g.now = 20.0;
     turning.update(g);
     turning.update(g);
-    CHECK(turning.motion(ship)->angle == doctest::Approx(5.0));
-    g.now = 20.0805;   // 10 ms after each 5° frame: the ninth, 45°
+    // The turn's 18 frames of 10 ms: nothing drawn, the ship on its square facing up.
+    for (const double t : {20.0, 20.0805, 20.1795}) {
+        CAPTURE(t);
+        g.now = t;
+        turning.update(g);
+        CHECK_FALSE(turning.motion(ship));
+        REQUIRE(turning.held(ship));
+        CHECK(turning.held(ship)->at == where);
+        CHECK(turning.held(ship)->heading == 0);
+    }
+    g.now = 20.1805;   // the turn over, the slide's first frame, already facing east
     turning.update(g);
-    CHECK(turning.motion(ship)->angle == doctest::Approx(45.0));
-    g.now = 20.1795;
-    turning.update(g);
+    CHECK_FALSE(turning.held(ship));
+    REQUIRE(turning.motion(ship));
     CHECK(turning.motion(ship)->angle == doctest::Approx(90.0));
-    CHECK(turning.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));
-    g.now = 20.1805;   // the turn over, the slide's first frame
-    turning.update(g);
     CHECK(turning.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
     CHECK(turning.heading(ship) == 2);
 }

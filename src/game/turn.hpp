@@ -88,15 +88,25 @@ struct BattleAnswer {
     // Without them (nullopt) those players' sides follow their strategies in
     // this battle, as the window showed them (docs/sdk/ai-protocol.md §8).
     std::optional<std::vector<JournalEntry>> decisions;
+    // The answer to an Enter stop (BattleQuestion::Kind::Enter): whether the
+    // group enters the sector; the battle fields are unused then.
+    std::optional<bool> enter;
 };
 
 // A stop: a battle about to start with human participants (in a simultaneous
-// game that shows battles, any battle), or a ground fight to show.
+// game that shows battles, any battle), a ground fight to show, or the
+// Attack Sector question of a group carrying out its orders at the start of
+// a human player's turn.
 struct BattleQuestion {
     enum class Kind : uint8_t {
         Choose,   // Tactical or Strategic: the Strategic Combat window in its question form
         Show,     // the Strategic Combat window with Begin and Close; the strategies fight it while it shows it
         Ground,   // the colony owner's end-of-turn ground combat: the notice, then the Ground Combat window
+        // The Attack Sector question (`entry`) of a group at the start of a
+        // human player's turn: the original's pass waits for the answer, and
+        // the groups after it move only then (spec 03 §6.2, spec 06 §2.4).
+        // Answered with BattleAnswer::enter.
+        Enter,
     };
     Kind kind = Kind::Choose;
     Location where;
@@ -109,6 +119,8 @@ struct BattleQuestion {
     size_t index = 0;                             // its place among the call's stops
     // Ground: the fight as the engine fought it (the answer only says it was shown).
     std::optional<GroundCombat> ground;
+    // Enter: the question.
+    std::optional<EntryQuestion> entry;
 };
 
 // Whether battles ask their human participants: turn-based games without
@@ -129,14 +141,19 @@ bool simultaneousBattlesShown(const Rules& r);
 // §2.4 "Moves as they are made"): one sector within a system, or a jump
 // through a warp point to another (TurnContext::movementStep). The members
 // move together, in the group's order; the original's movement log has one
-// entry per member and step, in that order (spec 06 §7 Q62). Not saved.
+// entry per member and step, in that order (spec 06 §7 Q62). The same stream
+// also says when mines strike a group (`kind`). Not saved.
 struct MovementStep {
     int day = 0;                     // simultaneous games: the movement day, 1..30; turn-based games: 0
     EmpireId owner;
     std::vector<VehicleId> members;  // the group's members still in the game, in the group's order
     // The group's first vehicle, whose mini stands for the group while it
-    // turns and slides (spec 06 §2.4): the acting vehicle (a fleet's first
-    // member in object order with orders, the first one tagged), or the first member.
+    // slides (spec 06 §2.4, confirmed: binary): a vehicle alone; for a fleet
+    // the member that comes first in its sector's list of objects, which our
+    // engine keeps as its system's list (Vehicle::arrival, then object
+    // order; inferred where the two would differ), not the member that acts
+    // for it; for tagged vehicles the first one tagged; for a drone group
+    // with companions the acting one.
     VehicleId lead;
     FleetId fleet;                   // the fleet whose group it is, if any
     Location from, to;               // `to` in another system: a warp jump
@@ -145,9 +162,19 @@ struct MovementStep {
     // `to` (0..7, spec 06 §2.4); a jump keeps each member's own heading.
     int heading = 0;
     // Turn-based games: how many of the call's LiveSteps (TurnResult::liveSteps)
-    // were made before this step, so that the two lists can be read in the
-    // order they were made.
+    // and PlayerMessages (TurnResult::messages) were made before this step, so
+    // that the lists can be read in the order they were made.
     size_t liveSteps = 0;
+    size_t messages = 0;
+    // A move, or mines striking the group where it stands (`from` and `to`
+    // both that sector, `members` the group as the mines found it): once
+    // every minefield there has acted, right after the step into the sector
+    // and before any battle there, and for a Sweep Mines order where the
+    // group sweeps (spec 04 §10.6). The client shows a small explosion over
+    // the square for the human's own moves (spec 06 §2.4, confirmed: binary).
+    enum class Kind : uint8_t { Move, MinesStruck };
+    Kind kind = Kind::Move;
+    int destroyed = 0;   // MinesStruck: how many of the members the mines destroyed
 };
 using MovementObserver = std::function<void(const MovementStep&)>;
 
@@ -158,6 +185,10 @@ struct PlayerMessage {
     EmpireId empire;
     std::string title;
     std::string text;
+    // How many of the call's LiveSteps (TurnResult::liveSteps) came before
+    // it, so that the client shows it where it came among the moves
+    // (MovementStep::messages).
+    size_t liveSteps = 0;
     bool operator==(const PlayerMessage&) const = default;
 };
 
@@ -230,6 +261,10 @@ struct TurnContext {
     // movement animation and its movement log replay, docs/spec/06 §2.4, §7
     // Q62). Observes only: the game comes out the same with or without it.
     MovementObserver movementStep;
+    // Simultaneous games: the movement day under way (1..30), for the steps
+    // reported outside movement itself (mines striking, MovementStep::kind);
+    // 0 otherwise.
+    int dayUnderWay = 0;
     // The script and external players of this engine call (players.hpp); null:
     // every empire is played by the built-in AI.
     Players* players = nullptr;
@@ -276,7 +311,10 @@ struct TurnResult {
     std::vector<EntryQuestion> questions;
     // The stop whose answer is missing (a battle to show or ask about, or a
     // ground fight to show). The call changed nothing; call it again with
-    // the answer.
+    // the answer. Of the rest only `messages` and `liveSteps` are filled
+    // then, with what the call made before the stop, which the call made
+    // again makes again first: the client shows the moves up to the battle
+    // before it (spec 06 §2.4 "Order").
     std::optional<BattleQuestion> battle;
     // The lines to append to human players' statistics, history and log
     // text files, one entry per end-of-turn processing in the call (spec 05

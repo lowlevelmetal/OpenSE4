@@ -37,7 +37,9 @@ wait-step 7
 click tag:order:explore refused
 click item:next in=tag:cycle:ship
 wait-step 8
-# 8 A second explorer: Explore.
+# 8 A second explorer: Explore, once the first one's moves are over (no second order button
+# meanwhile, spec 06 §2.4).
+wait-gone sector:gliding
 click tag:order:explore
 wait-step 9
 # 9 New systems: an explanation.

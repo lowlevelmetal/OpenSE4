@@ -194,6 +194,57 @@ TEST_CASE("net: protocol messages round trip") {
     CHECK(resultBack.refused.size() == 1);
     net::Event turnEvent{EventType::PlayerTurn, {}, "bob", net::kNoSlot, game::EmpireId{1u}, 4};
     CHECK(net::describe(turnEvent) == "[player turn] turn 4: bob (empire 1)");
+
+    // Protocol 10: a State carries the player's own moves, steps and LiveSteps in order.
+    net::proto::State state;
+    state.turn = 4;
+    state.empire = game::EmpireId{1u};
+    const game::Location a{game::SystemId{2u}, game::Sector{3, 4}}, b{game::SystemId{2u}, game::Sector{4, 4}};
+    state.moves.liveSteps = {game::LiveStep{game::EmpireId{1u}, game::VehicleId{7u}, game::FleetId{}, game::ObjectId{}, a, false}};
+    game::MovementStep step;
+    step.owner = game::EmpireId{1u};
+    step.members = {game::VehicleId{7u}, game::VehicleId{8u}};
+    step.lead = game::VehicleId{8u};
+    step.fleet = game::FleetId{3u};
+    step.from = a;
+    step.to = b;
+    step.heading = 2;
+    step.liveSteps = 1;
+    game::MovementStep struck = step;
+    struck.kind = game::MovementStep::Kind::MinesStruck;
+    struck.from = b;
+    struck.destroyed = 1;
+    state.moves.steps = {step, struck};
+    net::proto::State stateBack;
+    REQUIRE(net::proto::decode(net::proto::encode(state), stateBack, error));
+    REQUIRE(stateBack.moves.steps.size() == 2);
+    CHECK(stateBack.moves.steps[0].members == step.members);
+    CHECK(stateBack.moves.steps[0].lead == step.lead);
+    CHECK(stateBack.moves.steps[0].fleet == step.fleet);
+    CHECK(stateBack.moves.steps[0].from == a);
+    CHECK(stateBack.moves.steps[0].to == b);
+    CHECK(stateBack.moves.steps[0].heading == 2);
+    CHECK(stateBack.moves.steps[0].liveSteps == 1);
+    CHECK(stateBack.moves.steps[0].kind == game::MovementStep::Kind::Move);
+    CHECK(stateBack.moves.steps[1].kind == game::MovementStep::Kind::MinesStruck);
+    CHECK(stateBack.moves.steps[1].destroyed == 1);
+    CHECK(stateBack.moves.liveSteps == state.moves.liveSteps);
+    // Only one empire's own, the LiveSteps counted among its own.
+    std::vector<game::LiveStep> live{game::LiveStep{game::EmpireId{0u}, game::VehicleId{1u}, {}, {}, a, false}, state.moves.liveSteps[0]};
+    game::MovementStep others = step;
+    others.owner = game::EmpireId{0u};
+    others.liveSteps = 1;
+    step.liveSteps = 2;
+    const std::vector<game::MovementStep> steps{others, step};
+    const net::OwnMoves own = net::ownMovesOf(game::EmpireId{1u}, steps, live);
+    REQUIRE(own.steps.size() == 1);
+    CHECK(own.steps[0].liveSteps == 1);
+    CHECK(own.liveSteps == state.moves.liveSteps);
+    net::OwnMoves both = own;
+    both.append(own);
+    REQUIRE(both.steps.size() == 2);
+    CHECK(both.steps[1].liveSteps == 2);
+    CHECK(both.liveSteps.size() == 2);
 }
 
 namespace {
@@ -1700,6 +1751,108 @@ TEST_CASE("net: a network client shows the movement line of its own new orders a
         CHECK(rest_.points.front() == moved->location);
         CHECK(rest_.points.back() == target);
     }
+}
+
+TEST_CASE("net: turn-based: a player gets its own moves with its new views, square by square, and nobody else's (protocol 10)") {
+    // Spec 06 §2.4: the original animates the mover's own moves on its own
+    // computer. The host carries a network player's commands out, and the
+    // start of its turn; it sends the player its own groups' steps and where
+    // its view follows with the new State.
+    net::HostSession host(engineRules(), hostConfig(2, true));
+    REQUIRE(host.start().has_value());
+    auto owned = std::make_unique<net::ClientSession>(clientConfig(host, "alice"));
+    net::ClientSession& alice = *owned;
+    net::ClientSession bob(clientConfig(host, "bob"));
+    Loop loop(host, {&alice, &bob});
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(bob.connect().has_value());
+    REQUIRE(loop.until([&] { return alice.phase() == net::ClientPhase::Lobby && bob.phase() == net::ClientPhase::Lobby; }));
+    alice.setReady(true);
+    bob.setReady(true);
+    REQUIRE(loop.until([&] {
+        const auto& l = host.lobby();
+        return l.slots.size() == 2 && l.slots[0].ready && l.slots[1].ready;
+    }));
+    host.setGameCreatedHook([](game::GameState& g) { addHomeShips(g, engineRules()); });
+    REQUIRE(host.startGame().has_value());
+    REQUIRE(loop.until([&] { return alice.myTurn() && bob.state(); }));
+    (void)alice.takeMoves();
+    (void)bob.takeMoves();
+
+    // An idle ship of Alice's, sent far along its row: it moves now as far as it can.
+    const game::GameState& s = *alice.state();
+    const game::Vehicle* ship = nullptr;
+    for (const game::Vehicle& v : s.vehicles)
+        if (v.owner == alice.empire() && v.orders.empty() && !v.fleet.valid() && v.movement > 0 &&
+            game::vehicleType(engineRules(), s, v) == ruleset::VehicleType::Ship) {
+            ship = &v;
+            break;
+        }
+    REQUIRE(ship);
+    const game::VehicleId id = ship->id;
+    const game::Location start = ship->location;
+    const game::Location target{start.system, game::Sector{start.sector.x < game::kSystemSize / 2 ? game::kSystemSize - 1 : 0, start.sector.y}};
+    game::cmd::SetOrders order;
+    order.vehicle = id;
+    order.orders = {game::Order{game::OrderKind::MoveTo, target}};
+    std::vector<Sent> log;
+    playOne(loop, alice, order, log);
+    auto checkRun = [&](const net::OwnMoves& moves, game::Location from) {
+        // The run starts (the view follows the ship), then its steps, one square each.
+        REQUIRE_FALSE(moves.liveSteps.empty());
+        CHECK(moves.liveSteps.front().vehicle == id);
+        REQUIRE_FALSE(moves.steps.empty());
+        game::Location at = from;
+        for (const game::MovementStep& st : moves.steps) {
+            CHECK(st.owner == alice.empire());
+            CHECK(st.kind == game::MovementStep::Kind::Move);
+            CHECK(st.members == std::vector<game::VehicleId>{id});
+            CHECK(st.from == at);
+            CHECK(std::max(std::abs(st.to.sector.x - st.from.sector.x), std::abs(st.to.sector.y - st.from.sector.y)) == 1);
+            CHECK(st.liveSteps >= 1);
+            at = st.to;
+        }
+        CHECK(at == alice.state()->vehicle(id)->location);
+        for (const game::LiveStep& l : moves.liveSteps) CHECK(l.empire == alice.empire());
+    };
+    const net::OwnMoves now = alice.takeMoves();
+    checkRun(now, start);
+    CHECK(bob.takeMoves().empty());
+    const game::Location reached = alice.state()->vehicle(id)->location;
+    REQUIRE(reached != target);   // the rest at her next turn's start
+
+    // Her turn ends; Bob's comes, with none of hers; at the start of her next
+    // turn the ship goes on, and her game shows those moves as the original
+    // does on the mover's computer: the ship selected, then its steps.
+    endTurn(loop, alice, log);
+    REQUIRE(loop.until([&] { return bob.myTurn(); }));
+    CHECK(bob.takeMoves().empty());
+    Loop rest(host, {&bob});
+    const std::shared_ptr<const game::Rules> rules(&engineRules(), [](const game::Rules*) {});
+    client::classic::ClassicSession session(rules, *alice.state(), alice.empire(), client::classic::SessionKind::NetworkClient);
+    session.setTransport(std::make_unique<client::classic::ClientTransport>(std::move(owned)));
+    endTurn(rest, bob, log);
+    REQUIRE(rest.until([&] {
+        session.poll();
+        return session.myTurn() && session.state().turn == 1;
+    }));
+    const std::vector<client::classic::ClassicSession::ShownMove> shown = session.takeMoves();
+    REQUIRE_FALSE(shown.empty());
+    REQUIRE(shown.front().follow);
+    CHECK(shown.front().follow->vehicle == id);
+    CHECK(shown.front().turnStart);
+    game::Location at = reached;
+    size_t steps = 0;
+    for (const auto& m : shown) {
+        if (!m.step) continue;
+        ++steps;
+        CHECK(m.original);
+        CHECK(m.step->from == at);
+        at = m.step->to;
+    }
+    CHECK(steps > 0);
+    CHECK(at == session.state().vehicle(id)->location);
+    CHECK(bob.takeMoves().empty());
 }
 
 TEST_CASE("net: the network game's sounds (docs/spec/06 §5.5)") {

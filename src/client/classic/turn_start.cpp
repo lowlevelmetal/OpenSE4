@@ -10,7 +10,17 @@ TurnStartGate turnStartGate(const TurnStartFacts& f) {
     g.endings = shown && !f.battleWaiting && !f.battlesQueued;
     g.questions = shown && !f.battleWaiting && !f.battlesQueued && !f.endingOpen;
     g.log = shown && !f.battleWaiting && !f.battlesQueued && !f.endingOpen && !f.questionWaiting;
+    g.movesShowing = f.movesShowing;
     return g;
+}
+
+bool mainWindowTakes(OrderGiven given, MainWindowInput input) {
+    switch (given) {
+        case OrderGiven::None: return true;
+        case OrderGiven::ByMapClick: return false;
+        case OrderGiven::ByOrderButton: return input != MainWindowInput::OrderButton;
+    }
+    return true;
 }
 
 } // namespace opense4::client::classic

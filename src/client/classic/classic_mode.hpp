@@ -237,6 +237,9 @@ private:
     // shown: the main window waits, and a click or a key shows them at once
     // (classic::turnStartGate).
     bool turnStarting_ = false;
+    // The windows open when the moves being shown began (holdMoves).
+    size_t windowsUnderMoves_ = 0;
+    bool movesWereShowing_ = false;
     // What the start of a turn lets show now (turn_start.hpp), from the game
     // and the windows as they are; and the windows it lets open: the next
     // battle to watch, the endings due and, last, the Log.
