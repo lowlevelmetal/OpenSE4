@@ -179,12 +179,19 @@ std::vector<uint32_t> Rules::onlyLatestComponents(std::span<const uint32_t> item
 }
 
 std::optional<uint32_t> Rules::bestFacilityWith(const Empire& e, AbilityKind k) const {
+    // The spaceport and the space yard are scored by the sum of the facility's
+    // tech-level requirements, every other role by the ability's Val1; on a tie
+    // the facility later in Facility.txt wins (spec 02 §9, confirmed: binary).
+    const bool byTech = k == AbilityKind::Spaceport || k == AbilityKind::SpaceYard;
     std::optional<uint32_t> best;
     int64_t bestValue = 0;
     for (uint32_t i = 0; i < data_.facilities.size(); ++i) {
         if (!facilityAvailable(e, i) || !hasAbility(facilities_[i], k)) continue;
-        const int64_t v = k == AbilityKind::SpaceYard ? spaceYardRates(facilities_[i]).total() : bestValue1(facilities_[i], k);
-        if (!best || v > bestValue) {
+        int64_t v = 0;
+        if (byTech)
+            for (const ruleset::TechRequirement& req : data_.facilities[i].requirements) v += req.level;
+        else v = bestValue1(facilities_[i], k);
+        if (!best || v >= bestValue) {
             best = i;
             bestValue = v;
         }

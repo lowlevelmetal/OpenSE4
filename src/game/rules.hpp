@@ -113,7 +113,10 @@ public:
     // separate runs keeps one item per run.
     std::vector<uint32_t> onlyLatestFacilities(std::span<const uint32_t> items) const;
     std::vector<uint32_t> onlyLatestComponents(std::span<const uint32_t> items) const;
-    // First facility (lowest numeral, available) that has ability `k`.
+    // The empire's best available facility with ability `k`, as the starting
+    // planets choose it (spec 02 §9, confirmed: binary): the highest Val1 of
+    // the ability, or for `Spaceport` and `Space Yard` the highest sum of the
+    // facility's tech-level requirements; on a tie, the later facility.
     std::optional<uint32_t> bestFacilityWith(const Empire& e, AbilityKind k) const;
 
     // Racial trait values: sum of Value 1 over the race's traits of this Trait Type.

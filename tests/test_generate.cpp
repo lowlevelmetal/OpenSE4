@@ -4,6 +4,7 @@
 
 #include "game/generate.hpp"
 #include "game/query.hpp"
+#include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
 
@@ -965,6 +966,67 @@ TEST_CASE("setup: starting facilities come in the original's order") {
     REQUIRE_FALSE(traders.facilities.empty());
     CHECK(noPorts.facility(traders.facilities.front()).name == "Test Space Yard");
     for (uint32_t f : traders.facilities) CHECK(noPorts.facility(f).name != "Test Spaceport");
+}
+
+TEST_CASE("setup: a starting planet's plain population, clamped values and facility scores (spec 02 §9, confirmed: binary)") {
+    ruleset::Ruleset data = test::buildEngineRuleset();
+    // A storage trait, a second mine as good as the first, later in the file,
+    // and a yard of larger rates that needs no technology.
+    ruleset::RacialTrait roomy;
+    roomy.name = "Test Roomy";
+    roomy.traitType = "Planet Storage Space";
+    roomy.values = {"20"};
+    data.racialTraits.push_back(roomy);
+    const auto mine = std::find_if(data.facilities.begin(), data.facilities.end(), [](const ruleset::Facility& f) { return f.name == "Test Mine"; });
+    REQUIRE(mine != data.facilities.end());
+    ruleset::Facility twin = *mine;
+    twin.name = "Test Mine Twin";
+    data.facilities.push_back(twin);
+    ruleset::Facility bigYard = *std::find_if(data.facilities.begin(), data.facilities.end(),
+                                              [](const ruleset::Facility& f) { return f.name == "Test Space Yard"; });
+    bigYard.name = "Test Big Yard";
+    bigYard.requirements.clear();
+    for (ruleset::Ability& a : bigYard.abilities) a.value2 = "5000";
+    data.facilities.push_back(bigYard);
+    // A home value whose draw can pass the maximum.
+    data.settings.set("Plr Planet Value Medium Percent", "248");
+    data.settings.set("Maximum Planet Percent Value", "250");
+    data.reindex();
+    const game::Rules r{std::move(data)};
+
+    game::GameSetup setup;
+    setup.seed = 7;
+    setup.options.systemCount = 12;
+    game::EmpireSetup e;
+    e.name = "Roomy";
+    game::Race race;
+    race.traits.push_back(static_cast<uint32_t>(r.data().racialTraits.size() - 1));
+    e.customRace = race;
+    setup.empires.push_back(e);
+    auto g = game::createGame(r, setup);
+    REQUIRE(g.has_value());
+    const game::Colony& home = test::homeworld(*g, game::EmpireId{0u});
+    const ruleset::PlanetSize* size = game::planetSize(r, g->galaxy.object(home.planet));
+    REQUIRE(size != nullptr);
+    // The plain Max Population, without the trait; the facilities fill the
+    // trait's larger slot count.
+    CHECK(home.totalPopulation() == size->maxPopulation);
+    CHECK(game::maxPopulation(r, *g, home) == xmath::pctTrunc(size->maxPopulation, 120));
+    CHECK(static_cast<int>(home.facilities.size()) == game::facilitySlots(r, *g, home));
+    CHECK(game::facilitySlots(r, *g, home) == xmath::pctTrunc(size->maxFacilities, 120));
+    // Each value goes through the setter's clamp.
+    for (int v : g->galaxy.object(home.planet).value) {
+        CHECK(v >= 244);
+        CHECK(v <= 250);
+    }
+    // The yard is scored by its tech-level sum, a mine by its Val1; on a tie
+    // the later facility wins.
+    std::vector<std::string> names;
+    for (uint32_t f : home.facilities) names.push_back(r.facility(f).name);
+    CHECK(std::count(names.begin(), names.end(), "Test Space Yard") == 1);
+    CHECK(std::count(names.begin(), names.end(), "Test Big Yard") == 0);
+    CHECK(std::count(names.begin(), names.end(), "Test Mine") == 0);
+    CHECK(std::count(names.begin(), names.end(), "Test Mine Twin") > 0);
 }
 
 // ---- Handcrafted quadrants: starting planets and numerals (spec 01 §3.6, §5.6) ---------------------------

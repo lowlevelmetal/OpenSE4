@@ -1485,14 +1485,26 @@ homeworld and the extra ones alike, is set up the same way:
   {Low,Medium,High} Percent` of the Home Planet Value setting plus R[1,10] − 5, drawn
   separately per resource, so it lies within −4 to +5 of the setting (the observed 100 / 98
   / 102 % fits). In a finite game each value is exactly the matching `... Resources` key.
+  Either way each value goes through the game's ordinary value setter, which clamps it to
+  `Minimum/Maximum Planet Percent Value` (normal game) or `... Resource Value` (finite
+  game), a negative result becoming 0 (§1.2) (confirmed: binary; corrected 2026-10-14,
+  complete listing). No stock value is affected (120 + 5 < 250).
 - Conditions are not changed: they stay as generated (spec 01 §5.6).
 - **Colony.** Any previous owner is removed. The planet becomes a colony of the empire's
-  race at its **maximum population**. Every starting planet, the extra ones included, is a
+  race with the **`Max Population` of its PlanetSize record** (the normal column), read
+  before the colony exists and so without the `Planet Storage Space` trait (confirmed:
+  binary; corrected 2026-10-14, complete listing: this said "at its maximum population").
+  A race with that trait (the stock one gives +20 %) therefore starts below its maximum and
+  grows into the rest; the facilities below do use the trait's larger slot count. Every
+  starting planet, the extra ones included, is a
   capital (anger at most 80, §2) with colony type `Homeworld`, so any of them whose people
   die out logs `Homeworld Lost` (§2).
-- **Facilities.** For each role the empire's best known facility is used (the facility
-  whose ability value, or tech level, is highest). They are added in this order while the
-  planet has free facility slots:
+- **Facilities.** For each role the empire's best known facility is used (confirmed:
+  binary; corrected 2026-10-14, complete listing). For the resource producers, the research
+  facility and the supply generator the score is the role's ability Val1; for the spaceport
+  and the space yard it is the sum of the facility's tech-level requirements. On a tie the
+  facility later in Facility.txt wins. They are added in this order while the planet has
+  free facility slots:
   1. a spaceport, unless the race has the `No Spaceports` trait;
   2. a space yard;
   3. a supply generator (resupply depot);
@@ -1500,6 +1512,20 @@ homeworld and the extra ones alike, is set up the same way:
   5. one research facility, unless the empire already knows every technology;
   6. then, until the slots are full, alternately a mineral producer and a research
      facility, starting with minerals (only minerals once every technology is known).
+
+  "Every technology known" compares two sums (confirmed: binary; corrected 2026-10-14,
+  complete listing): the empire's levels in every tech area, each capped at the area's
+  maximum, the areas the race cannot use included, against the maxima of the areas allowed
+  in the game and open to the race. The two readings ("every visible area at its maximum")
+  agree unless levels in unusable areas make up a shortfall elsewhere, which the stock data
+  never allows at Low, Medium or High.
+
+  Since 2026-10-14 ours follows all of this (`setup.cpp` `setUpStartingPlanet`,
+  `addStartingFacilities` with `research::researchedEverything`, `Rules::bestFacilityWith`,
+  `economy::clampPlanetValue`). Before, the population was the trait-raised maximum (2,400M
+  instead of 2,000M on a Medium homeworld, with a higher population bracket and opening
+  stockpile), a tie went to the earlier facility, the yard was scored by its total rate,
+  every visible area had to be at its maximum, and the values were not clamped.
 
   A Medium planet (15 slots) thus gets a spaceport, a yard, a depot, 5 mineral, 1 organic,
   1 radioactive and 5 research facilities, as observed (07-observations, Calibration).
@@ -1757,8 +1783,9 @@ section named.
     fifth more) per turn by level; the level does not progress on its own.
 21. **Homeworld start.** *Answered* (confirmed: binary): see §9. Home Planet Value picks
     the homeworld size (Small, Medium or Large) and the value keys, each value within −4 to
-    +5 of the setting. Every starting planet gets full population and facilities in a fixed
-    order, and the resupply depot is the third facility placed. The stockpile is Starting
+    +5 of the setting. Every starting planet gets the planet size's plain maximum population
+    (without the `Planet Storage Space` trait; corrected 2026-10-14) and facilities in a
+    fixed order, and the resupply depot is the third facility placed. The stockpile is Starting
     Resources plus one turn of production. Every starting planet is a capital (anger
     capped at 80) of colony type `Homeworld`.
 22. **Setup ranges.** *Answered* (confirmed: binary): racial points 0, 2,000 (the

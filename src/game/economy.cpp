@@ -123,6 +123,8 @@ int clampedValue(const Rules& r, const GameState& s, int64_t v) {
 
 } // namespace detail
 
+int clampPlanetValue(const Rules& r, const GameState& s, int64_t value) { return detail::clampedValue(r, s, value); }
+
 // A turn-based game advances the date only after the last player's end-of-turn
 // processing (spec 05 §8), so its players' processing sees the unadvanced date.
 uint32_t processingTurn(const GameState& s) { return s.options.simultaneous ? s.turn + 1 : s.turn; }
