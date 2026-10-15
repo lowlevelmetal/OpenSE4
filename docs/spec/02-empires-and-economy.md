@@ -1230,6 +1230,17 @@ at the ship limit (spec 05 §7.5, question 81).
   Reached"; the progress was already cleared, and the item stays, so it must be paid for
   again (confirmed: binary). The limit is checked once per item, so an item of several
   ships can go past it.
+- The empire's construction step carries one flag across all its queues: only the first
+  item that meets the ship limit in a turn logs the message; later blocked items that turn
+  stay in their queues as usual, without one (confirmed: binary; corrected 2026-10-14,
+  complete listing). Since 2026-10-14 ours follows (`economy_queue.cpp` `runConstruction`,
+  `completeItem`); before, every blocked queue logged an entry.
+- When a vehicle item completes and the ship limit does not stop it, its design gets the
+  "built at least once" mark first (spec 03 §4.1, spec 05 §2.3); only then are the ships
+  made or the units placed. So a unit item none of whose units finds room still ends the
+  design's prototype status: it can no longer be edited, and spying can steal it
+  (confirmed: binary; corrected 2026-10-14, complete listing). Since 2026-10-14 ours follows
+  (`completeItem`); before, a unit design was marked only when a unit was placed.
 
 **Facilities**
 - Only as many facilities can be queued as there are free slots, counting the whole count

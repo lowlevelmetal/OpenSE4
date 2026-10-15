@@ -1021,6 +1021,52 @@ TEST_CASE("economy: ships appear at the yard, follow the queue's waypoint and re
     CHECK(logged(s, kMe, "limit on ships"));
 }
 
+TEST_CASE("economy: the ship limit is logged once per empire and turn (spec 02 §6.5, confirmed: binary)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {"Test Space Yard"});
+    Colony& second = addColony(s, kMe, freePlanet(s, s.galaxy.object(home.planet).system, true), 1000);
+    second.facilities = {facilityIndex(r, "Test Space Yard")};
+    const DesignId ship = frigate(s, r, kMe);
+    QueueItem item;
+    item.design = ship;
+    home.queue.items.push_back(item);
+    second.queue.items.push_back(item);
+    s.options.maxShipsPerPlayer = shipCount(r, s, kMe);
+    s.empire(kMe).stockpile = {10000, 10000, 10000};
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);
+    // Both items are paid and stay; only the first says why.
+    CHECK(home.queue.items.size() == 1);
+    CHECK(second.queue.items.size() == 1);
+    CHECK(s.empire(kMe).economy.construction == Resources{320, 40, 40});
+    CHECK(std::count_if(s.empire(kMe).log.begin(), s.empire(kMe).log.end(),
+                        [](const LogEntry& l) { return l.text.find("limit on ships") != std::string::npos; }) == 1);
+    // The next turn says it once again.
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);
+    CHECK(logged(s, kMe, "limit on ships"));
+}
+
+TEST_CASE("economy: a unit design is marked built even when none of its units finds room (spec 03 §4.1, confirmed: binary)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {});
+    home.cargo.population = {{kMe, 1'000'000}};  // no room in the sector
+    const cmd::QueueTarget q{home.planet, {}};
+    const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    QueueItem item;
+    item.design = fighter;
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
+    CHECK_FALSE(s.design(fighter).everBuilt);
+    economyTurn(r, s);
+    CHECK(s.design(fighter).built == 0);
+    CHECK(s.design(fighter).everBuilt);
+    CHECK(home.queue.items.size() == 1);
+}
+
 TEST_CASE("economy: units go into cargo, one at a time, in the same sector only") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
