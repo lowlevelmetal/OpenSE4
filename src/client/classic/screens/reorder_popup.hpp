@@ -16,11 +16,13 @@ namespace opense4::client::classic {
 // rows) when OK is pressed.
 class ReorderPopup {
 public:
-    void open(std::vector<std::string> rows);
+    // `title` names the window (the Strategies window's "Target Type Order").
+    void open(std::vector<std::string> rows, std::string title = "Reorder");
     std::optional<std::vector<size_t>> draw(UiContext& ui);
 
 private:
     bool pending_ = false;
+    std::string title_ = "Reorder";
     std::vector<std::string> rows_;
     std::vector<size_t> order_;
     int selected_ = 0;

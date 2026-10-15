@@ -43,25 +43,29 @@ key keeps OpenSE4's default; nothing reports it (see "Things to watch").
 | `Name` | Names the strategy in the Strategies window and in the AI tables. Designs and fleets point at a strategy by its position in their empire's list. | Text |
 | `Primary Movement Strategy` | How the piece moves when the computer moves it (below). | One of the eight movement strategies |
 | `Secondary Movement Strategy` | Used when the primary one is impossible for the piece (below). | One of the eight |
-| `Targeting Priority 1` to `Targeting Priority 4` | Sort keys for choosing targets, applied in order: the first sorts, the later ones break ties. | `Nearest`, `Farthest`, `Largest`, `Smallest`, `Most Damaged`, `Least Damaged`, `Fastest`, `Slowest`, `Strongest`, `Weakest`, `Has Weapons`, `Does Not Have Weapons`, or `None` |
-| `Use Type Priority First` | `True`: candidates are ranked by their category's `Type Priority` before the targeting keys. `False`: the targeting keys come first and the category rank only breaks their ties (that order of the tie-break is inferred). | `True` or `False` |
-| `Type Priority <category>` | The category's rank as a target. | Whole number, 1 = engage first; 0 or less ranks after every positive rank |
+| `Targeting Priority 1` to `Targeting Priority 4` | Sort keys for choosing targets, applied in order: the first sorts, the later ones break ties. Candidates still equal end in the order the original's sort leaves them: of two equal ones, the later piece comes first. What each key measures is spec 04 §16 (Nearest is the distance between top-left squares, Largest twice the full hit points, Strongest a strength set when the piece enters the battle). | `Nearest`, `Farthest`, `Largest`, `Smallest`, `Most Damaged`, `Least Damaged`, `Fastest`, `Slowest`, `Strongest`, `Weakest`, `Has Weapons`, `Does Not Have Weapons`, or `None` |
+| `Use Type Priority First` | `True`: candidates are ranked by their category's `Type Priority` before the targeting keys. `False`: the ranks are not looked at at all. | `True` or `False` |
+| `Type Priority <category>` | The category's rank as a target, compared as a plain number: lower first, so 0 comes before 1. | Whole number, 1 = engage first |
 | `Dont Fire On <category>` | `True`: pieces of that category are never chosen as targets. | `True` or `False` |
 | `Break Formation <category>` | `True`: the side's own pieces of that category leave their formation when the computer moves them. | `True` or `False` |
 | `Fighters Launch Group Amount` | How many fighters the computer puts in each group it launches from a carrier. | Fighters per group; 0 puts all of a launch in one group |
-| `Damage Percent Per Ship` | While choosing targets, a ship or base that has already lost more than this share of its hit points is passed over, if any other candidate is left. | Percent, 0 to 100; 100 never passes anything over |
-| `Damage Percent Per Planet` | The same for planets (hit points lost since the battle began). | Percent, 0 to 100 |
+| `Damage Percent Per Ship` | While choosing targets, a ship or base that has already lost more than this share of the hit points it had when the battle began is passed over, if any other candidate is left. | Percent, 0 to 100; 100 never passes anything over |
+| `Damage Percent Per Planet` | The same for planets. | Percent, 0 to 100 |
 | `Damage Percent Per Fighter Group` | The same for fighter groups. | Percent, 0 to 100 |
 | `Damage Percent Per Satellite Group` | The same for satellite groups. | Percent, 0 to 100 |
 | `Damage Until All Weapons Gone` | `True`: a damaged target that still has weapons is never passed over by the four filters above. | `True` or `False` |
 | `Drones Per Target` | The computer's drone launch batch, and with the number of hostile ships and bases its launch limit (below). OpenSE4 reads it when a record holds it; the original's file has no such key, so a record without it uses OpenSE4's default. | Drones; 0 launches all |
 
-A record that leaves a key out gets OpenSE4's neutral default for it: Optimal Weapons
-Range as primary and Point Blank as secondary movement, `Has Weapons` then `Nearest` as
-targeting keys, no damage filter, nothing excluded, nothing breaking formation, and an
-engagement order of OpenSE4's own for the categories (armed ships, armed bases, planets,
-drones, fighters, seekers aimed at us, satellites, carriers, transports, colony ships,
-unarmed ships, unarmed bases, seekers aimed at others, mines).
+A record that leaves a key out gets the value of the original's new strategy (the
+Strategies window's Add) for it: Optimal Weapons Range as primary and secondary movement;
+`Most Damaged`, `Strongest`, `Nearest`, `Largest` as targeting keys; `Use Type Priority
+First` off, with the ranks Ships 1, Bases 2, Planets 3, Ships (No Weapons) 4, Carriers 5,
+Colony Ships 6, Satellites 7, Drones 8, Transports 9, Seekers (On Us) 10, Seekers (On
+Others) 11, Fighters 12, Bases (No Weapons) 13, Mines 14; `Dont Fire On` colony ships,
+planets, both unarmed kinds and seekers aimed at others; fighters launched in groups of 5;
+ships passed over once more than 80 % damaged, the other kinds never; and carriers, colony
+ships, fighters, satellites, planets, transports and both kinds of seekers breaking
+formation. So a record meant to fire on planets must say `Dont Fire On Planets = False`.
 
 #### The movement strategies
 

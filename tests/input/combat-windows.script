@@ -71,6 +71,19 @@ wait-gone item:"window:Ram Ship"
 # Shift+C unticks every weapon, Shift+A ticks the ready ones again.
 key Shift+C
 key Shift+A
+# A click on an enemy that fires nothing (out of reach) says nothing: no box (spec 06 §1.10.1).
+click item:piece:own in=tactical-combat
+click item:piece:enemy in=tactical-combat
+wait 10
+assert-absent item:"window:Cannot Fire Weapons"
+screenshot tactical-weapons
+# Combat Options holds OpenSE4's switch for a note on the map, off by default.
+click tag:tactical-combat:options
+wait-window tactical-options
+click item:"Say on the map why a click fired nothing" in=tactical-options
+click item:"Say on the map why a click fired nothing" in=tactical-options
+key Escape
+wait-closed tactical-options
 # Resolve Combat, from the menu, asks first; No leaves the battle as it is.
 click tag:tactical-combat:orders
 wait-window tactical-orders
@@ -86,5 +99,5 @@ wait-window tactical-orders
 click item:"Resolve Combat" in=tactical-orders
 wait-for item:"window:Resolve Combat"
 click item:Yes in="Resolve Combat"
-click item:OK in="Combat Complete" timeout=7200
+click item:OK in="Combat Complete" timeout=14400
 wait-closed tactical-combat

@@ -6,6 +6,7 @@
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
+#include "client/classic/screens/reorder_popup.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 #include "client/script/items.hpp"
@@ -664,6 +665,26 @@ std::string& valueRef(ruleset::CombatStrategy& st, std::string_view key, std::st
     return st.settings.back().second;
 }
 
+// What a key a record leaves out stands for: a new strategy's value, which
+// the engine starts from too (spec 04 §16, combat::newStrategyRecord).
+std::string defaultSetting(std::string_view key) {
+    static const ruleset::CombatStrategy record = game::combat::newStrategyRecord("");
+    for (const auto& [k, v] : record.settings)
+        if (k == key) return v;
+    return {};
+}
+
+// The target types in the data files' order (spec 08 §3.6.13).
+constexpr std::array<game::combat::TargetCategory, game::combat::kTargetCategories> kFileCategoryOrder{
+    game::combat::TargetCategory::Bases,          game::combat::TargetCategory::Ships,
+    game::combat::TargetCategory::Carriers,       game::combat::TargetCategory::ColonyShips,
+    game::combat::TargetCategory::Fighters,       game::combat::TargetCategory::Satellites,
+    game::combat::TargetCategory::Mines,          game::combat::TargetCategory::Planets,
+    game::combat::TargetCategory::Transports,     game::combat::TargetCategory::BasesNoWeapons,
+    game::combat::TargetCategory::ShipsNoWeapons, game::combat::TargetCategory::SeekersOnUs,
+    game::combat::TargetCategory::SeekersOnOthers, game::combat::TargetCategory::Drones,
+};
+
 // A combo over identifiers (keeps an unknown current value selectable).
 template <size_t N>
 bool identifierCombo(const char* id, std::string& value, const std::array<const char*, N>& options) {
@@ -810,7 +831,7 @@ private:
     bool movementPage(UiContext& ui, ruleset::CombatStrategy& st) {
         bool changed = false;
         for (const char* key : {"Primary Movement Strategy", "Secondary Movement Strategy"}) {
-            std::string& v = valueRef(st, key, kMovement[2]);
+            std::string& v = valueRef(st, key, defaultSetting(key));
             fieldLabel(ui, key == std::string_view("Primary Movement Strategy") ? "Primary movement" : "Secondary movement", 170);
             ImGui::SetNextItemWidth(ui.px(250));
             changed |= identifierCombo(std::format("##{}", key).c_str(), v, kMovement);
@@ -833,48 +854,49 @@ private:
             const std::string key = std::format("Targeting Priority {}", i);
             fieldLabel(ui, std::format("Priority {}", i).c_str(), 110);
             ImGui::SetNextItemWidth(ui.px(200));
-            changed |= identifierCombo(("##" + key).c_str(), valueRef(st, key, kTargeting[6]), kTargeting);
+            changed |= identifierCombo(("##" + key).c_str(), valueRef(st, key, defaultSetting(key)), kTargeting);
         }
-        changed |= boolField(ui, "Rank targets by type before the priorities above", valueRef(st, "Use Type Priority First", "False"));
+        changed |= boolField(ui, "Rank targets by type before the priorities above", valueRef(st, "Use Type Priority First", defaultSetting("Use Type Priority First")));
         ImGui::Spacing();
-        heading(ui, "Target types");
-        std::vector<std::string> categories;
-        for (const auto& [k, v] : st.settings)
-            if (k.starts_with("Type Priority ")) categories.push_back(k.substr(14));
-        const int ranks = std::max(1, int(categories.size()));
-        if (ImGui::BeginTable("##types", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp)) {
-            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthStretch, 1.4f);
-            ImGui::TableSetupColumn("Rank (1 = first)", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-            ImGui::TableSetupColumn("Never fire on", ImGuiTableColumnFlags_WidthStretch, 0.9f);
-            ImGui::TableHeadersRow();
-            for (const std::string& cat : categories) {
-                ImGui::PushID(cat.c_str());
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(cat.c_str());
-                ImGui::TableSetColumnIndex(1);
-                std::string& rank = valueRef(st, "Type Priority " + cat, "1");
-                ImGui::SetNextItemWidth(ui.px(70));
-                if (ImGui::BeginCombo("##rank", rank.c_str())) {
-                    for (int r = 1; r <= ranks; ++r)
-                        if (ImGui::Selectable(std::to_string(r).c_str(), toInt(rank) == r) && toInt(rank) != r) {
-                            // The type that had this rank takes the old one, so ranks stay unique.
-                            for (auto& [k, v] : st.settings)
-                                if (k.starts_with("Type Priority ") && toInt(v) == r) v = rank;
-                            rank = std::to_string(r);
-                            changed = true;
-                        }
-                    ImGui::EndCombo();
-                }
-                ImGui::TableSetColumnIndex(2);
-                changed |= boolField(ui, "", valueRef(st, "Dont Fire On " + cat, "False"));
-                ImGui::PopID();
-            }
-            ImGui::EndTable();
+        // The types as one list in rank order, edited in the Target Type Order
+        // window; afterwards they are ranked 1, 2, 3... in the new order. A type
+        // whose rank is outside 1 to 14 is not listed (spec 04 §16, confirmed:
+        // binary). The ranks of keys a record leaves out are a new strategy's.
+        heading(ui, "Target type order");
+        const std::vector<std::string> order = typeOrder(st);
+        std::string shown;
+        for (const std::string& cat : order) shown += (shown.empty() ? "" : ", ") + cat;
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(shown.empty() ? "(none)" : shown.c_str());
+        ImGui::PopTextWrapPos();
+        if (ImGui::Button("Target Type Order", ImVec2(ui.px(200), ui.px(26))) && !order.empty()) typeOrder_.open(order, "Target Type Order");
+        if (const std::optional<std::vector<size_t>> picked = typeOrder_.draw(ui)) {
+            for (size_t k = 0; k < picked->size() && (*picked)[k] < order.size(); ++k)
+                valueRef(st, "Type Priority " + order[(*picked)[k]], "1") = std::to_string(k + 1);
+            changed = true;
+        }
+        ImGui::Spacing();
+        heading(ui, "Never fire on");
+        for (game::combat::TargetCategory c : kFileCategoryOrder) {
+            const std::string cat(game::combat::identifier(c));
+            ImGui::PushID(cat.c_str());
+            changed |= boolField(ui, cat.c_str(), valueRef(st, "Dont Fire On " + cat, defaultSetting("Dont Fire On " + cat)));
+            ImGui::PopID();
         }
         return changed;
     }
+
+    // The target types with a rank from 1 to 14, in rank order, those of one
+    // rank in the data files' order.
+    static std::vector<std::string> typeOrder(const ruleset::CombatStrategy& st) {
+        const game::combat::Strategy parsed = game::combat::parseStrategy(st);
+        std::vector<std::string> out;
+        for (int rank = 1; rank <= int(game::combat::kTargetCategories); ++rank)
+            for (game::combat::TargetCategory c : kFileCategoryOrder)
+                if (parsed.typePriority[size_t(c)] == rank) out.emplace_back(game::combat::identifier(c));
+        return out;
+    }
+    ReorderPopup typeOrder_;
 
     // The Damage page: when a target counts as done with (spec 04 §16).
     bool damagePage(UiContext& ui, ruleset::CombatStrategy& st) {
@@ -885,9 +907,10 @@ private:
             const std::string key = std::format("Damage Percent Per {}", what);
             fieldLabel(ui, what, 150);
             ImGui::SetNextItemWidth(ui.px(220));
-            changed |= intSlider(key.c_str(), valueRef(st, key, "100"), 0, 100, "%d%%");
+            changed |= intSlider(key.c_str(), valueRef(st, key, defaultSetting(key)), 0, 100, "%d%%");
         }
-        changed |= boolField(ui, "Keep firing until the target has no working weapons", valueRef(st, "Damage Until All Weapons Gone", "False"));
+        changed |= boolField(ui, "Keep firing until the target has no working weapons",
+                             valueRef(st, "Damage Until All Weapons Gone", defaultSetting("Damage Until All Weapons Gone")));
         return changed;
     }
 
@@ -918,12 +941,13 @@ private:
         bool changed = false;
         heading(ui, "Fighters");
         fieldLabel(ui, "Fighter Group Size", 170);
-        changed |= countList(ui, "##Fighter Group Size", valueRef(st, "Fighters Launch Group Amount", "10"), kFighterGroups);
+        changed |= countList(ui, "##Fighter Group Size", valueRef(st, "Fighters Launch Group Amount", defaultSetting("Fighters Launch Group Amount")),
+                             kFighterGroups);
         wrappedDim("How many fighters leave a carrier together as one group.");
         ImGui::Spacing();
         heading(ui, "Drones");
         fieldLabel(ui, "Drones Per Target", 170);
-        changed |= countList(ui, "##Drones Per Target", valueRef(st, "Drones Per Target", "3"), kDronesPerTarget);
+        changed |= countList(ui, "##Drones Per Target", valueRef(st, "Drones Per Target", defaultSetting("Drones Per Target")), kDronesPerTarget);
         wrappedDim("How many drones the computer sends at each target.");
         // Anything the other pages do not cover (e.g. fields added by a mod).
         bool header = false;

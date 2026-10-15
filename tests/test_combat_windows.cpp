@@ -770,6 +770,14 @@ TEST_CASE("combat windows: next and previous piece search leaders first, then an
     pieces[1].movement = 0;
     pieces[4].movement = 0;
     CHECK(classic::nextTacticalPiece(pieces, me, 4, PieceSearch::Move, true) == 0);
+    // With two planets the pass takes the first found walking from after the
+    // current piece in the search direction, not the first in piece order
+    // (corrected 2026-10-14, complete listing).
+    pieces[3] = tacticalPiece(me, CombatPiece::Kind::Planet, 0);
+    CHECK(classic::nextTacticalPiece(pieces, me, 2, PieceSearch::Move, true) == 3);    // forward from 2
+    CHECK(classic::nextTacticalPiece(pieces, me, 2, PieceSearch::Move, false) == 0);   // backward from 2
+    CHECK(classic::nextTacticalPiece(pieces, me, 4, PieceSearch::Move, true) == 0);    // forward, around the end
+    pieces[3] = tacticalPiece(them);
     // Firing has no planet pass: the planet fires like any piece.
     CHECK(classic::nextTacticalPiece(pieces, me, 0, PieceSearch::Fire, true) == 2);   // a leader that can fire
     for (combat::TacticalPiece& p : pieces) p.weapons[0].reload = {1};
@@ -793,13 +801,32 @@ TEST_CASE("combat windows: weapons ticked afresh, reload bars, and the target pa
     p.weapons.push_back(reloading);
     p.weapons.push_back(destroyed);
     p.weapons.push_back(stack);
+    // A ship: one row per weapon entry.
+    using Row = classic::WeaponRow;
+    CHECK(classic::weaponRows(p) == std::vector<Row>{{0, -1}, {1, -1}, {2, -1}, {3, -1}});
     CHECK(classic::readyTicks(p) == std::vector<char>{1, 0, 0, 0});
-    CHECK(classic::reloadBars(p.weapons[0]) == 0);
-    CHECK(classic::reloadBars(reloading) == 3);
-    CHECK(classic::reloadBars(destroyed) == 0);
-    CHECK(classic::reloadBars(stack) == 2);   // the first to be ready
-    stack.reload = {8, 9, 7};
-    CHECK(classic::reloadBars(stack) == 5);   // five at most
+    CHECK(classic::reloadBars(p, {0, -1}) == 0);
+    CHECK(classic::reloadBars(p, {1, -1}) == 3);
+    CHECK(classic::reloadBars(p, {2, -1}) == 0);   // destroyed
+    // A satellite group or a planet: one row per unit or platform, each with
+    // its own reload and tick, and no count (spec 06 §1.10.1, confirmed: binary).
+    combat::TacticalPiece sats = tacticalPiece(me, CombatPiece::Kind::UnitGroup);
+    sats.type = ruleset::VehicleType::Satellite;
+    sats.weapons = {stack};
+    CHECK(classic::weaponRows(sats) == std::vector<Row>{{0, 0}, {0, 1}, {0, 2}});
+    CHECK(classic::readyTicks(sats) == std::vector<char>{0, 0, 0});
+    CHECK(classic::reloadBars(sats, {0, 1}) == 2);
+    sats.weapons[0].reload = {0, 9, 7};
+    CHECK(classic::readyTicks(sats) == std::vector<char>{1, 0, 0});
+    CHECK(classic::reloadBars(sats, {0, 1}) == 5);   // five at most
+    sats.weapons[0].instances = 2;                   // one satellite died: its row goes
+    CHECK(classic::weaponRows(sats).size() == 2);
+    // A fighter group: one row per weapon of every fighter, sharing the one shot they make together.
+    combat::TacticalPiece wing = tacticalPiece(me, CombatPiece::Kind::UnitGroup);
+    wing.type = ruleset::VehicleType::Fighter;
+    wing.weapons[0].together = 3;
+    CHECK(classic::weaponRows(wing) == std::vector<Row>{{0, -1}, {0, -1}, {0, -1}});
+    CHECK(classic::readyTicks(wing) == std::vector<char>{1, 1, 1});
 
     // The panel: another empire's piece under the pointer while one of ours is selected.
     std::vector<combat::TacticalPiece> pieces{tacticalPiece(me), tacticalPiece(them), tacticalPiece(EmpireId{2u}), tacticalPiece(me),

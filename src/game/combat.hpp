@@ -82,8 +82,9 @@
 //              (its ground combat is CombatRecord::grounds, whose `event` names it)
 //   Seeker     piece = new seeker, target = its target, amount = members, component
 //   UnitsLost  unit group `piece` lost `amount` units to a hit by `target`
-//   Boarding   ship `piece` boarded ship `target` (after the Fire and the hits
-//              of the attempt); amount = the outcome (CombatEvent::kBoarding*),
+//   Boarding   ship `piece` boarded ship `target` (after the Fire; before the
+//              capture and the boarding's hits, after the two explosions of a
+//              self-destruct); amount = the outcome (CombatEvent::kBoarding*),
 //              component = the id of the empire the target belonged to then
 // With Settings `Create Combat Replay` off, events are left out (pieces and
 // the summary lines remain).
@@ -219,38 +220,43 @@ inline constexpr size_t kTargetCategories = static_cast<size_t>(TargetCategory::
 std::string_view identifier(TargetCategory c);   // as used in the strategy keys, e.g. "Seekers(On Us)"
 std::string_view identifier(MoveStrategy m);
 
+// The defaults are the original's new strategy (the Strategies window's Add),
+// which is also what every key a strategy record leaves out starts from (spec
+// 04 §16, §19.7 Q98, confirmed: binary): both movement strategies Optimal
+// Weapons Range; targeting Most Damaged, Strongest, Nearest, Largest; Use Type
+// Priority First off; the type ranks of the constructor; Dont Fire On colony
+// ships, planets, both unarmed kinds and seekers on others; fighters launched
+// in groups of 5, 3 drones per target; a ship skipped once more than 80 %
+// damaged, the other kinds at 100 %; "until all weapons gone" off; and Break
+// Formation on for carriers, colony ships, fighters, satellites, planets,
+// transports and both kinds of seekers.
 struct Strategy {
     std::string name;
     MoveStrategy primary = MoveStrategy::OptimalRange;
-    MoveStrategy secondary = MoveStrategy::PointBlank;
-    std::array<TargetKey, 4> targeting{TargetKey::HasWeapons, TargetKey::Nearest, TargetKey::None, TargetKey::None};
+    MoveStrategy secondary = MoveStrategy::OptimalRange;
+    std::array<TargetKey, 4> targeting{TargetKey::MostDamaged, TargetKey::Strongest, TargetKey::Nearest, TargetKey::Largest};
     bool typePriorityFirst = false;
     std::array<int, kTargetCategories> typePriority{};   // 1 = engage first
     std::array<bool, kTargetCategories> dontFireOn{};
     std::array<bool, kTargetCategories> breakFormation{};
-    int fighterLaunchGroup = 10;   // 0: all of a carrier's fighters in one group (spec 04 §10.4)
+    int fighterLaunchGroup = 5;   // 0: all of a carrier's fighters in one group (spec 04 §10.4)
     // "Drones Per Target" (default 3): set in the strategies window and stored
     // with the game, not a DefaultStrategies.txt key (spec 04 §10.7). Read from
     // the empire's strategy record when it holds that key. The computer's drone
     // launch batch and, times the hostile ships and bases, its limit; 0: all.
     int dronesPerTarget = 3;
-    int damagePercentShip = 100;
+    int damagePercentShip = 80;
     int damagePercentPlanet = 100;
     int damagePercentFighters = 100;
     int damagePercentSatellites = 100;
     bool damageUntilWeaponsGone = false;
 
-    Strategy();   // neutral defaults for keys a record leaves out
+    Strategy();   // the original's new strategy: the starting point for keys a record leaves out
 };
 Strategy parseStrategy(const ruleset::CombatStrategy& s);
-// The record the Strategies window's Add makes (spec 04 §16, confirmed:
-// binary): fighters launched in groups of 5, 3 drones per target, a ship
-// skipped once more than 80 % damaged and the other kinds at 100 %, "until
-// all weapons gone" off, and Break Formation on for carriers, colony ships,
-// fighters, satellites, planets and transports, off for bases, ships, mines,
-// both unarmed kinds and drones (the seekers' flags are fixed, §3.6.13 of
-// spec 08). Its movement, targeting and type priorities are Strategy()'s
-// (inferred: spec 04 §19 question 98).
+// The record the Strategies window's Add makes (spec 04 §16, §19.7 Q98,
+// confirmed: binary): Strategy()'s values written out as keys (the seekers'
+// Break Formation flags are fixed and not written, §3.6.13 of spec 08).
 ruleset::CombatStrategy newStrategyRecord(std::string name);
 // An empire's strategy by index (its first one, or defaults, when out of range).
 Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index);
@@ -265,8 +271,9 @@ Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index);
 //     sector (a vehicle of any kind, mothballed ships and minefields
 //     included, or a colony) of an empire it is hostile to; when every member
 //     of the group is cloaked, another empire present with an uncloaked
-//     object (a vehicle or a colony) must instead see one of the group's
-//     vehicles and be hostile to the group's owner.
+//     object (a vehicle or a colony) must instead be hostile to the group's
+//     owner and see any object of that owner in the sector, the group's or
+//     another (corrected 2026-10-14).
 //   - Empty `group`: the check a simultaneous game makes of a sector after a
 //     day (tools and tests use it too). It passes when an empire with a
 //     vehicle or unit group in the sector whose cloaked flag is off sees an

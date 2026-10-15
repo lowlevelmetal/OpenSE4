@@ -1,0 +1,36 @@
+# The Strategies window's Firing page (docs/BUILDING.md "Input scripts"): the target
+# types as one list in rank order, edited in the Target Type Order window, which ranks
+# them 1, 2, 3... in the new order (spec 04 §16, confirmed: binary).
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-for tag:command:empire-status
+# A game whose other empires are all gone (on the fixtures, the player's alone) shows the
+# conquest ending at once, then asks whether to play on (spec 05 §6, spec 06 §7 Q83).
+click item:Close in=finale optional
+click item:Yes in=finale optional
+key F11
+wait-window empire-status
+click item:Strategies in=empire-status
+wait-window strategies
+click item:Firing in=strategies
+wait-for item:"Target Type Order" in=strategies
+screenshot strategies-firing
+wait 5
+# The ordering window: the first type to the bottom, then OK renumbers them.
+click item:"Target Type Order" in=strategies
+wait-for item:"window:Target Type Order"
+screenshot target-type-order
+wait 5
+click item:"Move To Bottom" in="Target Type Order"
+click item:OK in="Target Type Order"
+wait-gone item:"window:Target Type Order"
+assert { command = "SetStrategy" }
+assert-window strategies
+screenshot strategies-reordered
+wait 5
+key Escape
+wait-closed strategies
+key Escape
+wait-closed empire-status

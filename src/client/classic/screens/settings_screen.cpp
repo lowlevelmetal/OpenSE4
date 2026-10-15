@@ -170,6 +170,10 @@ public:
         heading(ui, "OpenSE4");
         changed |= movementSpeedRow(ui, s);
         changed |= shipMovementRows(ui, s);
+        changed |= lampToggle(ui, "Say on the map why a click fired nothing", &s.tacticalShotNotes);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("In tactical combat, a click on an enemy that fires no weapon writes why at the map's\n"
+                              "top left (out of range, reloading, no supplies, nothing ticked). The original says nothing.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

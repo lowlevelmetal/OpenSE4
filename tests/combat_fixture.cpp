@@ -234,8 +234,37 @@ DesignId frigate(GameState& s, EmpireId owner, std::string_view name, int engine
     return addDesign(s, std::move(d));
 }
 
+ruleset::CombatStrategy testStrategy(std::string name, std::vector<std::pair<std::string, std::string>> settings) {
+    // A key a record leaves out takes the original's new-strategy value (spec
+    // 04 §16), which leaves out planets and unarmed ships; the tests were
+    // written for this plainer base, which the given keys then override.
+    // (In an order of our own: the keys mean the same in any order.)
+    std::vector<std::pair<std::string, std::string>> all{
+        {"Targeting Priority 4", "None"},
+        {"Dont Fire On Planets", "False"},
+        {"Targeting Priority 1", "Has Weapons"},
+        {"Break Formation Transports", "False"},
+        {"Damage Percent Per Ship", "100"},
+        {"Targeting Priority 3", "None"},
+        {"Dont Fire On Ships(No Weapons)", "False"},
+        {"Break Formation Planets", "False"},
+        {"Secondary Movement Strategy", "Point Blank"},
+        {"Dont Fire On Seekers(On Others)", "False"},
+        {"Break Formation Fighters", "False"},
+        {"Targeting Priority 2", "Nearest"},
+        {"Dont Fire On Colony Ships", "False"},
+        {"Break Formation Satellites", "False"},
+        {"Fighters Launch Group Amount", "10"},
+        {"Dont Fire On Bases(No Weapons)", "False"},
+        {"Break Formation Colony Ships", "False"},
+        {"Break Formation Carriers", "False"},
+    };
+    for (auto& kv : settings) all.push_back(std::move(kv));
+    return ruleset::CombatStrategy{std::move(name), std::move(all)};
+}
+
 void useStrategy(GameState& s, EmpireId e, std::vector<std::pair<std::string, std::string>> settings) {
-    s.empire(e).strategies = {ruleset::CombatStrategy{"Test Plan", std::move(settings)}};
+    s.empire(e).strategies = {testStrategy("Test Plan", std::move(settings))};
 }
 
 // Marks a vehicle as having moved in this turn from the sector (dx, dy) away.
@@ -358,8 +387,12 @@ std::pair<GameState, Location> battleScenario(int variant, uint64_t seed) {
         const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
         const VehicleId tr = spawn(s, frigate(s, ar.a, "Transport", 2, {"Test Cargo Bay", "Test Cargo Bay"}), there);
         s.vehicle(tr)->cargo.units.push_back({trooper, 4});
+        // A heavy escort, so that the platforms' guns fall and the troops land.
+        spawn(s, frigate(s, ar.a, "Bombard", 3, {"CT Big Gun", "CT Big Gun", "CT Big Armor"}), there);
         for (Vehicle& v : s.vehicles) v.location = there;
-        useStrategy(s, ar.a, {{"Primary Movement Strategy", "Drop Troops"}, {"Secondary Movement Strategy", "Optimal Weapons Range"}});
+        // The planet first (the largest piece, spec 04 §16), so that its guns fall in time.
+        useStrategy(s, ar.a,
+                    {{"Primary Movement Strategy", "Drop Troops"}, {"Secondary Movement Strategy", "Optimal Weapons Range"}, {"Targeting Priority 1", "Largest"}});
         ar.loc = there;
     }
     return {std::move(ar.s), ar.loc};

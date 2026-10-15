@@ -294,8 +294,9 @@ int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<Proj
     return clicked;
 }
 
-void ReorderPopup::open(std::vector<std::string> rows) {
+void ReorderPopup::open(std::vector<std::string> rows, std::string title) {
     rows_ = std::move(rows);
+    title_ = std::move(title);
     order_.resize(rows_.size());
     for (size_t i = 0; i < order_.size(); ++i) order_[i] = i;
     selected_ = 0;
@@ -304,14 +305,14 @@ void ReorderPopup::open(std::vector<std::string> rows) {
 
 std::optional<std::vector<size_t>> ReorderPopup::draw(UiContext& ui) {
     if (pending_) {
-        ImGui::OpenPopup("Reorder");
+        ImGui::OpenPopup(title_.c_str());
         pending_ = false;
     }
     std::optional<std::vector<size_t>> result;
     const ImVec2 size = ui.size({460, 400});
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
     ImGui::SetNextWindowPos(ui.at({(frameW() - 460) * 0.5f, (frameH() - 400) * 0.5f}), ImGuiCond_Always);
-    if (!ImGui::BeginPopupModal("Reorder", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings))
+    if (!ImGui::BeginPopupModal(title_.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings))
         return result;
 
     const float buttons = ui.px(150);

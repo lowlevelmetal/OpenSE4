@@ -90,7 +90,7 @@ VehicleId spawnOn(const Rules& rules, GameState& s, DesignId d, Location where, 
 }
 
 void addStrategy(GameState& s, EmpireId e, std::string name, std::vector<std::pair<std::string, std::string>> settings) {
-    s.empire(e).strategies.push_back(ruleset::CombatStrategy{std::move(name), std::move(settings)});
+    s.empire(e).strategies.push_back(testStrategy(std::move(name), std::move(settings)));
 }
 
 } // namespace
@@ -205,6 +205,272 @@ TEST_CASE("planning: push weapons spread, point-defense and warheads get targets
 }
 
 // ---- The attack map and the square (spec 04 §16.1, §19.2 Q61) --------------------------------------------
+
+// ---- Sorting the candidates (spec 04 §16, corrected 2026-10-14) ------------------------------------------
+
+TEST_CASE("planning: the candidates go through the original's quicksort, which is not stable") {
+    using P = std::pair<int, int>;   // (key, piece)
+    auto sorted = [](std::vector<P> v) {
+        combat::detail::classicQuicksort(v, [](const P& a, const P& b) { return a.first < b.first ? -1 : a.first > b.first ? 1 : 0; });
+        std::vector<int> out;
+        for (const P& p : v) out.push_back(p.second);
+        return out;
+    };
+    CHECK(sorted({{0, 1}, {0, 2}}) == std::vector<int>{2, 1});
+    CHECK(sorted({{0, 1}, {0, 2}, {0, 3}}) == std::vector<int>{3, 2, 1});
+    CHECK(sorted({{0, 1}, {0, 2}, {0, 3}, {0, 4}}) == std::vector<int>{3, 4, 1, 2});
+    CHECK(sorted({{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}}) == std::vector<int>{4, 5, 3, 1, 2});
+    CHECK(sorted({{2, 1}, {1, 2}, {2, 3}, {1, 4}, {3, 5}, {1, 6}}) == std::vector<int>{4, 2, 6, 1, 3, 5});
+    CHECK(sorted({{3, 1}}) == std::vector<int>{1});
+}
+
+TEST_CASE("planning: of two equal best candidates the later piece comes first; the type ranks count only with the flag on") {
+    auto mainTarget = [](bool typeFirst) {
+        Bench k(makeArena());
+        GameState& s = k.ar.s;
+        const VehicleId gunboat = spawn(s, frigate(s, k.ar.a, "Gunboat", 1, {"CT Gun"}), k.ar.loc);
+        const VehicleId hulk = spawn(s, design(s, k.ar.b, "Hulk", "Test Frigate", {"Test Bridge"}), k.ar.loc);   // Ships (No Weapons)
+        const VehicleId escort = spawn(s, frigate(s, k.ar.b, "Escort", 1, {"CT Gun"}), k.ar.loc);                // Ships
+        useStrategy(s, k.ar.a,
+                    {{"Targeting Priority 1", "Nearest"},
+                     {"Targeting Priority 2", "None"},
+                     {"Use Type Priority First", typeFirst ? "True" : "False"},
+                     {"Type Priority Ships(No Weapons)", "0"},
+                     {"Type Priority Ships", "1"}});
+        Battle& b = k.start();
+        const int g = k.at(gunboat), h = k.at(hulk), e = k.at(escort);
+        REQUIRE(h < e);
+        k.arrange({{g, 20, 20}, {h, 23, 20}, {e, 17, 20}});   // both 3 squares away
+        const int main = b.targetsFor(g, false).main;
+        return std::pair{main == h, main == e};
+    };
+    // Equal on every key: the quicksort puts the later piece first, and with
+    // the flag off the ranks are never looked at.
+    CHECK(mainTarget(false) == std::pair{false, true});
+    // With the flag on the rank comes first as a plain number: 0 before 1.
+    CHECK(mainTarget(true) == std::pair{true, false});
+}
+
+TEST_CASE("planning: strength and the weapons flag are set when a piece enters the battle") {
+    // Strength is kept as ten times its value (spec 04 §16).
+    Bench k(makeArena());
+    GameState& s = k.ar.s;
+    // W 10 (the gun's best) + shields 20 ÷ 2.
+    const VehicleId shielded = spawn(s, frigate(s, k.ar.b, "Shielded", 1, {"CT Gun", "CT Phased Shield"}), k.ar.loc);
+    // The same without supply storage: no supplies, the whole ÷ 5.
+    const VehicleId dry = spawn(s, design(s, k.ar.b, "Dry", "Test Frigate", {"Test Bridge", "Test Engine", "CT Gun", "CT Phased Shield"}), k.ar.loc);
+    // Boarding parties count, but are no weapons.
+    const VehicleId boarder = spawn(s, frigate(s, k.ar.b, "Boarder", 1, {"Test Boarding Party"}), k.ar.loc);
+    // A warhead is a weapon component: armed, in Ships.
+    const VehicleId rammer = spawn(s, frigate(s, k.ar.b, "Rammer", 1, {"Test Warhead"}), k.ar.loc);
+    // A gun destroyed before the battle still makes it armed, but adds no strength.
+    const DesignId brokenDesign = frigate(s, k.ar.b, "Broken", 1, {"CT Gun"});
+    const VehicleId broken = spawn(s, brokenDesign, k.ar.loc);
+    combat::detail::destroyEntry(combatRules(), s.design(brokenDesign), *s.vehicle(broken), 4);   // bridge, life support, quarters, engine, gun
+    REQUIRE(destroyed(combatRules(), s, *s.vehicle(broken), 4));
+    const VehicleId gunboat = spawn(s, frigate(s, k.ar.a, "Gunboat", 1, {"CT Gun"}), k.ar.loc);
+    Battle& b = k.start();
+    auto piece = [&](VehicleId v) -> const combat::detail::Piece& { return b.pieces()[static_cast<size_t>(k.at(v))]; };
+    CHECK(piece(shielded).strength == 200);
+    CHECK(piece(dry).strength == 40);
+    CHECK(piece(boarder).strength == 200);
+    CHECK_FALSE(piece(boarder).hasWeapons);
+    CHECK(piece(boarder).category == combat::TargetCategory::ShipsNoWeapons);
+    CHECK(piece(rammer).strength == 600);
+    CHECK(piece(rammer).hasWeapons);
+    CHECK(piece(rammer).category == combat::TargetCategory::Ships);
+    CHECK(piece(broken).strength == 0);
+    CHECK(piece(broken).hasWeapons);
+    CHECK(piece(broken).category == combat::TargetCategory::Ships);
+    CHECK(piece(gunboat).strength == 100);
+}
+
+TEST_CASE("planning: a mothballed ship's weapons count in its strength; a planet's shields add a fifth") {
+    // Spec 04 §16 (confirmed: binary; 2026-10-15): a mothballed ship has no
+    // abilities (no boarding attack, no shields) and no weapons flag, but its
+    // intact weapons count; a planet's strength is its cargo's rating and its
+    // Planet - Shield Generation ÷ 5, never the whole ÷ 5.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    ar.loc = locationOf(s.galaxy, hw.planet);
+    const DesignId platform = design(s, ar.b, "Bastion", "CT Platform Hull", {"CT Platform Gun", "CT Platform Gun", "CT Platform Core"});
+    hw.cargo.units = {{platform, 3}};   // a rating of 30 each
+    const auto& facilities = combatRules().data().facilities;
+    const auto shield = std::find_if(facilities.begin(), facilities.end(), [](const ruleset::Facility& f) { return f.name == "Test Planet Shield"; });
+    REQUIRE(shield != facilities.end());
+    hw.facilities = {static_cast<uint32_t>(shield - facilities.begin())};   // Planet - Shield Generation 100
+    const VehicleId sleeper = spawn(s, frigate(s, ar.b, "Sleeper", 1, {"CT Gun", "CT Phased Shield", "Test Boarding Party"}), ar.loc);
+    s.vehicle(sleeper)->status = VehicleStatus::Mothballed;
+    const VehicleId gunboat = spawn(s, frigate(s, ar.a, "Gunboat", 1, {"CT Gun"}), ar.loc);
+    Bench k(std::move(ar));
+    Battle& b = k.start();
+    const combat::detail::Piece& planet = b.pieces()[static_cast<size_t>(k.planet(hw.planet))];
+    CHECK(planet.strength == 10 * 90 + 2 * 100);   // 110
+    const combat::detail::Piece& ship = b.pieces()[static_cast<size_t>(k.at(sleeper))];
+    CHECK(ship.strength == 100);                   // the gun's 10 only
+    CHECK_FALSE(ship.hasWeapons);
+    (void)gunboat;
+}
+
+TEST_CASE("planning: the targeting keys measure aim distance, full hit points, the pool, the allowance and damage since entry") {
+    auto first = [](std::string_view key, auto&& build) {
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        Colony& hw = homeworld(s, ar.b);
+        ar.loc = locationOf(s.galaxy, hw.planet);
+        useStrategy(s, ar.a, {{"Targeting Priority 1", std::string(key)}, {"Targeting Priority 2", "None"}});
+        const VehicleId gunboat = spawn(s, frigate(s, ar.a, "Gunboat", 1, {"CT Gun"}), ar.loc);
+        Bench k(std::move(ar));
+        return build(k, gunboat, hw.planet);
+    };
+    {
+        // Nearest is the aim distance: a planet whose near edge is 3 squares away
+        // but whose top-left square is 6 away is farther than a ship 4 away.
+        const bool shipFirst = first("Nearest", [](Bench& k, VehicleId gunboat, ObjectId planet) {
+            const VehicleId skiff = spawn(k.ar.s, frigate(k.ar.s, k.ar.b, "Skiff", 1, {"CT Gun"}), k.ar.loc);
+            Battle& b = k.start();
+            const int g = k.at(gunboat), p = k.planet(planet), sk = k.at(skiff);
+            k.arrange({{g, 20, 20}, {p, 22, 14}, {sk, 24, 20}});
+            REQUIRE(b.dist(g, p) == 3);
+            return b.targetsFor(g, false).main == sk;
+        });
+        CHECK(shipFirst);
+    }
+    {
+        // Largest is twice the full hit points; a planet counts 5000, so a ship
+        // of more than 2500 structure outranks it.
+        const bool shipFirst = first("Largest", [](Bench& k, VehicleId gunboat, ObjectId planet) {
+            const VehicleId hulk = spawn(k.ar.s,
+                                         frigate(k.ar.s, k.ar.b, "Hulk", 1,
+                                                 {"CT Big Armor", "CT Big Armor", "CT Big Armor", "CT Big Armor", "CT Big Armor", "CT Big Armor"}),
+                                         k.ar.loc);
+            Battle& b = k.start();
+            const int g = k.at(gunboat), p = k.planet(planet), h = k.at(hulk);
+            k.arrange({{g, 20, 20}, {p, 30, 20}, {h, 24, 20}});
+            return b.targetsFor(g, false).main == h;
+        });
+        CHECK(shipFirst);
+    }
+    {
+        // Fastest is the movement allowance, not the points left.
+        const bool fastFirst = first("Fastest", [](Bench& k, VehicleId gunboat, ObjectId planet) {
+            const VehicleId fast = spawn(k.ar.s, frigate(k.ar.s, k.ar.b, "Fast", 6, {"CT Gun"}), k.ar.loc);
+            const VehicleId slow = spawn(k.ar.s, frigate(k.ar.s, k.ar.b, "Slow", 2, {"CT Gun"}), k.ar.loc);
+            useStrategy(k.ar.s, k.ar.a, {{"Targeting Priority 1", "Fastest"}, {"Dont Fire On Planets", "True"}});
+            Battle& b = k.start();
+            const int g = k.at(gunboat), f = k.at(fast), sl = k.at(slow);
+            k.arrange({{g, 20, 20}, {k.planet(planet), 40, 40}, {f, 24, 20}, {sl, 24, 22}});
+            REQUIRE(b.pieces()[static_cast<size_t>(f)].allowance > b.pieces()[static_cast<size_t>(sl)].allowance);
+            b.piece(f).mp = 0;   // it has moved already
+            return b.targetsFor(g, false).main == f;
+        });
+        CHECK(fastFirst);
+    }
+    {
+        // Most Damaged counts the damage pool: of two equal ships the earlier one,
+        // with 5 points in its pool, comes first.
+        const bool pooledFirst = first("Most Damaged", [](Bench& k, VehicleId gunboat, ObjectId planet) {
+            const DesignId twin = frigate(k.ar.s, k.ar.b, "Twin", 1, {"CT Gun"});
+            const VehicleId one = spawn(k.ar.s, twin, k.ar.loc);
+            const VehicleId two = spawn(k.ar.s, twin, k.ar.loc);
+            useStrategy(k.ar.s, k.ar.a, {{"Targeting Priority 1", "Most Damaged"}, {"Dont Fire On Planets", "True"}});
+            Battle& b = k.start();
+            const int g = k.at(gunboat), o = k.at(one), t = k.at(two);
+            k.arrange({{g, 20, 20}, {k.planet(planet), 40, 40}, {o, 24, 20}, {t, 24, 22}});
+            b.piece(o).pool = 5;
+            return b.targetsFor(g, false).main == o;
+        });
+        CHECK(pooledFirst);
+    }
+    {
+        // Damage Percent counts only what was taken in this battle: a ship that
+        // came in with most of its parts gone is not skipped by a 50 % limit.
+        const bool wreckFirst = first("Nearest", [](Bench& k, VehicleId gunboat, ObjectId planet) {
+            const DesignId hull = frigate(k.ar.s, k.ar.b, "Wreck", 1, {"CT Gun", "CT Big Armor"});
+            const VehicleId wreck = spawn(k.ar.s, hull, k.ar.loc);
+            combat::detail::destroyEntry(combatRules(), k.ar.s.design(hull), *k.ar.s.vehicle(wreck), 5);   // the armor
+            const VehicleId fresh = spawn(k.ar.s, frigate(k.ar.s, k.ar.b, "Fresh", 1, {"CT Gun"}), k.ar.loc);
+            useStrategy(k.ar.s, k.ar.a, {{"Targeting Priority 1", "Nearest"}, {"Damage Percent Per Ship", "50"}, {"Dont Fire On Planets", "True"}});
+            Battle& b = k.start();
+            const int g = k.at(gunboat), w = k.at(wreck), f = k.at(fresh);
+            k.arrange({{g, 20, 20}, {k.planet(planet), 40, 40}, {w, 22, 20}, {f, 25, 20}});
+            const bool before = b.targetsFor(g, false).main == w;
+            // In the battle it loses more than half of what it came in with: now it is skipped.
+            b.piece(w).pool = 60;
+            return before && b.targetsFor(g, false).main == f;
+        });
+        CHECK(wreckFirst);
+    }
+}
+
+// ---- A seeker's impact (spec 04 §10.1, corrected 2026-10-14) ---------------------------------------------
+
+TEST_CASE("combat: a seeker's impact has no attacker: no damage bonus, no experience, tonnage only to a launcher still there") {
+    ruleset::Ruleset rs = buildCombatRuleset();
+    part(rs, "CT Damage Booster", 10, {ab(AbilityKind::DamageModifierSystem, 50)});
+    rs.reindex();
+    const Rules rules{std::move(rs)};
+    for (const bool launcherGone : {false, true}) {
+        CAPTURE(launcherGone);
+        Bench k(rules, makeArena(rules));
+        GameState& s = k.ar.s;
+        const DesignId tube = frigate(s, k.ar.a, "Tube", 1, {"CT Torpedo", "CT Damage Booster"}, rules);
+        const VehicleId launcher = spawnOn(rules, s, tube, k.ar.loc);
+        const VehicleId dinghy = addTestVehicle(s, rules, addTestDesign(s, rules, k.ar.b, "Dinghy", "Test Frigate", {"Test Bridge"}), k.ar.loc).id;
+        const int64_t empireExperience = s.empire(k.ar.a).experience;
+        Battle& b = k.start({k.ar.b});   // B plays by hand: A's strategies fire, B only ends its phases
+        const int l = k.at(launcher), t = k.at(dinghy);
+        k.arrange({{l, 20, 20}, {t, 24, 20}});
+        b.advance();
+        for (int guard = 0; guard < 200 && b.stage() != Battle::Stage::Finished; ++guard) {
+            const bool flying = std::any_of(b.pieces().begin(), b.pieces().end(),
+                                            [](const combat::detail::Piece& p) { return p.alive && p.kind == CombatPiece::Kind::Seeker; });
+            if (launcherGone && flying) b.piece(l).alive = false;   // the launcher has left the battle
+            REQUIRE(b.submit(TacticalOrder{OK::EndPhase, k.ar.b}).empty());
+        }
+        REQUIRE_FALSE(b.pieces()[static_cast<size_t>(t)].alive);
+        // The impact's damage is the table entry with no Damage Modifier - System (37, not 56).
+        int64_t impact = -1;
+        for (const CombatEvent& e : b.record().events)
+            if (e.kind == CombatEvent::Kind::Hit && e.target == static_cast<uint32_t>(t) && b.record().pieces[e.piece].kind == CombatPiece::Kind::Seeker)
+                impact = e.amount;
+        CHECK(impact == 37);
+        // Nobody gains experience; the launcher's design gets the tonnage only while it is there.
+        CHECK(b.pieces()[static_cast<size_t>(l)].unit.experience == 0);
+        CHECK(b.pieces()[static_cast<size_t>(l)].unit.experienceTenths == 0);
+        CHECK(s.empire(k.ar.a).experience == empireExperience);
+        CHECK((s.design(tube).enemyTonnageDestroyed > 0) == !launcherGone);
+    }
+}
+
+TEST_CASE("combat: a ship's damage pool is cut to 50000 after every hit") {
+    // Spec 04 §9.1 step 2 (confirmed: binary; added 2026-10-14, complete listing).
+    ruleset::Ruleset rs = buildCombatRuleset();
+    gun(rs, "CT Huge Gun", WeaponKind::DirectFire, std::vector<int>(5, 60000), "Normal");
+    part(rs, "CT Mega Armor", 200000, {ab(AbilityKind::Armor)});
+    rs.reindex();
+    const Rules rules{std::move(rs)};
+    Bench k(rules, makeArena(rules));
+    GameState& s = k.ar.s;
+    const VehicleId smasher = spawnOn(rules, s, frigate(s, k.ar.a, "Smasher", 1, {"CT Huge Gun", "CT Huge Gun", "CT Always Hit"}, rules), k.ar.loc);
+    const VehicleId wall = addTestVehicle(s, rules, addTestDesign(s, rules, k.ar.b, "Wall", "Test Station", {"Test Bridge", "CT Mega Armor"}), k.ar.loc).id;
+    Battle& b = k.start({k.ar.a, k.ar.b});
+    const int g = k.at(smasher), w = k.at(wall);
+    k.arrange({{g, 20, 20}, {w, 21, 20}});
+    b.advance();
+    while (b.stage() == Battle::Stage::Orders && b.phaseEmpire() != k.ar.a) REQUIRE(b.submit(TacticalOrder{OK::EndPhase, b.phaseEmpire()}).empty());
+    REQUIRE(b.phaseEmpire() == k.ar.a);
+    for (int weapon : {0, 1}) {
+        TacticalOrder fire{OK::Fire, k.ar.a, g, w};
+        fire.weapon = weapon;
+        REQUIRE(b.submit(fire).empty());
+    }
+    // Two shots of 50000 (the cap of one shot) that cannot destroy the armor: the
+    // pool would hold 100000, and is cut to 50000.
+    REQUIRE(b.pieces()[static_cast<size_t>(w)].alive);
+    CHECK(b.pieces()[static_cast<size_t>(w)].pool == 50000);
+}
 
 TEST_CASE("planning: the attack map - point-defense only when nothing else adds, the border over-count, the weighted emissive cut") {
     ruleset::Ruleset rs = buildCombatRuleset();
@@ -335,16 +601,17 @@ TEST_CASE("movement: each step goes one square toward the destination on each ax
 
 TEST_CASE("movement: a blocked step tries the two squares beside it at random, with the battle's numbers, four times at most") {
     // Spec 04 §5 (confirmed: binary). Each try draws 0 or 1 from the battle's
-    // sequence: 0 the first side square (a diagonal's step along x, a straight
-    // step's side toward lower y or x), 1 the second (inferred, §19.5 Q90).
-    int alongX = 0, alongY = 0, stayed = 0;
+    // sequence: for a diagonal step 0 names the straight step along x, 1 along
+    // y; for a straight step along x, 0 names the side square on the higher row
+    // (y + 1), 1 the lower (§19.5 Q90, settled 2026-10-14).
+    int alongX = 0, alongY = 0, stayed = 0, lowerRow = 0;
     for (uint64_t seed = 1; seed <= 12; ++seed) {
         CAPTURE(seed);
         Bench k(makeArena(seed));
         GameState& s = k.ar.s;
         const DesignId liner = frigate(s, k.ar.a, "Liner", 6, {"CT Gun"});   // 3 movement points
         std::vector<VehicleId> ships;
-        for (int n = 0; n < 6; ++n) ships.push_back(spawn(s, liner, k.ar.loc));
+        for (int n = 0; n < 9; ++n) ships.push_back(spawn(s, liner, k.ar.loc));
         const VehicleId target = spawn(s, frigate(s, k.ar.b, "Target", 1, {}), k.ar.loc);
         warpIn(s, target);
         Battle& b = k.start({k.ar.a});
@@ -362,7 +629,7 @@ TEST_CASE("movement: a blocked step tries the two squares beside it at random, w
         // A diagonal step blocked: one draw chooses the straight step along x or
         // along y; the piece then goes on diagonally, past the blocker.
         k.arrange({{p[0], 10, 10}, {p[1], 11, 11}, {p[2], 30, 20}, {p[3], 31, 19}, {p[4], 31, 20}, {p[5], 31, 21},
-                   {k.at(target), 60, 50}});
+                   {p[6], 40, 40}, {p[7], 41, 40}, {p[8], 41, 41}, {k.at(target), 60, 50}});
         Rng probe = k.rng;
         const bool firstSide = probe.below(2) == 0;
         REQUIRE(move(p[0], 15, 15).empty());
@@ -380,10 +647,24 @@ TEST_CASE("movement: a blocked step tries the two squares beside it at random, w
         Rng d = k.rng;
         CHECK(four.next() == d.next());
         stayed += square(p[2]) == std::pair{30, 20};
+        // A straight step along x whose higher-row side is taken: only a draw of 1
+        // (the lower row) gets past, within four tries.
+        Rng side = k.rng;
+        bool one = false;
+        for (int i = 0; i < 4 && !one; ++i) one = side.below(2) == 1;
+        const size_t from = b.record().events.size();
+        REQUIRE(move(p[6], 45, 40).empty());
+        std::optional<std::pair<int, int>> firstStep;
+        for (size_t e = from; e < b.record().events.size() && !firstStep; ++e)
+            if (b.record().events[e].kind == CombatEvent::Kind::Move && b.record().events[e].piece == static_cast<uint32_t>(p[6]))
+                firstStep = std::pair<int, int>{b.record().events[e].x, b.record().events[e].y};
+        CHECK(firstStep == (one ? std::optional{std::pair{41, 39}} : std::nullopt));
+        lowerRow += one ? 1 : 0;
     }
     CHECK(alongX > 0);
     CHECK(alongY > 0);
     CHECK(stayed == 12);
+    CHECK(lowerRow > 0);
 }
 
 // ---- Surrounded pieces (spec 04 §16.1, spec 03 §10) -------------------------------------------------------
@@ -1464,18 +1745,34 @@ TEST_CASE("capture: the record says how a boarding went, and whose ship it was")
         untilPlayer(b, k.ar.a);
         k.arrange({{i, 40, 40}, {t, 41, 40}});
         b.piece(t).sh.current = 0;
+        const size_t from = b.record().events.size();
         REQUIRE(b.submit(TacticalOrder{OK::Capture, k.ar.a, i, t}).empty());
-        const CombatEvent& last = b.record().events.back();
-        CHECK(last.kind == CombatEvent::Kind::Boarding);
-        CHECK(static_cast<int>(last.piece) == i);
-        CHECK(static_cast<int>(last.target) == t);
-        CHECK(last.amount == outcome);
-        CHECK(last.component == k.ar.b.value);   // whose ship it was, though it may have changed hands
+        size_t at = 0, boardings = 0, captured = 0, destroyed = 0;
+        for (size_t e = from; e < b.record().events.size(); ++e) {
+            const CombatEvent::Kind kind = b.record().events[e].kind;
+            if (kind == CombatEvent::Kind::Boarding) at = e, ++boardings;
+            if (kind == CombatEvent::Kind::Captured) captured = e;
+            if (kind == CombatEvent::Kind::Destroyed) destroyed = e;
+        }
+        REQUIRE(boardings == 1);
+        const CombatEvent& told = b.record().events[at];
+        CHECK(static_cast<int>(told.piece) == i);
+        CHECK(static_cast<int>(told.target) == t);
+        CHECK(told.amount == outcome);
+        CHECK(told.component == k.ar.b.value);   // whose ship it was, though it may have changed hands
         CHECK((b.pieces()[static_cast<size_t>(t)].owner == k.ar.a) == (outcome == CombatEvent::kBoardingTaken));
+        // A capture is told the moment it is decided, before the ship changes
+        // owner; a self-destruct after its explosions (spec 04 §19.6 Q95).
+        if (outcome == CombatEvent::kBoardingTaken) CHECK(at < captured);
+        if (outcome == CombatEvent::kBoardingFailed) CHECK(at == from + 1);   // right after the boarding's Fire
+        if (outcome == CombatEvent::kBoardingSelfDestruct) CHECK(at > destroyed);
     }
 }
 
-TEST_CASE("hits: the record splits each hit between the shields and the structure; a destroying hit counts all that was left") {
+TEST_CASE("hits: the record splits each hit between the shields and the current hit points; a destroying hit counts all that was left") {
+    // Spec 06 §1.10.1 (confirmed: binary; corrected 2026-10-14): a ship's
+    // current hit points are its intact structure less its damage pool, so a
+    // hit that only went into the pool counts as structure damage.
     Arena ar = makeArena(5);
     GameState& s = ar.s;
     const VehicleId gunner = spawn(s, frigate(s, ar.a, "Gunner", 2, {"Test Laser", "Test Laser", "Test Laser", "Test Laser"}), ar.loc);
@@ -1484,7 +1781,7 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
     Bench k(std::move(ar));
     Battle& b = k.start({k.ar.a});
     const int g = k.at(gunner), t = k.at(target);
-    int hits = 0;
+    int hits = 0, pooled = 0;
     bool destroyed = false;
     for (int round = 0; round < 25 && !destroyed && b.stage() != Battle::Stage::Finished; ++round) {
         b.advance();
@@ -1494,6 +1791,7 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
             b.piece(g).alwaysHit = true;
             const int shields = b.pieces()[static_cast<size_t>(t)].sh.current;
             const int64_t hp = b.hitPoints(t);
+            const int64_t current = b.currentHitPoints(t);
             TacticalOrder fire{OK::Fire, k.ar.a, g, t};
             fire.weapon = static_cast<int>(w);
             if (!b.check(fire).empty()) continue;
@@ -1506,11 +1804,12 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
                 destroyed = (e.flags & CombatEvent::kDestroyed) != 0;
                 if (destroyed) {
                     CHECK(e.shieldDamage == shields);
-                    CHECK(e.structureDamage == hp);
+                    CHECK(e.structureDamage == current);
                 } else {
                     CHECK(e.shieldDamage == shields - b.pieces()[static_cast<size_t>(t)].sh.current);
-                    CHECK(e.structureDamage == hp - b.hitPoints(t));
-                    CHECK(((e.flags & CombatEvent::kStructure) != 0) == (e.structureDamage > 0));
+                    CHECK(e.structureDamage == current - b.currentHitPoints(t));
+                    CHECK(((e.flags & CombatEvent::kStructure) != 0) == (hp > b.hitPoints(t)));
+                    pooled += b.pieces()[static_cast<size_t>(t)].pool > 0 && e.structureDamage > 0 && hp == b.hitPoints(t) ? 1 : 0;
                 }
             }
         }
@@ -1519,4 +1818,5 @@ TEST_CASE("hits: the record splits each hit between the shields and the structur
     }
     CHECK(hits >= 2);
     CHECK(destroyed);
+    (void)pooled;   // a hit that only filled the pool, when the dice give one
 }

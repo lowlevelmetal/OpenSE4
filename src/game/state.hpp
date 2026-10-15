@@ -997,9 +997,10 @@ struct CombatEvent {
     static constexpr int32_t kBoardingTaken = 1;
     static constexpr int32_t kBoardingSelfDestruct = 2;
     // A Hit's damage as the Tactical Combat window's target panel writes it
-    // (spec 06 §1.10.1): what the target's shields and its structure lost;
-    // a hit that destroys the target counts all the shields and structure it
-    // had left.
+    // (spec 06 §1.10.1, confirmed: binary): what the target's shields and its
+    // current hit points lost (a ship's: its intact structure less its damage
+    // pool, so damage that only filled the pool counts); a hit that destroys
+    // the target counts all the shields and hit points it had left.
     int32_t shieldDamage = 0;
     int32_t structureDamage = 0;
 };

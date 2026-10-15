@@ -1516,7 +1516,11 @@ TEST_CASE("client session: a strategic answer, and a game without tactical comba
     }
 }
 
-TEST_CASE("tactical: mines are laid in combat, up to the rate and the sector's cap, and join the minefield") {
+TEST_CASE("tactical: mines are laid in combat, up to the rate and the sector's cap, each window's in a minefield of its own") {
+    // Spec 04 §10.6 (confirmed: binary; corrected 2026-10-14, complete listing):
+    // the first mines one opening of the window lays make a new minefield, its
+    // later mines join that one, another opening starts another; the minefield
+    // already there takes none of them.
     Skirmish k;
     GameState& s = k.ar.s;
     const EmpireId a = k.ar.a;
@@ -1524,8 +1528,8 @@ TEST_CASE("tactical: mines are laid in combat, up to the rate and the sector's c
     const VehicleId layer = spawn(s, frigate(s, a, "Layer", 1, {"Test Mine Layer", "CT Big Armor"}), k.ar.loc);
     s.vehicle(layer)->cargo.units.push_back({mine, 6});   // 60 kT: the layer's hold
     const VehicleId field = spawn(s, mine, k.ar.loc);
-    s.vehicle(field)->count = 97;
-    setGroupStacks(s, *s.vehicle(field), {{mine, 97}});
+    s.vehicle(field)->count = 96;
+    setGroupStacks(s, *s.vehicle(field), {{mine, 96}});
     // Nobody entered: the mines do not strike, so the field stays as it is.
     TacticalBattle b(combatRules(), s, TacticalBattle::Setup{k.ar.loc, std::vector<VehicleId>{}, {a}});
     REQUIRE(b.started());
@@ -1533,28 +1537,52 @@ TEST_CASE("tactical: mines are laid in combat, up to the rate and the sector's c
     REQUIRE(b.phaseEmpire() == a);
     const int piece = pieceIndex(b, layer);
     CHECK(b.pieces()[static_cast<size_t>(piece)].launchLeft[3] == 4);   // Lay Mines Val 1 a combat turn
-    TacticalOrder lay = order(OK::Launch, a, piece);
-    lay.design = mine;
-    lay.count = 10;
-    lay.group = 1;
+    auto lay = [&](int count, int window) {
+        TacticalOrder o = order(OK::Launch, a, piece);
+        o.design = mine;
+        o.count = count;
+        o.group = window;
+        return o;
+    };
     const size_t pieces = b.pieces().size();
-    CHECK(b.submit(lay).empty());
+    CHECK(b.submit(lay(2, 1)).empty());
     CHECK(b.pieces().size() == pieces);   // mines are no pieces
-    CHECK(b.pieces()[static_cast<size_t>(piece)].cargo == std::vector<UnitStack>{{mine, 3}});   // the cap left room for 3
-    CHECK(b.check(lay) == "The mine limit for this sector is reached.");
+    // ... but the new minefield is an object of the game at once (confirmed: binary, 2026-10-15).
+    auto fieldsNow = [&] {
+        std::vector<int> out;
+        for (VehicleId id : vehiclesInObjectOrder(b.state()))
+            if (const Vehicle* v = b.state().vehicle(id); v && v->count > 0 && v->owner == a && v->location == k.ar.loc && v->design == mine)
+                out.push_back(v->count);
+        return out;
+    };
+    CHECK(fieldsNow() == std::vector<int>{96, 2});
+    CHECK(b.submit(lay(1, 1)).empty());   // the same opening of the window
+    CHECK(b.submit(lay(10, 2)).empty());  // another: cut to the one the cap and the rate leave
+    CHECK(b.pieces()[static_cast<size_t>(piece)].cargo == std::vector<UnitStack>{{mine, 2}});
+    CHECK_FALSE(b.check(lay(1, 2)).empty());
     b.submit(order(OK::ResolveCombat, a));
     REQUIRE(b.finished());
     b.finish();
-    // They joined the minefield there; the layer kept the rest.
+    // The minefield that was there is as it was; each opening made its own.
     const GameState& after = b.state();
-    REQUIRE(after.vehicle(field));
-    CHECK(after.vehicle(field)->count == 100);
-    if (const Vehicle* l = after.vehicle(layer); l && l->count > 0) CHECK(l->cargo.unitCount(mine) == 3);
+    std::vector<int> fields;
+    for (VehicleId id : vehiclesInObjectOrder(after))
+        if (const Vehicle* v = after.vehicle(id); v && v->count > 0 && v->owner == a && v->location == k.ar.loc && v->design == mine) fields.push_back(v->count);
+    CHECK(fields == std::vector<int>{96, 3, 1});
+    if (const Vehicle* l = after.vehicle(layer); l && l->count > 0) CHECK(l->cargo.unitCount(mine) == 2);
 }
 
 TEST_CASE("tactical: the Launch Units window takes back the groups it launched") {
     Skirmish k;
     k.ar.s.vehicle(k.carrier)->cargo.units = {{k.fighter, 5}};   // 100 kT of the bays' 120
+    // A free object slot below the last one: a launched group takes it at once.
+    const Location elsewhere{k.ar.loc.system, Sector{k.ar.loc.sector.x == 0 ? 1 : 0, k.ar.loc.sector.y}};
+    const VehicleId gone = spawn(k.ar.s, frigate(k.ar.s, k.ar.a, "Gone", 1, {}), elsewhere);
+    spawn(k.ar.s, frigate(k.ar.s, k.ar.a, "Kept", 1, {}), elsewhere);
+    const uint32_t freed = k.ar.s.vehicle(gone)->slot;
+    k.ar.s.vehicle(gone)->count = 0;
+    k.ar.s.removeDeadVehicles();
+    REQUIRE(k.ar.s.freeSlot() == freed);
     TacticalBattle b = startSkirmish(k);
     const EmpireId a = k.ar.a;
     const int carrier = pieceIndex(b, k.carrier);
@@ -1567,6 +1595,12 @@ TEST_CASE("tactical: the Launch Units window takes back the groups it launched")
     REQUIRE(b.pieces().size() == before + 1);
     const int group = static_cast<int>(before);
     CHECK(b.pieces()[before].launchWindow == 4);
+    // The group is an object of the game from its launch, in the lowest free slot (confirmed: binary, 2026-10-15).
+    const VehicleId object = b.pieces()[before].vehicle;
+    REQUIRE(b.state().vehicle(object));
+    CHECK(b.state().vehicle(object)->count == 3);
+    CHECK(b.state().vehicle(object)->location == k.ar.loc);
+    CHECK(b.state().vehicle(object)->slot == freed);
     CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 5);
     // Only from the same window session, and only by its carrier.
     TacticalOrder back = order(OK::Recover, a, carrier, group);
@@ -1578,8 +1612,9 @@ TEST_CASE("tactical: the Launch Units window takes back the groups it launched")
     CHECK(b.check(other) == "Only a group it launched in this window comes back.");
     CHECK(b.submit(back).empty());
     CHECK_FALSE(b.pieces()[before].alive);
+    CHECK_FALSE(b.state().vehicle(object));   // taken back aboard: its object is removed at once
     CHECK(b.pieces()[static_cast<size_t>(carrier)].cargo == std::vector<UnitStack>{{k.fighter, 5}});
-    // What was launched this combat turn stays counted (inferred, spec 04 §19 Q97).
+    // What was launched this combat turn stays counted (spec 04 §19.7 Q97, confirmed: binary).
     CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 5);
     bool told = false;
     for (const CombatEvent& e : b.record().events)

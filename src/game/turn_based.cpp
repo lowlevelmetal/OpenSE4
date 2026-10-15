@@ -407,11 +407,13 @@ void endGameTurn(TurnContext& ctx) {
     sight::updateKnowledge(r, s);
     ai::rememberAiEvents(ctx);
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });
+    // The combat replays keep the battles whose turn is at least the game turn
+    // just ended − 3; older ones go (spec 04 §17, confirmed: binary; since
+    // 2026-10-14, the turn counted at the moment of pruning inferred). The
+    // political steps of the next game turn count those fought since each
+    // empire's previous step among them (spec 05 §7.3).
+    std::erase_if(s.combats, [&](const CombatRecord& c) { return c.turn + 3 < s.turn; });
     ++s.turn;
-    // The battles of the game turn just ended stay for the political steps of
-    // the next one, which count those fought since each empire's previous
-    // step (spec 05 §7.3); older ones go.
-    std::erase_if(s.combats, [&](const CombatRecord& c) { return c.turn + 1 < s.turn; });
     economy::updateReports(r, s);
     s.playerTurn = PlayerTurn{};
 }

@@ -426,9 +426,10 @@ void Battle::execute(const TacticalOrder& o) {
 // their design; drones are one per group. "Launch Fighters in Groups": fighters
 // in single-design groups of the chosen size. Every launch stays within the
 // per-turn rate (and the satellite and mine caps). Drones a player launches
-// first act at the side's next phase. Mines are no pieces: they leave the
-// cargo for the sector's minefield, which they join when the battle ends
-// (spec 04 §10.6).
+// first act at the side's next phase. Every launched group is an object of
+// the game at once (spawnUnit). Mines are no pieces: they leave the cargo at
+// once, and the first mines one opening of the window lays make a minefield
+// of their own at once, which its later mines join (spec 04 §10.6).
 void Battle::launchOrder(const TacticalOrder& o) {
     const int i = o.piece;
     const int kind = launchKindOf(o.design);
@@ -452,10 +453,25 @@ void Battle::launchOrder(const TacticalOrder& o) {
         return true;
     };
     if (kind == kLaunchMines) {
-        std::vector<UnitStack>& laid = minesLaid_[owner.value];
-        auto st = std::find_if(laid.begin(), laid.end(), [&](const UnitStack& x) { return x.design == o.design; });
-        if (st == laid.end()) laid.push_back({o.design, left});
-        else st->count += left;
+        // The minefield is an object at once and takes the lowest free object
+        // slot now (spec 04 §10.6, confirmed: binary; since 2026-10-15).
+        const auto made = minesLaid_.find({i, o.group});
+        Vehicle* field = made != minesLaid_.end() ? s_.vehicle(made->second) : nullptr;
+        if (field && field->count > 0) {
+            addGroupUnits(s_, *field, o.design, left);
+        } else {
+            const Design& d = s_.design(o.design);
+            Vehicle v;
+            v.owner = owner;
+            v.design = o.design;
+            v.name = d.name;
+            v.location = where_;
+            setGroupStacks(s_, v, {{o.design, left}});
+            v.builtTurn = s_.turn;
+            Vehicle& added = s_.addVehicle(std::move(v));
+            added.supply = initialSupply(r_, s_, added);
+            minesLaid_[{i, o.group}] = added.id;
+        }
         launched = left;
     } else if (kind == kLaunchDrones) {
         for (int n = 0; n < left; ++n)
@@ -483,7 +499,8 @@ void Battle::launchOrder(const TacticalOrder& o) {
 
 // The group comes back aboard, design by design, as far as room allows; with
 // nothing left it leaves the map, which is no loss. What the carrier launched
-// this combat turn stays counted (inferred, spec 04 §19 Q97).
+// this combat turn stays counted: a recovery never gives back launch capacity
+// (spec 04 §19.7 Q97, confirmed: binary).
 void Battle::recoverOrder(const TacticalOrder& o) {
     const int i = o.piece, t = o.target;
     Piece& g = pieces_[static_cast<size_t>(t)];
@@ -506,7 +523,11 @@ void Battle::recoverOrder(const TacticalOrder& o) {
         g.alive = false;   // back aboard: no loss (unitsLost is not counted)
         vacate(t);
         dropSeekersAimedAt(t);
+        // Its object is removed at once, freeing its slot (spec 04 §10.4, confirmed: binary).
+        std::erase_if(s_.vehicles, [&](const Vehicle& v) { return v.id == g.source; });
+        g.source = {};
     } else {
+        if (Vehicle* v = s_.vehicle(g.source)) setGroupStacks(s_, *v, g.stacks);
         afterDamage(t);
     }
     refreshStats(i);
@@ -813,10 +834,10 @@ int TacticalBattle::damageAt(int piece, int weapon, int target) const {
     return weaponDamage(rules_, w.de, battle_->dist(piece, target)) * battle_->firedTogether(piece, w);
 }
 
-std::string TacticalBattle::fireProblem(int piece, int weapon, int target) const {
+std::string TacticalBattle::fireProblem(int piece, int weapon, int target, int instance) const {
     if (!started_ || applied_ || !validPiece(views_, piece) || weapon < 0) return "No such weapon.";
     if (!battle_->pieces()[static_cast<size_t>(piece)].alive) return "That piece is gone.";
-    return battle_->fireProblem(piece, static_cast<size_t>(weapon), -1, target);
+    return battle_->fireProblem(piece, static_cast<size_t>(weapon), instance, target);
 }
 
 std::string TacticalBattle::check(const TacticalOrder& o) const {

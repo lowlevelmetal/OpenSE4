@@ -1015,6 +1015,14 @@ squares; on, the other empires' moves the player sees and a simultaneous turn's 
 next turn's start turn and slide too, in the order they were made (OpenSE4's own, since
 2026-10-14; before, they were always animated).
 
+**OpenSE4's notes on the tactical map** (an OpenSE4 addition, an option since 2026-10-14).
+Under the ship movement lamps, "Say on the map why a click fired nothing", off by default
+and kept with this computer's settings (`tacticalShotNotes`, `tactical_shot_notes` in
+`classic_settings.toml`): with it on, a click on an enemy in the Tactical Combat window that
+fires no weapon writes why at the map's top left (out of range, reloading, no supplies, no
+weapon ticked). The original shows nothing then (§1.10.1 "Mouse"). Combat Options holds the
+same switch under its own "OpenSE4" heading (§1.10.3).
+
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
 in brackets.
@@ -1053,36 +1061,81 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
   move to their formation places); on another empire's piece, fires at it; on one of our
   pieces, selects it. A click on a piece that is not hostile (an ally, our own drone group)
   while one of ours is selected also tries to fire, and is refused in a "Cannot Fire
-  Weapons" message box saying that allies cannot be fired on. Clicking the current-piece
-  header opens that piece's report.
+  Weapons" message box saying that allies cannot be fired on. That is the only refusal of
+  a click that is told: a click on an enemy that fires nothing (out of range, reloading,
+  no supplies, no weapon ticked) shows no message of any kind, and the ticked weapons that
+  did not fire lose their target. A click on a square whose piece is a seeker, ours or an
+  enemy's, counts as a click on an empty square: the selected piece moves there. A seeker
+  is never fired at or selected by a click; only point-defense engages it, on its own. A
+  left-click on a neutral obstacle does nothing at all (confirmed: binary; corrected
+  2026-10-14, complete listing; spec 04 §19.6 Q96). Since 2026-10-14 ours follows
+  (`TacticalCombatScreen::click`); it used to fire at enemy seekers, refuse obstacles and
+  our own seekers in the box, and write the other reasons on the map. Writing them on the
+  map is now an OpenSE4 option, off by default (Options and Combat Options, under OpenSE4:
+  "Say on the map why a click fired nothing"). Clicking the current-piece header opens
+  that piece's report.
 - **Weapon ticks.** The ticks of the weapon grid are the window's, not the piece's. Every
   time a piece becomes selected (a click, Space and the Ctrl keys, the start of each phase
   played by hand) and after every move of the piece, they go to every intact weapon that is
   not reloading. A click on an enemy fires the ticked weapons; those that fired are
   unticked. Shift+A ticks only the intact weapons that are ready, Shift+C unticks all
-  (spec 04 §6; whether a reloading weapon can be ticked by hand is spec 04 §19.6 Q91).
+  (spec 04 §6). A click on a weapon cell toggles its tick with no test at all, so a
+  reloading or destroyed weapon can be ticked too; firing skips it (spec 04 §19.6 Q91).
 - **Next and previous piece** (Space, Ctrl+N and Ctrl+B for movement, Ctrl+F and Ctrl+D
   for firing, and the title strip's selectors). The search makes up to three passes around
   the side's pieces, seekers and drones skipped, each starting after the current piece:
   first the group leaders (fleet leaders included) that can move (or fire), then any piece
-  that can, and for movement only the side's first planet. "Next" walks the list
-  backwards, "previous" forwards. At the start of each phase played by hand the selection
-  is made the same way walking forward from the first piece, so the first group leader
-  with movement left is selected.
+  that can, and for movement only the first planet of the side found walking from the
+  piece after the current one in the search direction (not the first planet in piece
+  order; corrected 2026-10-14, complete listing). A piece can move when it has movement
+  left, and fire when it has an intact weapon that is ready and, where it needs them,
+  supplies. "Next" walks the list backwards, "previous" forwards. At the start of each
+  phase played by hand the selection is made the same way walking forward from the first
+  piece, so the first group leader with movement left is selected. Since 2026-10-14 ours
+  follows (`nextTacticalPiece`).
+- **The current piece follows the battle** (confirmed: binary; added 2026-10-14, complete
+  listing). Every time a piece other than a seeker starts a move, it becomes the current
+  piece, with its panel and weapon list, and the view follows it when Center Map on
+  Current Ship is on; every time a piece fires, the firer becomes the current piece and
+  its target goes into the target panel. This happens in computer phases, in the moves of
+  drones and in the player's own phases alike, so after a group moves by hand its last
+  member is the current piece. Since 2026-10-14 ours follows as its playback passes each
+  move and shot (`TacticalCombatScreen::passEvents`).
 - **Target panel.** It shows a piece only while the pointer is over a piece of another
   empire (allies too) with one of ours selected; moving onto an empty square or a neutral
   piece, or arming Ram or Capture, empties it, and it is empty before Begin. The window
   never picks a target by itself. A seeker's impact puts the piece it struck in the panel
-  (and, with Center Map on Current Ship, in view as for a newly selected piece). After each
-  hit drawn while the panel shows a piece, a 220×20 line 66 px below the panel's top reads
-  "Damage: " in white, the shield damage in blue, "/" in white and the structure damage
-  in red; a shot that destroys its target counts all the shields and structure it had
-  left (the hits it counts and when it goes: spec 04 §19.6 Q92).
-- **Weapon cells.** A ticked weapon's cell has a teal background (not a ready one's). Up to
-  five red 3×6 bars, one per combat turn of reload left, are drawn leftward from x 32 of
-  the cell, 4 px apart. With Show Weapon To Hit Chances, a ready weapon's chance is
-  right-aligned at the cell's top right; a unit group's count of the weapon shows at the
-  top right when it is more than 1 (the details ours chose: spec 04 §19.6 Q93).
+  (and, with Center Map on Current Ship, in view as for a newly selected piece), and so
+  does a shot (above). Each time the window draws a hit on any piece while the panel shows
+  a piece, a 220×20 line 66 px below the panel's top is written anew: "Damage: " in white,
+  the struck piece's shields before the hit less after it in blue, "/" in white, and its
+  current hit points before less after in red. A ship's current hit points are its intact
+  structure less its damage pool (spec 04 §9.1), so damage that only went into the pool
+  counts; a shot that destroys its target counts all the shields and hit points it had
+  left (confirmed: binary; corrected 2026-10-14, complete listing, spec 04 §19.6 Q92). The
+  line seems to stay until the next drawn hit writes it again, blank when the panel is
+  then empty (inferred, question 92). Since 2026-10-14 ours counts the pool
+  (`Battle::markHit`) and keeps the line that way.
+- **Weapon cells** (confirmed: binary; corrected 2026-10-14, complete listing, spec 04
+  §19.6 Q93). The list has one row for every weapon entry of the piece: for a unit group
+  every weapon of every unit, for a planet every weapon of every platform, each row with
+  its own tick, reload bars and to-hit chance. There is no count anywhere (counts show only
+  in the Design window's grouped mode). A ticked weapon's cell has a teal background (not
+  a ready one's). Up to five red bars 3 px wide, one per combat turn of reload left, are
+  drawn from y 2 to y 8 of the cell leftward from x 32, 4 px apart. With Show Weapon To Hit
+  Chances, the chance of a weapon that is intact and ready is right-aligned at the cell's
+  top right. Since 2026-10-14 ours follows (`weaponRows`, `combat_logic.cpp`): a unit
+  group's or planet's row for each living unit or platform (a weapon whose units are all
+  dead keeps one row, shown destroyed; inferred); it used to group a unit group's weapon
+  with an instance count under the chance. **A fighter group's rows** (confirmed: binary;
+  2026-10-15): when one ticked row fires (ready, intact, able to damage the target there),
+  the shot takes every intact row of the group with the same component and mount, ticked
+  or not, given the target or not, even one still reloading, whose reload starts again;
+  each rolls on its own and they make one combined hit (spec 04 §6), and every row that
+  fired loses its tick. Rows of another component or mount fire only on their own ticks.
+  Ours does this since 2026-10-15: the group's identical weapons are one weapon of the
+  engine with one reload, the window sends one Fire order for them and unticks all their
+  rows when it fires.
 - **Pointers** (the install's `.cur` files): Normal by default; Target over another
   empire's piece while one of ours is selected; one of the eight Arrow pointers over an
   empty square while a piece is selected, by the signs of the column and row offsets from
@@ -1167,8 +1220,14 @@ tells the target's side that its ship was boarded and taken over; "Boarding Fail
 the ship failed to board the target, and "Self-Destruct" that the target blew itself up
 during the boarding and both ships are gone, to either side or both. The computer's phases
 use the same code, so a human defending tactically is told of a computer's boarding. With
-every side automatic (Strategic, Auto, Resolve Combat) there are no boxes. Our client opens
-them as its playback passes the boarding (spec 04 §19.6 Q95).
+every side automatic (Strategic, Auto, Resolve Combat) there are no boxes. "Ship Boarded"
+and "Boarding Failed" appear the moment the boarding is decided, before the ship changes
+owner, before the boarding's hits and before anything of it is drawn; the game waits until
+the box is closed, and the map is then updated. "Self-Destruct" comes after its two
+explosions (confirmed: binary; corrected 2026-10-14, complete listing, spec 04 §19.6 Q95).
+Since 2026-10-14 ours follows: the record's `Boarding` event comes before the capture and
+the hits, a self-destruct's after them, and the playback stops at it until the box is
+closed.
 
 #### 1.10.3 Combat Options and Combat Replay Options
 
@@ -1183,6 +1242,10 @@ them as its playback passes the boarding (spec 04 §19.6 Q95).
 
 Closing the window saves the switches and starts or stops the music. In the Combat
 Simulator only, a Stop Combat button ends the battle and closes the tactical window.
+OpenSE4 adds an "OpenSE4" heading with one switch of its own, also in the Options window
+under OpenSE4: "Say on the map why a click fired nothing" [off], which writes on the
+tactical map why a click on an enemy fired no weapon (out of range, reloading, no
+supplies, nothing ticked); the original says nothing then (§1.10.1 "Mouse").
 Layout as in §1.9 ("Options In Use" at (15,38), list at (15,56), 560×400). Our client draws
 the rows as 18 px check boxes under silver headings, as Combat Replay Options was seen (spec
 07 session 5; inferred for this window).
@@ -6387,8 +6450,11 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      and the phases, `Battle::hasSurvivors` leaves them out of the verdict, and
      `Battle::dropSeekersAimedAt` takes the seekers aimed at a piece that leaves the battle;
      battles with seekers can now last longer than before. Our client draws the small maps as
-     §1.10.5 says (`CombatMapPainter::squares`). Open: what the original credits for the kill
-     of a seeker whose launcher has died (the engine credits the dead launcher, inferred).
+     §1.10.5 says (`CombatMapPainter::squares`). What the original credits for the kill of a
+     seeker whose launcher has died was settled on 2026-10-14 from the complete listing:
+     nothing. A seeker's impact has no attacking piece, so it gives no experience, and its
+     tonnage goes to the launcher only while that is still in the battle (spec 04 §10.1;
+     ours since then, `Battle::moveSeekers`).
 123. **The current sector during a move order.** Each run of an order that travels to a
      square (Move To, Move To Waypoint and the other orders that head for a target square: a
      patrol leg, a pursuit) first makes sector 0, the top-left square of the shown system, the

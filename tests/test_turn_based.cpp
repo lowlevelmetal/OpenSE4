@@ -160,6 +160,26 @@ TEST_CASE("turn-based: each step is reported as it is made, by an order given an
 
 }
 
+TEST_CASE("turn-based: the combat replays keep the battles of the game turn just ended and the three before it") {
+    // Spec 04 §17 (confirmed: binary; since 2026-10-14): at the end of each game
+    // turn the battles whose turn is at least the turn just ended − 3 stay.
+    Duel d;
+    resumeTurnBased(d.r(), d.s());
+    for (int turn = 0; turn < 6; ++turn) {
+        REQUIRE(d.s().turn == uint32_t(turn));
+        CombatRecord rec;
+        rec.turn = uint32_t(turn);
+        d.s().combats.push_back(rec);
+        endPlayerTurn(d.r(), d.s(), kA);
+        endPlayerTurn(d.r(), d.s(), kB);
+        std::vector<uint32_t> kept;
+        for (const CombatRecord& c : d.s().combats) kept.push_back(c.turn);
+        std::vector<uint32_t> expected;
+        for (int t = std::max(0, turn - 3); t <= turn; ++t) expected.push_back(uint32_t(t));
+        CHECK(kept == expected);
+    }
+}
+
 TEST_CASE("turn-based: a human is asked before entering a sector with enemies; entering fights at once and the order fails") {
     for (bool enter : {true, false}) {
         CAPTURE(enter);

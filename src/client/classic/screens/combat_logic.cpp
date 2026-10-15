@@ -269,28 +269,52 @@ int nextTacticalPiece(const std::vector<game::combat::TacticalPiece>& pieces, ga
     };
     if (const int leader = around([&](const game::combat::TacticalPiece& p) { return p.isLeader && able(p); }); leader >= 0) return leader;
     if (const int any = around(able); any >= 0) return any;
+    // The planet pass: the first planet of the side found the same way, from
+    // after the current piece in the search direction (corrected 2026-10-14).
     if (kind == PieceSearch::Move)
-        for (int i = 0; i < n; ++i)
-            if (pieces[size_t(i)].kind == PieceKind::Planet && tacticalCommandable(pieces[size_t(i)], side)) return i;
+        return around([&](const game::combat::TacticalPiece& p) { return p.kind == PieceKind::Planet && tacticalCommandable(p, side); });
     return -1;
 }
 
-std::vector<char> readyTicks(const game::combat::TacticalPiece& p) {
-    std::vector<char> out(p.weapons.size(), 0);
+std::vector<WeaponRow> weaponRows(const game::combat::TacticalPiece& p) {
+    std::vector<WeaponRow> out;
+    const bool fighters = p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Fighter;
+    const bool perUnit = p.kind == PieceKind::Planet || (p.kind == PieceKind::UnitGroup && !fighters);
     for (size_t w = 0; w < p.weapons.size(); ++w) {
         const game::combat::TacticalWeapon& tw = p.weapons[w];
-        for (int k = 0; k < tw.instances && k < int(tw.reload.size()); ++k)
-            if (tw.reload[size_t(k)] == 0) out[w] = 1;
+        if (fighters) {
+            for (int k = 0; k < std::max(1, tw.together); ++k) out.push_back({int(w), -1});
+        } else if (perUnit) {
+            for (int k = 0; k < std::max(1, tw.instances); ++k) out.push_back({int(w), k});
+        } else {
+            out.push_back({int(w), -1});
+        }
     }
     return out;
 }
 
-int reloadBars(const game::combat::TacticalWeapon& w) {
-    if (w.instances <= 0) return 0;
-    int soonest = -1;
-    for (int k = 0; k < w.instances && k < int(w.reload.size()); ++k)
-        if (soonest < 0 || w.reload[size_t(k)] < soonest) soonest = w.reload[size_t(k)];
-    return std::clamp(soonest, 0, 5);
+bool rowIntact(const game::combat::TacticalPiece& p, const WeaponRow& row) {
+    if (row.weapon < 0 || size_t(row.weapon) >= p.weapons.size()) return false;
+    const game::combat::TacticalWeapon& tw = p.weapons[size_t(row.weapon)];
+    return row.instance < 0 ? tw.instances > 0 : row.instance < tw.instances;
+}
+
+int rowReload(const game::combat::TacticalPiece& p, const WeaponRow& row) {
+    if (row.weapon < 0 || size_t(row.weapon) >= p.weapons.size()) return 0;
+    const std::vector<int>& reload = p.weapons[size_t(row.weapon)].reload;
+    const size_t k = size_t(std::max(0, row.instance));
+    return k < reload.size() ? reload[k] : 0;
+}
+
+std::vector<char> readyTicks(const game::combat::TacticalPiece& p) {
+    const std::vector<WeaponRow> rows = weaponRows(p);
+    std::vector<char> out(rows.size(), 0);
+    for (size_t r = 0; r < rows.size(); ++r) out[r] = rowIntact(p, rows[r]) && rowReload(p, rows[r]) == 0 ? 1 : 0;
+    return out;
+}
+
+int reloadBars(const game::combat::TacticalPiece& p, const WeaponRow& row) {
+    return rowIntact(p, row) ? std::clamp(rowReload(p, row), 0, 5) : 0;
 }
 
 int targetPanelPiece(const std::vector<game::combat::TacticalPiece>& pieces, int own, int hovered, bool overMap, bool aiming, int current) {

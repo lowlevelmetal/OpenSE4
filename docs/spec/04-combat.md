@@ -59,7 +59,12 @@ Conventions:
 - **Who must see whom.** The check is one-directional: some empire of the moving group
   must see an object in the sector belonging to an empire it is hostile to. If the whole
   moving group is cloaked, another empire present there with an uncloaked object must
-  instead see one of the group's objects and be hostile to it. Mothballed ships,
+  instead be hostile to the moving empire and see **any** object of that empire in the
+  sector, not only one of the group's: a ship, a colony, a minefield or any other object
+  there (confirmed: binary; corrected 2026-10-14, complete listing). So when the moving
+  empire already has a visible object in the sector, the cloaked group's arrival starts a
+  battle. Since 2026-10-14 ours follows (`combat::battleCheck`); it used to test only the
+  group's own vehicles. Mothballed ships,
   planets and minefields all count as present; nothing is skipped for being mothballed,
   so a hostile group moving in on a lone mothballed ship it can see starts a battle.
 - **Seeing** follows the sight rules of spec 01 §6.3 for every object, colonies included,
@@ -319,8 +324,16 @@ moment, including during other empires' phases (§10.2).
   whose diagonal is blocked by a large piece slides along it, one axis at a time, even
   when that step brings it no nearer. OpenSE4 follows this since 2026-10-02
   (`Battle::walkToward`, `combat_space.cpp`). Each try draws 0 or 1 from the battle's own
-  random sequence at the moment of the step, for a computer's move and a player's alike;
-  which side square each value takes is question 90. A strategy's move is recorded as the
+  random sequence at the moment of the step, for a computer's move and a player's alike.
+  Every try starts again from the piece's current square, and the square it names is
+  kept on the map (columns 0 to 71, rows 0 to 62) before it is tested. For a diagonal
+  step 0 names the straight step along x and 1 the straight step along y; for a straight
+  step along x, 0 names the side square on the higher row (y + 1) and 1 the lower row;
+  for a straight step along y, 0 the higher column (x + 1) and 1 the lower column
+  (confirmed: binary; question 90, settled 2026-10-14, complete listing). The odds are
+  the same either way; only which number names which square changed: since 2026-10-14
+  ours follows (`stepToward`), where 0 used to name the lower coordinate of a straight
+  step. A strategy's move is recorded as the
   order a player would give (toward its square, the piece alone), so the same move given
   by hand or replayed draws the same numbers and the battle goes on the same. A player's
   move toward a square is therefore never refused for a blocked way: it makes its tries.
@@ -400,8 +413,11 @@ binary):
 4. The weapon's damage at the range distance is greater than 0 (§8).
 
 **Firing by hand** (confirmed: binary). In the tactical window a player fires the weapons
-ticked in the piece's weapon list by clicking an enemy. Firing at a non-hostile piece or a
-neutral obstacle is refused. Each ticked weapon takes the target within the target budget
+ticked in the piece's weapon list by clicking an enemy. Firing at a piece of an empire we
+are not hostile to (our own drone groups included) is refused in a message box; a click on
+a neutral obstacle does nothing, and a click on a seeker's square counts as a click on an
+empty square (a move), so a seeker is never fired at by hand (corrected 2026-10-14, complete
+listing; spec 06 §1.10.1). Each ticked weapon takes the target within the target budget
 (below); weapons that did not fire lose it again. The conditions above apply as for the
 computer, but the damage type is not checked (the computer never assigns a weapon whose
 type cannot affect the target, §16), and point-defense may be fired this way.
@@ -410,10 +426,12 @@ The ticks belong to the window, not to the piece (confirmed: binary; spec 06 §1
 every time a piece becomes selected (by a click, by the next and previous keys, at the start
 of each phase played by hand) and after every move of that piece, the ticks are reset to
 every intact weapon that is not reloading. A weapon that fires is unticked. Shift+A ticks
-the intact weapons that are ready, Shift+C unticks them all. OpenSE4's window fires one
-weapon at a time in design order, each as its own order (`TacticalOrder::Fire` with the
-weapon), and says why when none of them could fire. Whether a reloading weapon can be
-ticked by hand is question 91; OpenSE4's window allows it (inferred). The engine keeps
+the intact weapons that are ready, Shift+C unticks them all. A click on a cell toggles its
+tick with no test, so a reloading or destroyed weapon can be ticked too, and firing skips it
+(question 91). A click that fires nothing shows no message (question 96). OpenSE4's window
+fires one weapon row at a time in design order, each as its own order (`TacticalOrder::Fire`
+with the weapon and, for a unit group's or planet's row, its instance); with its OpenSE4
+option on it writes on the map why none of them could fire. The engine keeps
 its own per-weapon switch (`ToggleWeapon`, `TacticalWeapon::enabled`), which the order
 `Fire` with weapon -1 uses: that is for script and external players (docs/sdk), not the
 window.
@@ -544,7 +562,8 @@ Worked example: a destroyer (hull +20 defense) with ECM I (+20) whose top-left s
 - **Damage Modifier - System** (confirmed: binary): when a hit lands, its damage is
   multiplied by (100 + the attacker empire's `Damage Modifier - System` total) / 100 and
   Rounded. This happens before shields, and also changes the value that special types
-  use (reload turns, conversion chance, push distance).
+  use (reload turns, conversion chance, push distance). A hit with no attacking piece
+  gets none: a seeker's impact (§10.1) and a ram's recoil (§10.3).
 
 ## 9. Damage application
 
@@ -556,7 +575,11 @@ Let D be the hit's damage after §8.
 2. **Damage pool.** Every ship, base and seeker keeps a pool of damage that was too
    small to destroy anything. For the *hull-damaging types* (Normal, Skips Normal
    Shields, Skips Armor, Skips Shields And Armor, Skips All Shields, Quad/Double/
-   Half/Quarter Damage To Shields), the pool is added to D and emptied. A unit group, and
+   Half/Quarter Damage To Shields), the pool is added to D and emptied. After every hit
+   on a piece its pool is cut to 50000, a ship's, a base's and a seeker's alike, as a
+   unit group's is (§9.4) (confirmed: binary; added 2026-10-14, complete listing). With
+   stock data a pool never comes near it: it stays below the structure of the next
+   component. Since 2026-10-14 ours follows (`Battle::shipHit`, `Battle::seekerHit`). A unit group, and
    the units stored on a planet, keep their own pools (§9.4); a planet piece itself keeps
    none. No pool outlives the battle: a ship's pool belongs to its piece, and the pools
    of unit groups and stored units go back to 0 at the end of every battle (and after
@@ -740,8 +763,8 @@ same (§10.6).
   aimed at the weapon's target. If a seeker of the same empire, component and target
   already sits on that square, the new one joins it instead: a seeker group counts its
   members. That is so even if the seeker there has already moved or was launched by
-  another piece; the group keeps its travelled count and its first launcher (who gets
-  the kill credit). Mounts are not compared.
+  another piece; the group keeps its travelled count and its first launcher (whose
+  design(s) a kill's tonnage goes to, Impact below). Mounts are not compared.
 - A seeker has 0 movement in the turn it is launched. From the next combat turn it
   moves up to `Weapon Seeker Speed` squares in its owner's phase, before the owner's
   other pieces act. Each step moves one square toward the target's centre square (its
@@ -755,14 +778,27 @@ same (§10.6).
   aimed at it goes with it at that moment, not at its next step. A planet whose colony
   dies stays as an obstacle, so seekers aimed at it expire at their next step, as for a
   target captured or converted (§12). A seeker whose launcher is destroyed keeps flying
-  and strikes or expires as usual; only the kill credit has no piece left to go to.
-  Since 2026-10-14 the engine follows (`Battle::dropSeekersAimedAt`). What the original
-  credits for such a seeker's kill is not settled; the engine credits the dead launcher
-  as before (inferred; spec 06 §7 Q122).
-- **Impact.** When the seeker reaches the target's centre square, it deals
-  table[travelled] × (members in the group) as one hit of the weapon's damage type, with
-  the launching empire's damage modifier. No roll. The launcher gets the kill credit
-  (history 1.87).
+  and strikes or expires as usual. Since 2026-10-14 the engine follows
+  (`Battle::dropSeekersAimedAt`; spec 06 §7 Q122). When it strikes, nobody is credited
+  (Impact, below; confirmed: binary; settled 2026-10-14, complete listing).
+- **Impact** (confirmed: binary; corrected 2026-10-14, complete listing). When the seeker
+  reaches the target's centre square, it is first removed from the battle (seekers aimed
+  at it go with it), and only then is the hit dealt: table[travelled] (the travelled
+  count capped at 20, the entry read without the mount; no stock mount applies to
+  seekers) × (members in the group), as one hit of the weapon's damage type. No roll.
+  The hit has **no attacking piece**: no `Damage Modifier - System` applies to it, and a
+  kill by impact gives no crew experience and no empire experience (§15, spec 02 §9). A
+  seeker of a push, pull or Crew Conversion type then moves or converts nothing
+  (inferred; no stock seeker has such a type). Its only credit is the
+  enemy tonnage of a destroyed ship, base or unit group (§15), which goes to the
+  design(s) of the launcher, looked up again by its piece number (§10.7 "A reused piece
+  number"), and only while a piece with that number is in the battle: if the launcher
+  has been destroyed, nobody is credited. The spec said earlier (confirmed: binary) that
+  the impact had the launching empire's damage modifier and that the launcher got the
+  kill credit with its experience (history 1.87); that was read as if the seeker itself
+  were the attacker. Since 2026-10-14 ours follows (`Battle::moveSeekers`,
+  `Battle::kill`); it used to give the impact the launching empire's bonus, the launcher
+  crew and empire experience, and a dead launcher's design the tonnage.
 - **Durability.** A seeker has `Weapon Seeker Dmg Res` hit points R (the mount does
   not change it) and defense +40 (§7). Its remaining hit points are R minus its pool P, for one member
   whatever the group's size. A hull-damaging hit already carries P (§9.1 step 2), so it
@@ -856,11 +892,10 @@ same (§10.6).
   aboard the piece, design by design as far as its cargo has room (only fighters and
   satellites; a ship needs its bay of the kind; the full-movement test of a turn-based
   game is skipped in a battle), which undoes a launch before the window closes. A
-  recovered group leaves the map and is no loss. Whether a recovery gives back launch
-  capacity is not known: the engine leaves what was launched this combat turn counted
-  (inferred, §19 Q97). A refused launch or recovery shows in a message box titled
-  "Launch Warning" or "Recover Warning" (confirmed: binary, except the box in a battle,
-  inferred). The Settings
+  recovered group leaves the map and is no loss. A recovery never gives back launch
+  capacity: what was launched this combat turn stays counted (confirmed: binary; §19.7
+  Q97). A refused launch or recovery shows in a message box titled "Launch Warning" or
+  "Recover Warning", in a battle too (confirmed: binary). The Settings
   `Combat Fighter Group Amount`, `Combat Mine Group Amount` and `Combat Satellite Group
   Amount` are loaded but never used.
 - A fighter group has a target budget of 1 and fires its identical weapons as one
@@ -872,6 +907,17 @@ same (§10.6).
   and room for them. Groups nobody recovers, and all drones, stay in space as the
   separate groups they are; they are not merged into other groups in the sector
   (confirmed: binary).
+- **Launched groups are objects at once** (confirmed: binary; added 2026-10-15). Every
+  fighter, satellite or drone group launched in a battle, by a player or the computer,
+  becomes an object of the game the moment it is launched, in launch order, taking the
+  first free object slot then or a new slot at the end; a group taken back aboard in the
+  Launch \ Recover Units window is removed at once. The slot shows in later battles'
+  piece order, lists and the saved game. Whether a vehicle destroyed earlier in the same
+  battle frees its slot at once was not traced; ours frees it when the battle's losses
+  are removed, after the battle. Since 2026-10-15 ours follows (`Battle::spawnUnit`,
+  `Battle::recoverOrder`); it used to make the groups left in space when the battle
+  ended. A group destroyed in the battle, or taken back aboard whole by its carrier at
+  the end, is removed with the battle's losses.
 
 ### 10.5 Satellites and weapon platforms
 
@@ -922,11 +968,24 @@ same (§10.6).
   layers per combat turn, a planet that holds mines up to 100 per combat turn. The
   per-sector cap holds: the player's mines in the sector, the minefield there and those
   laid in this battle, may not pass it; at the cap the launch is refused, below it cut to
-  the room left. Laid mines never become pieces: they leave the carrier's cargo and join
-  the owner's minefield in the sector. Since 2026-10-14 the engine follows; it adds them
-  when the battle ends to the owner's last mine group in the sector in object order, as
-  a launch outside combat does (spec 03 §12), or to a new group (inferred), and they
-  strike only groups that enter later.
+  the room left. Laid mines never become pieces: they leave the carrier's cargo at once.
+  **Which minefield they make** (confirmed: binary; corrected 2026-10-14, complete
+  listing; §19.7 Q97): the window lays them through the same launch routine as the map,
+  at once, but in battle mode the group units join is looked for only among the groups
+  launched while that window has been open. So the first mines laid in an opening of the
+  window make a new minefield right away, even when the owner already has a minefield in
+  the sector; later mines of the same opening join it, whatever their design, and opening
+  the window again starts another. They are never merged into the minefield that was
+  there. Whether separate minefields in one sector are merged later, outside combat, was
+  not checked. They strike only groups that enter later. Since 2026-10-14 ours follows
+  (`Battle::launchOrder`). It used to add them to the owner's last minefield in the
+  sector. **Made at once** (confirmed: binary; 2026-10-15): the new minefield is an object
+  of the game from the moment it is laid, and takes the first free object slot then, or
+  a new slot at the end, as every launched group does (§10.4). The slot shows in what
+  goes by object order afterwards (the piece order of later battles, the order in which
+  a sector's minefields strike, which mine group a later launch on the map joins, lists
+  and the saved game), not inside the same battle. Since 2026-10-15 ours makes it at the
+  launch too; it used to make it when the battle ended.
 
 ### 10.7 Drones
 
@@ -1083,8 +1142,10 @@ same (§10.6).
   or the target self-destructed) is told in message boxes to the sides played by hand at
   that moment (spec 06 §1.10.2), whoever's phase it is: a computer side's boarding of a
   ship of a human playing tactically is told to that human. In a battle every side fights
-  automatically (strategic combat, Auto, Resolve Combat) nobody is told. OpenSE4's record
-  keeps each boarding's outcome as a `Boarding` event (combat.hpp) after its hits, with the
+  automatically (strategic combat, Auto, Resolve Combat) nobody is told. A capture or a
+  failure is told the moment it is decided, before the ship changes owner and before the
+  boarding's hits; a self-destruct after its two explosions (§19.6 Q95). OpenSE4's record
+  keeps each boarding's outcome as a `Boarding` event (combat.hpp) at that point, with the
   empire the target belonged to; the window turns it into the boxes.
 
 ## 13. Ground combat (confirmed: binary unless marked)
@@ -1134,7 +1195,11 @@ same (§10.6).
      recomputed every round.
   2. Every unit rolls: it hits if roll ≤ (its side's offense + 50 − the other side's
      defense). There is no clamp. Every living unit of every stack on both sides rolls,
-     those that add nothing included (confirmed: binary).
+     those that add nothing included: a troop without weapons, and a stored fighter,
+     satellite, platform, mine or drone, draws its number and adds 0 on a hit; all the
+     invaders roll first, stack by stack, then all the defenders (confirmed: binary).
+     Since 2026-10-14 ours follows (`hits`, `combat_ground.cpp`); it used to skip the
+     stacks whose attack is 0, so they drew no number.
   3. A hit adds the unit's attack: militia use the setting; a troop unit uses the sum,
      over its weapons, of each weapon's largest table entry (with mount). Units without
      weapons, and stored units other than troops and militia, add nothing.
@@ -1193,8 +1258,10 @@ command exists). The only ways to disengage are:
 - **Experience** (confirmed: binary). Experience is earned only for kills, during the
   battle:
   - Destroying a ship, base or planet gives the killer's crew +1.0; destroying a whole
-    unit group or a seeker gives +0.1. Seeker kills credit the launcher (history 1.87).
-    Firing alone gives nothing.
+    unit group or a seeker gives +0.1. A seeker's impact has no attacking piece, so a
+    kill by impact gives nobody experience (§10.1; confirmed: binary; corrected
+    2026-10-14, complete listing; history 1.87 says seeker kills credit the launcher, but
+    the original credits only the tonnage). Firing alone gives nothing.
   - Each time a ship in a fleet gains crew experience this way, the fleet has a 1-in-4
     chance to gain +0.1 fleet experience.
   - Crew and fleet experience are capped at 50. Their truncated values are to-hit points
@@ -1219,7 +1286,8 @@ command exists). The only ways to disengage are:
     the whole group dies (units killed from a group that survives credit nothing); 0 for a
     planet or a seeker;
   - it goes, in full, to every design in the killing object: a ship's design, each design
-    in a unit group, the launcher's design(s) for a seeker; a planet credits nobody;
+    in a unit group, the launcher's design(s) for a seeker's impact, only while the
+    launcher is still in the battle (§10.1); a planet credits nobody;
   - a mine credits its own design with the victim's value; for a unit group, hull
     `Tonnage` × the units it had when that mine picked it (units killed by earlier mines
     of the strike do not count, those killed by this mine's earlier warheads do);
@@ -1266,27 +1334,113 @@ Point Blank and Drone Attack.
 | Field | Semantics |
 |---|---|
 | `Primary Movement Strategy`, `Secondary Movement Strategy` | One of eight: the three range strategies (Optimal, Short and Maximum Weapons Range), Point Blank, Ram, Board Enemy Ships, Drop Troops and Don't Get Hurt. What each does is §16.1. Use the secondary strategy when the primary is impossible, for example Drop Troops with no troops. |
-| `Targeting Priority 1..4` | Sort keys for choosing a target, applied in order: Nearest, Farthest, Largest, Smallest, Most Damaged, Least Damaged, Fastest, Slowest, Strongest, Weakest, Has Weapons, Does Not Have Weapons. The first key filters or sorts, and later keys break ties. |
-| `Use Type Priority First`, `Type Priority <Cat>` | Rank per category (1 = engage first) over 14 categories: Planets, Fighters, Seekers(On Us), Seekers(On Others), Mines, Carriers, Colony Ships, Transports, Bases(No Weapons), Ships(No Weapons), Bases, Ships, Satellites, Drones. The flag decides whether category rank is applied before the targeting keys. The UI also offers turning type priority off. |
+| `Targeting Priority 1..4` | Sort keys for choosing a target, applied in order: Nearest, Farthest, Largest, Smallest, Most Damaged, Least Damaged, Fastest, Slowest, Strongest, Weakest, Has Weapons, Does Not Have Weapons. Each later key decides only between candidates the earlier ones find equal. What each key measures is below the table. |
+| `Use Type Priority First`, `Type Priority <Cat>` | Rank per category (1 = engage first) over 14 categories: Planets, Fighters, Seekers(On Us), Seekers(On Others), Mines, Carriers, Colony Ships, Transports, Bases(No Weapons), Ships(No Weapons), Bases, Ships, Satellites, Drones. With the flag on, the rank is compared first, as a plain number, lower first (so a rank of 0 comes before 1); with it off the ranks are never looked at, not even to break ties: only the four targeting keys compare (confirmed: binary; corrected 2026-10-14, complete listing). All ten stock strategies have the flag off. |
 | `Dont Fire On <Cat>` | Never engage that category. |
 | `Fighters Launch Group Amount` | Fighter group size at launch; 0 puts all of a carrier's fighters in one group (§10.4). |
 | "Drones Per Target" | Drone launch batch and limit (default 3); each drone is still its own group (§10.7). Not a DefaultStrategies.txt key. |
 | `Break Formation <Cat>` | Whether own pieces of that category leave the formation in combat. |
-| `Damage Percent Per Ship / Planet / Fighter Group / Satellite Group` | (confirmed: binary) While choosing targets, a ship, planet, fighter group or satellite group already damaged by more than this percentage is skipped, unless `Damage Until All Weapons Gone` is set and it still has weapons. Drones and seekers are never skipped this way. If no target is left, the choice is made again without this filter. |
+| `Damage Percent Per Ship / Planet / Fighter Group / Satellite Group` | (confirmed: binary) While choosing targets, a ship, planet, fighter group or satellite group already damaged by more than this percentage is skipped, unless `Damage Until All Weapons Gone` is set and it still has weapons. The damage counted is only what it took in this battle: 100 − Round(100 × its current hit points ÷ its hit points when it entered the battle), a ship's current hit points being its intact structure less its damage pool; so a ship that arrives 85 % damaged counts 0 % here and is not skipped. The test is made only when the percentage is below 100 (confirmed: binary; corrected 2026-10-14, complete listing). Drones and seekers are never skipped this way. If no target is left, the choice is made again without this filter. |
 | `Damage Until All Weapons Gone` | See the row above. |
 
+**What the keys measure** (confirmed: binary; corrected 2026-10-14, complete listing; the
+spec named the keys without saying):
+
+- **Nearest** and **Farthest**: the aim distance from the choosing piece (§1), so a planet
+  counts up to 3 squares farther than its near edge.
+- **Largest** and **Smallest**: twice the piece's full hit points: a ship's or base's whole
+  design structure with mounts, a unit group's units × each unit's hit points (§9.4). A
+  planet counts 5000 and a seeker 1, so a ship of more than 2500 structure outranks a
+  planet.
+- **Most Damaged** and **Least Damaged**: the damage percentage 100 − Round(100 × current
+  hit points ÷ full hit points), 100 when the full value is 0 and 0 when the current value
+  is above it. A ship's current hit points are its intact components' structure less its
+  damage pool (§9.1), so damage held in the pool counts. Least Damaged is the same order
+  reversed. For a unit group the full value counts every unit it had when it entered,
+  and the current one its living units less its pool (inferred, question 100).
+- **Fastest** and **Slowest**: the piece's combat movement allowance for the combat turn
+  (§5). It follows hits, but it is not the points left, so a fast ship that has already
+  moved still ranks as fast.
+- **Strongest** and **Weakest**: the strength below.
+- **Has Weapons** and **Does Not Have Weapons**: the weapons flag below.
+
+**Strength and the weapons flag** (confirmed: binary; added 2026-10-14, complete listing).
+Both are worked out once for each piece, when it enters the battle (at set-up, or when it
+is launched), and again only for a planet's piece when it is set up again after a landing
+(§11). Damage taken during the battle changes neither.
+
+- **Strength** of a ship or base: let W be the sum, over its intact weapon components of
+  any kind, of each one's largest damage at ranges 1 to 20 with its mount, and A its total
+  `Boarding Attack` from intact parts. If W + A is above 0 its strength is W + A + S ÷ 2,
+  S being the total `Shield Generation`, `Phased Shield Generation` and
+  `Planet - Shield Generation` of its intact parts; otherwise 0. Each fighter in its cargo
+  then adds its design's rating, the sum over the design's weapons of each one's largest
+  damage at ranges 1 to 20. A ship without supplies has the whole divided by 5. A
+  mothballed ship has no abilities, so its A and S are 0, but its intact
+  weapons and carried fighters count, ÷ 5 without supplies (confirmed: binary; corrected
+  2026-10-15; ours counted it 0).
+- A fighter group's strength is the number of weapon components on its units (units ×
+  weapons each), divided by 5 without supplies; a satellite or drone group's is the same
+  count, never divided.
+- A planet's strength is the rating of the units in its cargo (count × design rating) and,
+  when that is above 0, the colony's total `Planet - Shield Generation` ÷ 5 added, only
+  the shield total being divided and never the supply divisor (confirmed: binary;
+  2026-10-15);
+  otherwise 0.
+- A seeker's strength is 0.
+- **Exact values** (confirmed: binary; 2026-10-15). Nothing is truncated or rounded: the
+  original keeps strength in floating point. Ten times every strength is a whole number
+  (a ship's 10W + 10A + 5S + 10 × its fighters' rating, a fifth of that without
+  supplies; a planet's 10 × cargo + 2 × shield; a unit group's 10 × its weapon count, or
+  2 × it for a fighter group without supplies), and comparing these gives the original's
+  order. Since 2026-10-15 ours keeps ten times the strength (`Battle::strengthOf`); it
+  used to truncate each division and divide a planet's cargo with its shields.
+- **The weapons flag.** A ship or base has weapons when its design has a weapon component
+  of any kind, point-defense and warheads included, destroyed ones too; a mothballed ship
+  has none. A unit group has weapons when its units' designs carry weapon components, a
+  planet when its cargo holds weapon platforms with weapons. The same flag puts a ship or
+  base in Ships or Bases or in their "(No Weapons)" categories, so a warship whose weapons
+  are all shot away still sorts as armed and stays in Ships for the whole battle, and a
+  ship armed only with warheads counts as armed. An Optimal Weapons Range ship without
+  the flag rams (§16.1). Has Weapons is priority 1 of all ten stock strategies, and
+  Strongest priority 2 of six of them.
+
+Since 2026-10-14 ours follows (`Battle::sortedTargets`, `Battle::rateOnEntry`,
+`strengthOf`, `weaponsFlag`, `sizeOf`, `fullHitPoints`, `currentHitPoints`). It used to
+measure Nearest by range distance, Largest by hull tonnage (planets always largest),
+Most Damaged truncated and without the pool, Fastest by the points left, Strongest by
+weapon damage per reload without shields, boarding or carried fighters and refreshed
+after every hit, and the weapons flag by an intact weapon other than a warhead now; it
+also broke ties by the type ranks with the flag off and treated a rank of 0 as last.
+
 **The Strategies window** (confirmed: binary). Its pages are Movement, Firing, Damage,
-Launching and Formation. Damage holds the four `Damage Percent` settings and `Damage Until
+Launching and Formation. Firing shows the target categories as one comma-separated list in
+rank order, edited in a "Target Type Order" ordering window; afterwards the ranks are
+numbered 1, 2, 3… in the new order, and a category whose rank is outside 1 to 14 is not
+listed (added 2026-10-14, complete listing; ours follows since then, `firingPage` in
+`empire_status.cpp`, where it used to give each category a rank field; the "Dont Fire On"
+switches stay under it, and the window shows a key a record leaves out with the value it
+stands for, a new strategy's). Damage holds the four `Damage Percent` settings and `Damage Until
 All Weapons Gone`. Launching holds two pick lists: Fighter Group Size (5, 8, 10, 15, 20, 30,
 40 or 50) and Drones Per Target (1, 2, 3, 5, 8, 10, 15 or 20). Add asks "Enter Strategy
-Name" and makes a new strategy from built-in values: fighters launched in groups of 5, 3
-drones per target, `Damage Percent Per Ship` 80 and the other three 100, `Damage Until All
-Weapons Gone` off, and Break Formation on for Carriers, Colony Ships, Fighters, Satellites,
-Planets, Transports, Seekers on us and Seekers on others, off for Bases, Ships, Mines, Bases
-(no weapons), Ships (no weapons) and Drones (spec 08 §3.6.13 order). The rest of its values
-are question 98. Since 2026-10-13 our client follows (`combat::newStrategyRecord`). Copy and
-Remove are OpenSE4's own buttons, and a value a data file gives that is not in a pick list
-shows as it is.
+Name" and makes a new strategy from built-in values (confirmed: binary; completed
+2026-10-14, complete listing, question 98): primary and secondary movement both Optimal
+Weapons Range; targeting priorities Most Damaged, Strongest, Nearest, Largest; Use Type
+Priority First off; type ranks Bases 2, Ships 1, Carriers 5, Colony Ships 6, Fighters 12,
+Satellites 7, Mines 14, Planets 3, Transports 9, Bases (No Weapons) 13, Ships (No Weapons)
+4, Seekers (On Us) 10, Seekers (On Others) 11, Drones 8; Dont Fire On on for Colony Ships,
+Planets, Bases (No Weapons), Ships (No Weapons) and Seekers (On Others), off for the rest;
+fighters launched in groups of 5, 3 drones per target, `Damage Percent Per Ship` 80 and
+the other three 100, `Damage Until All Weapons Gone` off, and Break Formation on for
+Carriers, Colony Ships, Fighters, Satellites, Planets, Transports, Seekers on us and
+Seekers on others, off for Bases, Ships, Mines, Bases (no weapons), Ships (no weapons) and
+Drones (spec 08 §3.6.13 order). The same values are the starting point for every key a
+strategy data file leaves out. Since 2026-10-14 ours follows (`combat::Strategy`,
+`combat::newStrategyRecord`); it used to start from neutral values of its own (secondary
+Point Blank, targeting Has Weapons then Nearest, no Dont Fire On, and for keys a file
+leaves out fighter groups of 10, ships skipped only at 100 % and no Break Formation).
+Copy and Remove are OpenSE4's own buttons, and a value a data file gives that is not in a
+pick list shows as it is.
 
 **How the computer gives out targets** (confirmed: binary). A computer piece chooses
 targets for all its weapons at once, when it plans its move (§16.1) and again each time
@@ -1300,7 +1454,20 @@ it fires. Both use the same steps; only the firing choice checks distance.
    never reaches past 20 squares, even for a mounted weapon whose range-20 entry is
    above 0 (confirmed: binary). The `Damage Percent` filters (table above) apply first;
    if they leave nothing, the candidates are taken again without them. The list is
-   sorted by the strategy's priorities.
+   sorted by the strategy's priorities (the table above).
+   **The sort** (confirmed: binary; added 2026-10-14, complete listing). The list is
+   built in piece order and sorted in place by a quicksort that is not stable, so
+   candidates equal on every key end in the order it leaves them. For each range of the
+   list, the element at its middle (the lower of the two middles) is the pivot. A scan
+   from the low end stops at the first element that does not come strictly before the
+   pivot, a scan from the high end at the first that does not come strictly after it;
+   the two are swapped, equal ones included, both scans step past them, and this goes on
+   until the scans cross. Then the lower part is sorted the same way, and after it the
+   upper part. A candidate comes "before" another only when the comparison says strictly
+   before. So two equal candidates come out in reverse piece order, three also reversed,
+   and four as 3, 4, 1, 2: with two equal best candidates the main target is the later
+   piece. Since 2026-10-14 ours follows (`detail::classicQuicksort`); it used to break
+   such ties by piece order, the earlier piece first.
 2. **Main target.** The first candidate of the sorted list, whether or not any weapon of
    the piece can hit it. The range strategies measure their distances from it (§16.1).
 3. **Budget.** Only the first B candidates are used, where B is the piece's target budget
@@ -1571,8 +1738,14 @@ describes this effect).
 - **Combat replay.** A view-only playback from the log, advanced one combat turn at a
   time with Next. It records only piece movement, including forced moves, and weapon
   firings. It holds no damage or reload state. Hovering a piece shows its design, not
-  its damaged state. In simultaneous games only the latest turn's replay is available,
-  and the host sends it to the players.
+  its damaged state. In a turn-based game, at the end of each game turn the replay file
+  keeps the battles whose turn is at least the current turn − 3 and drops older ones
+  (confirmed: binary; added 2026-10-14, complete listing; the exact turn number at the
+  moment of pruning was not traced). Since 2026-10-14 ours keeps the battles of the game
+  turn just ended and the three before it (`endGameTurn`, `turn_based.cpp`; inferred: the
+  turn just ended is the current turn of that rule); it used to keep two game turns'. In
+  simultaneous games they are not pruned this way: only the latest turn's replay is
+  available, and the host sends it to the players.
 - **Weapons report.** Lists available weapons with size, reload and damage at ranges
   1–10 and 11–20. Filters: All, Direct Fire, Seeking, Point-Defense, Warhead, Only
   Latest. A mount selector shows the numbers as they would be with that mount. Seeker
@@ -2037,8 +2210,9 @@ answered from the executable. The engine was brought in line with the answers th
     the invaders all their troop stacks, for the defender every stack in the planet's
     cargo, militia and other stored units included. A drawn militia stack credits nothing.
     Every living unit of every stack on both sides rolls, units that add nothing included
-    (confirmed: binary). The engine matches in effect: it skips the rolls that add nothing
-    and the draw when militia die, which changes only how many random numbers are used.
+    (confirmed: binary). The engine matched in effect: it skipped the rolls that add
+    nothing and the draw when militia die, which changes only how many random numbers are
+    used. Since 2026-10-14 ours makes both (`hits`, `applyDamage`, `combat_ground.cpp`).
 66. **Seekers.** **Answer:** yes, the pool keeps its old value when a hit of another type
     destroys a member; when such a hit destroys none, its damage joins the pool. After a
     hull-damaging hit destroys a member the pool is 0 and the rest of that hit is lost
@@ -2342,6 +2516,14 @@ settled from the executable the same day; Q87 and Q88 need changes to the engine
     other square (inferred). To verify in the executable: which random call the tries make
     (and so how many numbers each takes from the sequence), and which square each result
     names.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): each try draws one
+    number, 0 or 1, from the game's random sequence. Every try starts again from the
+    piece's current square, and the square it names is kept on the map (columns 0 to 71,
+    rows 0 to 62) before it is tested. A diagonal step: 0 the straight step along x, 1
+    along y. A straight step along x: 0 the side square with the higher row (y + 1), 1
+    the lower. A straight step along y: 0 the higher column (x + 1), 1 the lower. Up to
+    four tries. The diagonal case matched; since 2026-10-14 ours follows for straight
+    steps too (`stepToward`, §5).
 
 ### 19.6 Questions from the 2026-10-11 parity audit of the combat windows
 
@@ -2353,25 +2535,64 @@ traced and are OpenSE4's choices until a session with the executable settles the
     reloading when a piece is selected (§6). Can the player tick a reloading weapon by
     clicking its cell? Ours allows it (inferred); the tick then does nothing until the
     weapon is ready, and the Fire order refuses it quietly when others fire.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): a click on a weapon cell
+    toggles its tick with no test at all, so a reloading weapon can be ticked, and so can
+    a destroyed one; firing then simply skips them. Ours matches.
 92. **The target panel's damage line** (spec 06 §1.10.1). Ours writes it after every hit
     drawn while the panel shows a piece, whatever the hit's target, and clears it when the
     panel shows another piece or none. The structure part is what the target's hit points
     lost, so damage held in a pool (§9.1) counts 0 (inferred). Which hits write it in the
     original, what it counts as structure damage, and when it goes away?
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): the line is written anew
+    each time the window draws a hit, on any piece, whenever the panel shows a piece. The
+    first number is the struck piece's shields before the hit less after; the second its
+    current hit points before less after, a ship's current hit points being its structure
+    less its pool, so damage that only went into the pool counts as structure damage. A
+    destroying shot counts all the shields and hit points it had left. Which hits write it
+    matched; since 2026-10-14 ours counts the pool (`Battle::markHit`). Still open: when the
+    line goes away. It seems to stay until the next drawn hit writes it again (blank if
+    the panel is then empty); since 2026-10-14 ours does that (inferred), where it used to
+    clear the line whenever the panel showed another piece or none.
 93. **Weapon cells** (spec 06 §1.10.1). Ours draws the reload bars from y 2 to 8 of the
     cell, counts the instance of a stack that will be ready first, and writes a unit
     group's count under the to-hit chance when both show at the top right (inferred).
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): the list has one row for
+    every weapon entry of the piece; for a unit group every weapon of every unit, each row
+    with its own tick, reload bars and to-hit chance, and no count anywhere. Reload bars:
+    red, one per combat turn of reload left (at most 5), 3 px wide, from y 2 to y 8 of the
+    cell, leftward from x 32, 4 px apart. The chance is right-aligned at the top right,
+    only while the weapon is intact and ready. A ticked cell is teal. Since 2026-10-14 ours
+    follows (spec 06 §1.10.1 "Weapon cells").
 94. **Ramming an obstacle.** A neutral obstacle can be rammed (§10.3) and the rammer takes
     B = 500000. Ours gives the obstacle nothing, records no hit on it and credits no kill
     (inferred). Does the original draw a hit, or credit the second experience and tonnage
     of §10.3?
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): the obstacle gets the
+    ordinary hit with A ÷ 4, which has no effect on an obstacle: nothing is destroyed, no
+    kill, no experience, no tonnage. The rammer takes B = 500000. The ram's explosion is
+    drawn on whichever piece took the bigger blow, normally the rammer. Ours matches on
+    the rules.
 95. **When the boarding boxes open** (§12, spec 06 §1.10.2). Ours opens them when the
     window's playback passes the boarding, after its hits and the capture are drawn, and
     the playback waits until they are closed (inferred).
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): "Ship Boarded" or
+    "Boarding Failed" appears the moment the boarding is decided, before the ship changes
+    owner, before the boarding's hits and before anything of it is drawn; the game waits
+    until the box is closed, and the map is then updated. "Self-Destruct" comes after its
+    two explosions. Since 2026-10-14 ours follows: the record's `Boarding` event comes
+    before the capture and the hits (after them for a self-destruct), and the playback
+    stops there until the box is closed.
 96. **Firing refusals in boxes.** A click on a piece that is not hostile is refused in a
     "Cannot Fire Weapons" box (spec 06 §1.10.2). Ours writes every other reason a click
     does not fire (out of range, reloading, no supplies) on the map, as before (inferred).
     Which of them does the original put in a box?
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): only the click on a piece
+    of an empire we are not hostile to, in the box. A click on a neutral obstacle does
+    nothing; out of range, reloading, no supplies and no ticked weapon fire nothing, with no
+    message of any kind, and the ticked weapons that did not fire lose their target. A
+    click on a seeker's square counts as a click on an empty square. Since 2026-10-14 ours
+    follows; writing the other reasons on the map is an OpenSE4 option, off by default
+    (spec 06 §1.9, §1.10.1).
 
 ### 19.7 Questions from the REA parity audit's other packages (2026-10-14)
 
@@ -2384,6 +2605,13 @@ traced and are OpenSE4's choices until a session with the executable settles the
     in a battle join when the owner has several there (the engine: the last in object
     order, as outside combat), and whether the window shows its refusals in a battle in
     the same message boxes as on the map.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing). Recovery never gives back
+    launch capacity: the window passes its launch counters to launches only, and writes
+    the remaining counts back to the carrier when it closes; ours matches. Mines laid in
+    a battle make a minefield of their own for each opening of the window that lays them,
+    never joining the one already there (§10.6); since 2026-10-14 ours follows. In a
+    battle the window shows its refusals in message boxes titled "Launch Warning" and
+    "Recover Warning", as the spec had inferred; ours matches.
 98. **A new strategy's other values.** The Strategies window's Add (§16) makes a strategy
     whose launch group (5), drones per target (3), damage percentages (80 per ship, 100
     for the rest), "until all weapons gone" (off) and Break Formation flags are known
@@ -2391,3 +2619,32 @@ traced and are OpenSE4's choices until a session with the executable settles the
     Blank), targeting (Has Weapons, then Nearest), type priorities and Don't Fire On flags
     (none) of its own neutral defaults (`combat::Strategy`, inferred). To verify in the
     executable: the values the original's new strategy starts with for these.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): primary and secondary
+    movement are both Optimal Weapons Range; targeting priorities 1 to 4 are Most
+    Damaged, Strongest, Nearest, Largest; Use Type Priority First is off; the type ranks
+    are Bases 2, Ships 1, Carriers 5, Colony Ships 6, Fighters 12, Satellites 7, Mines 14,
+    Planets 3, Transports 9, Bases (No Weapons) 13, Ships (No Weapons) 4, Seekers (On Us)
+    10, Seekers (On Others) 11, Drones 8; Dont Fire On is on for Colony Ships, Planets,
+    Bases (No Weapons), Ships (No Weapons) and Seekers (On Others) and off for the rest.
+    The values already known stand. The same values are the starting point for any key a
+    strategy data file leaves out, where OpenSE4 also used fighter groups of 10, ships
+    skipped only at 100 % and no Break Formation (§16 "The Strategies window"). Since
+    2026-10-14 ours follows (`combat::Strategy`, `combat::newStrategyRecord`).
+
+### 19.8 Questions from the 2026-10-14 accuracy pass
+
+The accuracy pass of 2026-10-14 settled most of §19.6 and §19.7 from the complete listing
+and corrected several earlier answers. These details were left open; each is OpenSE4's
+choice, marked "(inferred)" in the code, until a session with the executable settles it:
+
+99. **A launched group joined in the same Launch Units window.** Strength and the weapons
+    flag (§16) are set when a piece enters the battle. When later units of the same kind
+    join a group launched earlier in the same window (§10.4), is the group rated again
+    with them? Ours rates it again, as it takes its hit points at the start again
+    (`Battle::joinUnit`, inferred).
+100. **A unit group's damage percentage.** Most Damaged and Least Damaged (§16) measure
+    100 − Round(100 × current ÷ full hit points). For a unit group the finding did not
+    trace which values the original uses. Ours takes as full every unit the group had when
+    it entered (killed units stay in its records until the battle ends, §9.4), and as
+    current its living units' hit points less its pool; Largest and Smallest take twice
+    the same full value (`Battle::fullHitPoints`, inferred).

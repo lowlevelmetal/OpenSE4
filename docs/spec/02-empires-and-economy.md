@@ -1530,8 +1530,9 @@ counting, and a wrong one shows "Invalid Password" (spec 08 §13.4, confirmed: b
   saving the same empire.
 - It grows during play (the total never goes above 500,000,000):
   - when a ship or unit group is destroyed in space combat, the empire that owns the
-    piece whose shot destroyed it (the launcher's owner for a seeker) gains its tonnage
-    div 10: the hull's tonnage for a ship or base; for a group, the tonnage of every unit
+    piece whose shot destroyed it gains its tonnage div 10 (a seeker's impact has no
+    shooting piece and gives nobody experience, spec 04 §10.1; corrected 2026-10-14,
+    complete listing): the hull's tonnage for a ship or base; for a group, the tonnage of every unit
     it held when the killing hit landed, units killed earlier in the same battle included
     (they are cleared only when the battle ends); nothing for a planet or a seeker. This is
     the figure the design statistics credit as enemy tonnage destroyed (spec 04 §15).
