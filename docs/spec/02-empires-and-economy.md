@@ -1346,12 +1346,21 @@ at the ship limit (spec 05 §7.5, question 81).
 - If anything is unpaid, `unpaid div Maintenance Cost Amt Per Dead + 1` vehicles are
   destroyed (so 1 to 19999 unpaid destroys one, 20000 destroys two), but never more than
   there are candidates.
-- Candidates: the empire's ships that are out of supply (supply 0) and pay maintenance.
-  If there are none, every ship and unit group of the empire is a candidate.
+- Candidates: the empire's vehicles in space whose supply is 0 and whose maintenance
+  charge (steps 1–4 above) is above 0 in at least one resource; so no unit group or
+  mothballed ship, nor a ship or base whose charge comes to 0 in every resource (cost
+  modifiers or a full system reduction). If there are none, every ship and unit group of
+  the empire is a candidate (confirmed: binary; corrected 2026-10-14, complete listing:
+  OpenSE4 took every ship and base out of supply that was not mothballed).
 - Each victim is picked at random among the remaining candidates and destroyed whole (a
   unit group loses all its units). The owner gets a "Ship Abandoned" or "Unit Group
-  Abandoned" message. The loss fires no happiness event: `Ship Lost in System` (and so
-  `Any Ship Lost`) is logged only for a ship destroyed by damage.
+  Abandoned" entry, category Misc (the original's entry kind 24, maintenance or supply
+  problem), with a Goto to the vehicle's place: the Maintenance Minister reports that the
+  vehicle was abandoned for lack of maintenance funds (confirmed: binary; corrected
+  2026-10-14, complete listing: OpenSE4 wrote Construction entries). The loss fires no
+  happiness event: `Ship Lost in System` (and so `Any Ship Lost`) is logged only for a ship
+  destroyed by damage.
+- Since 2026-10-14 ours follows both (`economy.cpp` `abandonVehicles`).
 
 ---
 

@@ -718,6 +718,43 @@ TEST_CASE("economy: unpaid maintenance abandons whole vehicles, ships out of sup
     CHECK(vehiclesOf(s, kMe) == 2);
 }
 
+TEST_CASE("economy: a ship out of supply whose charge is 0 is no first choice; the entry is Misc (spec 02 §7, confirmed: binary)") {
+    auto r = tweakedRules([](ruleset::Ruleset& rs) {
+        setKey(rs, "Maintenance Cost Amt Per Dead", 1'000'000);  // one victim
+        setKey(rs, "Minimum Empire Minerals Generation", 0);
+        setKey(rs, "Minimum Empire Organics Generation", 0);
+        setKey(rs, "Minimum Empire Radioactives Generation", 0);
+        addFacility(rs, "Free Dock", {ability(AbilityKind::ReducedMaintenanceSystem, 100)});
+    });
+    GameState base = newGame(*r);
+    dropVehicles(base, kMe);
+    Colony& home = plainHome(*r, base, {"Free Dock"});
+    const DesignId ship = frigate(base, *r, kMe);
+    const Location homeLoc = locationOf(base.galaxy, home.planet);
+    const Location away{base.galaxy.object(freePlanet(base, homeLoc.system, false)).system, Sector{1, 1}};
+    const VehicleId free = addTestVehicle(base, *r, ship, homeLoc).id;   // out of supply, but pays nothing here
+    const VehicleId dry = addTestVehicle(base, *r, ship, away).id;       // out of supply and pays
+    for (int i = 0; i < 4; ++i) addTestVehicle(base, *r, ship, away).supply = 100;
+    base.vehicle(free)->supply = 0;
+    base.vehicle(dry)->supply = 0;
+    REQUIRE(economy::vehicleMaintenance(*r, base, *base.vehicle(free)).isZero());
+    for (uint64_t seed = 1; seed <= 8; ++seed) {
+        GameState s = base;
+        s.rng = Rng(seed);
+        s.empire(kMe).stockpile = {};
+        economyTurn(*r, s);
+        CHECK(s.vehicle(dry) == nullptr);
+        CHECK(s.vehicle(free) != nullptr);
+        const LogEntry* entry = nullptr;
+        for (const LogEntry& l : s.empire(kMe).log)
+            if (l.title == "Ship Abandoned") entry = &l;
+        REQUIRE(entry != nullptr);
+        CHECK(entry->category == LogCategory::Misc);
+        CHECK(entry->location == std::optional<Location>(away));
+        CHECK(entry->text.find("Maintenance Minister") != std::string::npos);
+    }
+}
+
 // ---- Construction ------------------------------------------------------------------------------------
 
 TEST_CASE("economy: construction rates from yards, population, race, culture and modes") {

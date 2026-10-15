@@ -840,10 +840,16 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
     GameState& s = ctx.state;
     const int64_t perDead = std::max<int64_t>(1, r.setting("Maintenance Cost Amt Per Dead", 20000));
     int64_t victims = unpaid / perDead + 1;
+    // First choice: the vehicles in space out of supply whose maintenance
+    // charge is above 0 in some resource (so no unit group or mothballed ship,
+    // nor a ship whose charge comes to 0); with none, every vehicle of the
+    // empire (spec 02 §7, confirmed: binary).
     std::vector<VehicleId> candidates;
     for (const Vehicle& v : s.vehicles)
-        if (v.owner == e && v.count > 0 && v.supply <= 0 && v.status != VehicleStatus::Mothballed && isShipOrBase(vehicleType(r, s, v)))
-            candidates.push_back(v.id);
+        if (v.owner == e && v.count > 0 && v.supply <= 0) {
+            const Resources charge = vehicleMaintenance(r, s, v);
+            if (std::any_of(charge.v.begin(), charge.v.end(), [](int64_t x) { return x > 0; })) candidates.push_back(v.id);
+        }
     if (candidates.empty())
         for (const Vehicle& v : s.vehicles)
             if (v.owner == e && v.count > 0) candidates.push_back(v.id);
@@ -852,8 +858,10 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
         Vehicle& v = *s.vehicle(candidates[pick]);
         candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(pick));
         const bool ship = isShipOrBase(vehicleType(r, s, v));
-        ctx.log(e, LogCategory::Construction, std::format("{} {} abandoned", ship ? "Ship" : "Unit group", v.name),
-                "The empire could not pay its maintenance.", v.location, "ShipDamaged");
+        // A Misc entry that goes to the vehicle's place (spec 02 §7, confirmed: binary).
+        ctx.log(e, LogCategory::Misc, ship ? "Ship Abandoned" : "Unit Group Abandoned",
+                std::format("The Maintenance Minister reports that the {} was abandoned for lack of maintenance funds.", v.name), v.location,
+                "ShipDamaged");
         for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;
         // No happiness event: only a ship destroyed by damage logs `Ship Lost in
         // System` and `Any Ship Lost` (confirmed: binary).
