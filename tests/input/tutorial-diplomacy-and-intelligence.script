@@ -107,6 +107,12 @@ key Escape
 wait-closed log
 key Escape refused
 repeat 4 until { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed = 3 }] }
+  # A battle the turn's moves bring (the computer's ships meet ours since the rules of
+  # 2026-10-14/15): fought strategically.
+  click item:Begin optional timeout=30
+  click item:Strategic in=strategic-combat optional timeout=30
+  click item:Close in=strategic-combat optional timeout=600
+  click tag:log:close optional timeout=30
   click tag:button:end-turn
   click item:Yes in="End Turn"
   wait 5

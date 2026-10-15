@@ -43,6 +43,9 @@ key F2
 wait-window game-menu
 click item:Options in=game-menu
 wait-window options
+# OpenSE4's rows come after the original's: scrolled into view.
+wheel item:"Display Ship Movement Lines" in=options -10
+wait-for item:"Clear tags when selecting a ship elsewhere" in=options
 click item:"Clear tags when selecting a ship elsewhere" in=options
 key Escape
 wait-closed options
@@ -63,6 +66,9 @@ key F2
 wait-window game-menu
 click item:Options in=game-menu
 wait-window options
+# OpenSE4's rows come after the original's: scrolled into view.
+wheel item:"Display Ship Movement Lines" in=options -10
+wait-for item:"Clear tags when selecting a ship elsewhere" in=options
 click item:"Clear tags when selecting a ship elsewhere" in=options
 key Escape
 wait-closed options
