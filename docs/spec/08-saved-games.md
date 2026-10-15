@@ -1176,7 +1176,11 @@ no upper version bound (the beta-authorization and demo checks of this build alw
 pass). The stored check value K6 is not compared (§2.2). A load fails only when the
 stream is broken: a string with a wrong tag, reading past the end, or a range error in
 the runtime. The player then sees an "Unable to load game" message, and the previous
-game is gone (every empire slot is freed before reading).
+game is gone (every empire slot is freed before reading). Every file routine (game, map,
+empire, orders file, setup file) shows "Unable to load/save ..." under Load Error or Save
+Error and passes the failure on; `nd` and a quiet load show no box; a failed game load
+restores nothing; the orders-file reader reuses the empire file's wording (confirmed:
+binary, 2026-10-14).
 
 ### 5.2 Version gates
 
@@ -1582,14 +1586,22 @@ carries out OpenSE4's start of that player's turn before writing (§12).
 
 ### 11.1 Open questions
 
-1. What the log's "event-style notice" flag is for (no reader found).
-2. Which of the log entry kinds 15..18 is which intelligence outcome.
+1. What the log's "event-style notice" flag is for (no reader found). **Answer**
+   (confirmed: binary, 2026-10-14): nothing but copying, saving and loading reads it.
+2. Which of the log entry kinds 15..18 is which intelligence outcome. **Answer**
+   (confirmed: binary, 2026-10-14): 17 is the acting empire's own intelligence result
+   (success or failure), 18 the victim's report (50 for one project type), 57 a
+   counter-intelligence success; 15 and 16 are never written.
 3. The value of a package item of kind 6 (units): an object, since the item check compares
-   its name (confirmed: binary); that it is the carrier is inferred.
+   its name (confirmed: binary); that it is the carrier is inferred. **Answer** (confirmed:
+   binary, 2026-10-14): a ship carrying units, handed over with its cargo exactly as kind 5;
+   OpenSE4 imports both as a vehicle, which matches.
 4. Which column numbers the sort-key slots store, per window, and whether they match
-   OpenSE4's column identities.
+   OpenSE4's column identities. (Still open on 2026-10-14: interface only, not traced.)
 5. The full rule that gives a design its computer type code when its type name is not
-   one of the 39 standard ones.
+   one of the 39 standard ones. **Answer** (confirmed: binary, 2026-10-14): the code is the
+   position of the exact type name among the 39 standard names, otherwise derived from the
+   design's abilities in a fixed order, identical to OpenSE4's rule used by the export.
 6. **Answered:** the formulas are in §3.2.1 (confirmed: binary; they reproduce the stock
    values). They are set when a game is made through Game Setup and whenever a host
    processes a turn, and they are needed by every simultaneous game, hotseat included
@@ -1602,12 +1614,24 @@ carries out OpenSE4's start of that player's turn before writing (§12).
    §9). Nothing but the window makes this order. Since 2026-10-14 ours reads and writes it
    (`classic_save_import.cpp`, `classic_save_export.cpp`, `Order::planetSize`).
 8. The formats of the statistics and events companion files, for exporting OpenSE4's
-   history (the statistics file is plain text, one line per turn).
-9. Whether militia units (design ids from 65000) can remain in a saved colony.
-10. Whether status 2 (under construction) ever reaches a save.
+   history (the statistics file is plain text, one line per turn). **Answer** (confirmed:
+   binary, 2026-10-14): the statistics file has one line per turn for each empire the viewer
+   may compare (player, date, then eleven values); the events file has the date, the other
+   empire, two zeros and a text, for treaties, war, contact made or lost and an empire
+   destroyed; the surrender lines are never written.
+9. Whether militia units (design ids from 65000) can remain in a saved colony. **Answer**
+   (confirmed: binary, 2026-10-14): militia exist only during a ground battle and are removed
+   at its end; OpenSE4 drops them on import, which matches.
+10. Whether status 2 (under construction) ever reaches a save. **Answer** (confirmed: binary,
+    2026-10-14): status 2 is a new ship's state, cleared at its first recalculation; OpenSE4
+    imports it as finished.
 11. Whether fighters and drones can cloak at all (the flag is not saved for them).
-12. Why the turn counter starts at 367 (nothing reads it).
-13. The best rule for finding a system's type on import (§3.5).
+    **Answer** (confirmed: binary, 2026-10-14): they can, and lose the cloak on saving, as the
+    flag's absence says.
+12. Why the turn counter starts at 367 (nothing reads it). **Answer** (confirmed: binary,
+    2026-10-14): it starts there, goes up by one per turn and is read by nothing.
+13. The best rule for finding a system's type on import (§3.5). (A choice for OpenSE4, left
+    as it is on 2026-10-14.)
 14. `playerTurn.started` and the turn-based turn state on import: a loaded turn-based
     game opened directly on the current player's main window (observed, with the large
     sample). **Answered (observed)** for a file without the autosave and hand-over flags
@@ -1677,7 +1701,10 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     - The autosave and hand-over flags (§3.1) open the next-player screen on loading, and a
       loaded hand-over file starts the turn of the empire it names (spec 05 §9.1). Writing
       one of them might let the original carry out the start itself, but how a game on one
-      machine (play style 1) treats them has not been tried.
+      machine (play style 1) treats them has not been tried. **In part answered** (confirmed:
+      binary, 2026-10-14): a loaded turn-based game starts no turn unless the autosave flag
+      (any play style) or the hand-over flag (different machines only) is set; then Next
+      Player shows and the current player's turn starts.
 23. **The options' codes and sums in files before 1.72 (inferred).** §5.2 gives the
     options' game code, turn code, program byte sum and seven data-set checksums two gates,
     1.42 and 1.72, and a 1.58 file holds seven of the ten ints (all 0 in the tutorial's
@@ -1724,12 +1751,25 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     in the original's (`screens/setup.cpp` `saveToFile`, `ClassicSettings::setupSavesDesigns`).
 27. **The game seed after a loaded or generated map.** After Load Map or Generate Map Now,
     Begin Game makes no quadrant; which seed the game then keeps is not known (spec 01).
+    **Answer** (confirmed: binary, 2026-10-14): a new quadrant seeds the generator from the
+    clock, draws the game seed as R(9999) and reseeds with it; after Load Map or Generate Map
+    Now, Begin Game draws no seed: the stored seed keeps the session's previous value and the
+    sequence just continues. OpenSE4 keeps its own seed and generator state, so nothing
+    follows from it (PARITY_GAPS).
 28. **Map files of a finite-resources game (§14).** A planet's values are written as they
     are, so a map saved from a finite-resources game stores the remaining stocks, which a
-    normal game reads as percentages (inferred).
+    normal game reads as percentages (inferred). **Answer** (confirmed: binary, 2026-10-14):
+    map files carry no options and are read without conversion, as said.
 29. **The map editor's files (§14).** Whether the separate map-editor program of the
     install writes this same format was not analysed; no `.map` sample exists on this
-    machine.
+    machine. (Still open on 2026-10-14: the map editor is a separate program, outside the
+    permission to analyse the game's executable; its strings share the version text and the
+    map messages, which suggests the same format.)
+30. **Choices of 2026-10-14 (inferred).** At game creation the default design-type and
+    colony-type names an empire's lists lack are found ignoring letter case (Q25); and that
+    nothing between Game Setup and Save Game removes the designs a refused Add Existing left
+    in the list (§13.4), which OpenSE4's import keeps as free slots. Do the original's
+    lists compare names exactly, and does anything else remove those designs?
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 

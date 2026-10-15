@@ -1905,3 +1905,17 @@ highlighted, and an X marks each empire that has met one.
     occupancy test then reads past its table, with no defined result (§4.3). The stock data
     never uses them. The engine keeps placing them on `Ring 7` with a warning, a stated
     OpenSE4 choice.
+
+47. **Stellar manipulation by a group: OpenSE4's choices of 2026-10-14 (inferred).** The
+    complete listing settled that every member of the group with a stellar-manipulation
+    ability acts, and that the last member tried decides the order (§9). Implementing it left:
+    (a) a group none of whose members has any such ability fails the order with the
+    "required component" refusal; what is the original's result when the loop tries nobody?
+    (b) "Any such ability" is taken from the member's working parts, so a member whose only
+    device is destroyed is passed over rather than refused; does the original look at the
+    design, damaged parts included? (c) Construct reports to the empires present once the
+    builder's used-up ships are gone; does the original report before destroying them?
+    (d) Closing a warp point that an earlier member closed is a harmless no-op (§9 table),
+    so two closers in a fleet succeed; does the original refuse the second? (e) The Quick
+    Start styles' race sets: whether any stock style's set does not fit 2,000 racial points
+    (so that the player's race differs from its first set) was not checked (§2.1).
