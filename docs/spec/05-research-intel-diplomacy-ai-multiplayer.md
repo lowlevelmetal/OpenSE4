@@ -4990,7 +4990,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     rules of the second round (OpenSE4 since 2026-10-03; 240 seeds, spec 07 "Pace after the
     second debugger round"), ours found or take 4.1 colonies and lose 1.9 per empire and 25
     turns, fight 2.6 battles at an enemy colony, 1.8 of them ending with the colony gone, and
-    hold 15.7 colonies at turn 100 (before them 3.8, 1.2, 2.2, 1.1 and 16.6).
+    hold 15.7 colonies at turn 100 (before them 3.8, 1.2, 2.2, 1.1 and 16.6). With the
+    minister rules of 2026-10-14 (spec 07 "Pace after the 2026-10-14 minister rules"; a
+    different program, so the figures are its own): colonies founded or taken 4.1 → 4.4 and
+    lost 2.0 → 2.2 per empire and 25 turns, 15.3 → 15.1 colonies at turn 100.
 77. **Enemy colonies inside the territories** (question 76). The original's defend lists
     held 1.2–3.3 enemy colony entries per empire-turn of turns 51–100 (four games), ours 2.4
     and with the Defend (Short Term) fleet rule 1.2 (more of them go); the original founds
