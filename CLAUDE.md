@@ -97,7 +97,7 @@ OPENSE4_SDK_FIXTURES_OUT=/tmp/fx.json ./build/debug/tests/opense4_tests -tc="sdk
   (`serial::hash(s, 8)`, temporarily), the engine must reproduce the determinism goldens
   recorded before the SDK (tests/test_determinism.cpp at fc5a7f2^) and the serialize
   test's 0x933770c7b7260925. New state is read and written only from the format that
-  added it; 0.14.0 shipped save format 10 and protocol 9, so the next new field bumps them.
+  added it; 0.15.0 shipped save format 11 and protocol 10, so the next new field bumps them.
 - Both render backends must look the same. Shaders live once in `shaders/`.
 - Stay warning-free under `-Wall -Wextra -Wpedantic -Wshadow -Wconversion`.
 - Tests use only our own fixtures (`tests/fixtures/`). Anything that touches the

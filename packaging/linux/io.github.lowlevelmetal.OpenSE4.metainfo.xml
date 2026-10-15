@@ -72,6 +72,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.15.0" date="2026-10-15" type="development">
+      <description>
+        <p>An accuracy pass against the original game's complete code: about 150 differences corrected in movement and its animation, orders, cargo, colonization, the economy, events, combat, the computer players, diplomacy, intelligence, the galaxy, setup, saved games and the interface. OpenSE4's own additions are kept as options that start off. Network protocol 10 and save format 11: does not play with 0.14.x, reads its saves.</p>
+      </description>
+    </release>
     <release version="0.14.1" date="2026-10-14" type="development">
       <description>
         <p>Ships move as in the original: each group makes its whole move square by square before the next one starts, and the view follows your ships as they go; an option shows every group moving at once instead. Plays with 0.14.0 and reads its saves.</p>
