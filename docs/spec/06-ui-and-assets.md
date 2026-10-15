@@ -1114,9 +1114,16 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
   Chances, the chance of a weapon that is intact and ready is right-aligned at the cell's
   top right. Since 2026-10-14 ours follows (`weaponRows`, `combat_logic.cpp`): a unit
   group's or planet's row for each living unit or platform (a weapon whose units are all
-  dead keeps one row, shown destroyed; inferred), a fighter group's rows sharing the one
-  shot its identical weapons make together (spec 04 §6), so a tick on any of them fires it;
-  it used to group a unit group's weapon with an instance count under the chance.
+  dead keeps one row, shown destroyed; inferred); it used to group a unit group's weapon
+  with an instance count under the chance. **A fighter group's rows** (confirmed: binary;
+  2026-10-15): when one ticked row fires (ready, intact, able to damage the target there),
+  the shot takes every intact row of the group with the same component and mount, ticked
+  or not, given the target or not, even one still reloading, whose reload starts again;
+  each rolls on its own and they make one combined hit (spec 04 §6), and every row that
+  fired loses its tick. Rows of another component or mount fire only on their own ticks.
+  Ours does this since 2026-10-15: the group's identical weapons are one weapon of the
+  engine with one reload, the window sends one Fire order for them and unticks all their
+  rows when it fires.
 - **Pointers** (the install's `.cur` files): Normal by default; Target over another
   empire's piece while one of ours is selected; one of the eight Arrow pointers over an
   empty square while a piece is selected, by the signs of the column and row offsets from

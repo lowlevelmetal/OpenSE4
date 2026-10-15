@@ -210,8 +210,20 @@ void flush(TacticalFight& f) {
             auto& [fired, first] = volleys[q.volley];
             if (why.empty()) {
                 fired = true;
-                // A weapon that fired is unticked (spec 06 §1.10.1).
-                if (u.ticksOf == o.piece && q.row >= 0 && size_t(q.row) < u.ticks.size()) u.ticks[size_t(q.row)] = 0;
+                // A weapon that fired is unticked (spec 06 §1.10.1); a fighter
+                // group's shot takes every row of the same component and mount,
+                // which all count as fired (confirmed: binary).
+                if (u.ticksOf == o.piece && q.row >= 0 && size_t(q.row) < u.ticks.size()) {
+                    u.ticks[size_t(q.row)] = 0;
+                    if (size_t(o.piece) < b.pieces().size()) {
+                        const TacticalPiece& p = b.pieces()[size_t(o.piece)];
+                        if (p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Fighter) {
+                            const std::vector<WeaponRow> rows = weaponRows(p);
+                            for (size_t r = 0; r < rows.size() && r < u.ticks.size(); ++r)
+                                if (rows[r].weapon == o.weapon) u.ticks[r] = 0;
+                        }
+                    }
+                }
             } else if (first.empty()) {
                 first = std::move(why);
             }
@@ -865,9 +877,18 @@ private:
         std::vector<std::pair<TacticalOrder, int>> out;
         const TacticalUi& u = state();
         if (u.ticksOf != u.selected || u.selected < 0 || size_t(u.selected) >= b.pieces().size()) return out;
-        const std::vector<WeaponRow> rows = weaponRows(b.pieces()[size_t(u.selected)]);
+        const TacticalPiece& p = b.pieces()[size_t(u.selected)];
+        const std::vector<WeaponRow> rows = weaponRows(p);
+        // A fighter group's rows of one component and mount make one shot
+        // together, started by its first ticked row (spec 04 §6, confirmed: binary).
+        const bool fighters = p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Fighter;
+        std::vector<int> shot;
         for (size_t r = 0; r < u.ticks.size() && r < rows.size(); ++r) {
             if (!u.ticks[r]) continue;
+            if (fighters) {
+                if (std::find(shot.begin(), shot.end(), rows[r].weapon) != shot.end()) continue;
+                shot.push_back(rows[r].weapon);
+            }
             TacticalOrder o{OK::Fire, b.phaseEmpire(), u.selected, target};
             o.weapon = rows[r].weapon;
             o.instance = rows[r].instance;
