@@ -453,7 +453,8 @@ ability never changes anything in the stock game.
   supply step, the start of a battle that decloaks a piece, a colony's Decloak), a logged
   event, a package's planet or vehicle and a rebellion project. Detection is worked out
   from the current positions and sensors. A timed event's start message counts as the
-  event being logged (inferred, question 57). The colony's automatic decloak at a
+  event being logged (confirmed: binary, question 57; a strike's only when its message has a
+  text). The colony's automatic decloak at a
   recalculation is spec 01 §14 Q44 (`diplomacy::recalculateColony`, the check in the
   colony's system). In a simultaneous game a colony's Decloak makes only the acting
   empire's side of a contact (`firstContactIn` with its `onlySide`, spec 01 §14 Q44); a
@@ -4246,6 +4247,13 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the event has a location, whoever its messages reach (inferred). To verify: does the
     start message of a timed event run the check too, and does an event whose messages
     reach nobody (`Message To` None) run it?
+    **Answer** (confirmed: binary, the 2026-10-14 accuracy pass): yes to both. A timed
+    event's start message runs the check in its system, and the check follows the message
+    step unconditionally, whatever `Message To` says, None included. A strike runs it (sight
+    update, then contact in the event's system) whenever the strike's picked message has a
+    text, whether or not the effect took; an immediate event only when its effect took.
+    Since 2026-10-14 ours follows (`events.cpp` `sendMessages`, its `strike` mark); the
+    strike's message when its effect did not take is the economy pass's (spec 05 §4).
 58. **The order of step 2's candidates** (§7.4 "Demands the AI starts"): each system where
     the AI has a colony and sees a ship (or holds a colony) of X is a candidate that needs
     a 1-in-3 roll. OpenSE4 tries the candidate systems in system order and takes the first

@@ -1234,6 +1234,29 @@ TEST_CASE("events: a logged event runs the first-contact check in its system (sp
     }
 }
 
+TEST_CASE("events: a strike runs the first-contact check only when its message has a text (spec 05 Q57)") {
+    for (const bool text : {false, true}) {
+        CAPTURE(text);
+        ruleset::EventType ev = event(Effect::PlanetPopulationChange, -1, "Low", "Owner", 2);
+        ev.startMessages.clear();   // no start message: no check when it begins
+        if (!text) ev.messages = {{"Omen", ""}};
+        auto r = rulesWith({ev});
+        GameState s = newPoliticsGame();
+        const ObjectId homeB = homeworld(s, kB).planet;
+        VehicleId shipOfA;
+        for (const Vehicle& v : s.vehicles)
+            if (v.owner == kA) shipOfA = v.id;
+        s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeB);
+        TurnContext ctx = context(*r, s);
+        Rng rng(1);
+        REQUIRE(events::trigger(ctx, 0, onObject(kB, homeB), rng));
+        REQUIRE_FALSE(diplomacy::inContact(s, kA, kB));
+        s.turn += 2;
+        events::fireDueEvents(ctx, rng);
+        CHECK(diplomacy::inContact(s, kA, kB) == text);
+    }
+}
+
 TEST_CASE("events: a rebellion project runs the first-contact check in the planet's system") {
     GameState s = newPoliticsGame(5, 3, 12);
     // B's second colony, where A's ship sits, rebels through A's project.

@@ -1503,9 +1503,12 @@ std::vector<EmpireId> recipients(const GameState& s, const ruleset::EventType& e
     return out;
 }
 
+// `strike`: a timed event striking, whose first-contact check runs only when
+// the picked message has a text (spec 05 §4, confirmed: binary).
 void sendMessages(TurnContext& ctx, const ruleset::EventType& ev, std::span<const ruleset::Message> messages, const Target& t,
-                  const effects::Tokens& tokens, std::optional<Location> where, Rng& rng) {
+                  const effects::Tokens& tokens, std::optional<Location> where, Rng& rng, bool strike = false) {
     const ruleset::Message* m = effects::pickMessage(messages, rng);
+    const bool hasText = m && !m->text.empty();
     std::string title = m ? effects::substitute(m->title, tokens) : std::string{};
     std::string text = m ? effects::substitute(m->text, tokens) : std::string{};
     if (title.empty()) {
@@ -1527,8 +1530,10 @@ void sendMessages(TurnContext& ctx, const ruleset::EventType& ev, std::span<cons
     }
     // Once the event is logged, sight is updated and the first-contact check
     // runs in its system (spec 05 §3.1, confirmed: binary). A timed event's
-    // start message counts as such a log too (inferred, spec 05 question 57).
-    if (where) {
+    // start message counts as such a log too (spec 05 question 57, confirmed:
+    // binary); a strike's only when its message has a text (accuracy pass
+    // 2026-10-14: the strike's message itself is the economy pass's item 7).
+    if (where && (!strike || hasText)) {
         sight::updateKnowledge(ctx.rules, ctx.state);
         diplomacy::firstContactIn(ctx, where->system);
     }
@@ -1541,7 +1546,7 @@ effects::Tokens baseTokens(const GameState& s, const Target& t, const effects::T
     return tokens;
 }
 
-void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng) {
+void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng, bool strike = false) {
     const ruleset::EventType& ev = ctx.rules.data().eventTypes[record];
     const auto effect = effects::parseEffect(ev.type);
     if (!effect) return;
@@ -1550,7 +1555,7 @@ void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng) {
     if (!out.applied) return;
     effects::Tokens tokens = baseTokens(ctx.state, t, out.tokens);
     tokens.actualAmount = out.actual < 0 ? -out.actual : out.actual;
-    sendMessages(ctx, ev, ev.messages, t, tokens, where, rng);
+    sendMessages(ctx, ev, ev.messages, t, tokens, where, rng, strike);
     if (ctx.hooks) {
         // A mod's event (hooks.hpp): a classic event took effect.
         HookArgs a;
@@ -1810,7 +1815,7 @@ void fireDueEvents(TurnContext& ctx, Rng& rng) {
         if (const Vehicle* v = t.vehicle.valid() ? s.vehicle(t.vehicle) : nullptr) t.empire = v->owner;
         else if (t.object.valid()) t.empire = s.colony(t.object) ? s.colony(t.object)->owner : EmpireId{};
         if (!targetExists(r, s, t)) continue;
-        fire(ctx, pe.eventType, t, rng);
+        fire(ctx, pe.eventType, t, rng, true);
     }
 }
 
