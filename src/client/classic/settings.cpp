@@ -66,6 +66,7 @@ std::string settingsToToml(const ClassicSettings& s) {
     toml::table options;
     for (const BoolOption& o : kBoolOptions) options.insert(o.key, s.*o.member);
     options.insert("system_movement_speed", s.systemMovementSpeed);
+    options.insert("ship_movement", s.shipsMoveAllAtOnce ? "all-at-once" : "one-group-at-a-time");
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_percent", s.musicVolume);
@@ -120,6 +121,8 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
             if (auto v = (*options)[o.key].value<bool>()) s.*o.member = *v;
     // One of the speeds the Options window offers (a whole number reads too).
     if (auto v = root["options"]["system_movement_speed"].value<double>()) s.systemMovementSpeed = kMovementSpeeds[movementSpeedStep(*v)];
+    // Anything but "all-at-once" is the default, one group at a time.
+    if (auto v = root["options"]["ship_movement"].value<std::string>()) s.shipsMoveAllAtOnce = *v == "all-at-once";
     if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
     if (auto v = root["sound"]["music_percent"].value<int64_t>()) {
         // The nearest of the five steps.

@@ -120,6 +120,10 @@ public:
         bool animate = false;            // "animate ship movement in the system window"
         float cellPixels = 50.0f;        // the system panel's sector size, frame pixels
         MovementPace pace;               // the speed of the animation
+        // OpenSE4's "all at once" (Options, settings.hpp): a day's entries all
+        // start together, each vehicle's own one after another; off, each
+        // entry on its own after the one before, as the original (§7 Q62).
+        bool allAtOnce = false;
         std::function<bool(game::VehicleId)> seen;   // the viewer sees it (else never animated)
         std::function<bool(game::VehicleId)> turns;  // its mini turns to its heading
     };
@@ -128,7 +132,7 @@ public:
 
     bool active() const { return mode_ != Mode::Off; }
     // A day's entries are being animated: the replay's keys are ignored (§7 Q62).
-    bool animating() const { return animIndex_ < anims_.size(); }
+    bool animating() const { return !anims_.empty(); }
     int day() const { return day_; }
     // Ctrl+U: the object the view follows now.
     std::optional<game::VehicleId> following() const;
@@ -157,6 +161,7 @@ private:
         game::Location from, to;
         double angle0 = 0.0, angle1 = 0.0;  // degrees, the shorter way round (clockwise for a half-turn)
         int turnFrames = 0, slideFrames = 0;
+        double start = 0.0, end = 0.0;      // once the day's animations began (started_)
     };
     void reset();
     void applyDay(const Frame& f);
@@ -170,12 +175,12 @@ private:
     std::map<game::VehicleId, game::Location> where_;
     std::map<game::VehicleId, int> headings_;
     std::map<game::ObjectId, game::EmpireId> colonies_;
-    std::vector<Animation> anims_;
-    size_t animIndex_ = 0;
-    int frame_ = 0;               // frames of the current entry drawn so far (from 1 once it started)
-    double animStart_ = 0.0;      // when its first frame was drawn
+    std::vector<Animation> anims_;   // the day's, until the last is over
+    double now_ = 0.0;            // the time of the last update
+    double dayEnd_ = 0.0;         // when the day's last entry is over
     MovementPace animPace_;       // the speed of the day's entries, kept to the day's end
-    bool started_ = false;        // the current entry's first frame is drawn
+    bool animAllAtOnce_ = false;  // how they follow each other, kept to the day's end
+    bool started_ = false;        // the day's first frame is drawn (the entries' times are set)
     int pending_ = 0;        // step presses not yet carried out
     std::vector<game::Vehicle> view_;
 };

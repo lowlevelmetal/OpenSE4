@@ -1068,25 +1068,32 @@ TEST_CASE("client logic: a ship that moves in the shown system turns, then glide
         frame(t + 0.36 + 0.1 + 1.001, {sys, Sector{4, 2}}, 6);
         CHECK(g.find(ship) == nullptr);
     }
-    SUBCASE("a second move mid-glide carries on from where the ship is drawn") {
-        frame(t += 0.0167, {sys, Sector{4, 2}}, 6);
-        frame(t += 0.4, {sys, Sector{4, 2}}, 6);
-        const Vec2 drawn = ShipGlides::position(*g.find(ship));
-        frame(t += 0.0167, {sys, Sector{4, 8}}, 4);
+    SUBCASE("a second move found mid-glide waits for the first, then glides on from where it ended") {
+        frame(t += 0.0167, {sys, Sector{4, 2}}, 6);   // a half-turn (0.36 s), then two squares (0.1 s)
+        const double began = t;
+        frame(t += 0.2, {sys, Sector{4, 2}}, 6);
+        frame(t += 0.0167, {sys, Sector{4, 8}}, 4);   // six squares south
+        REQUIRE(g.find(ship));
+        CHECK(g.find(ship)->to == Vec2{4.5f, 2.5f});   // still the first move
+        CHECK(g.heldAt(ship) == Location{sys, Sector{6, 2}});
+        frame(began + 0.4605, {sys, Sector{4, 8}}, 4);
         const ShipGlides::Glide* next = g.find(ship);
         REQUIRE(next != nullptr);
-        CHECK(next->from.x == doctest::Approx(drawn.x));
+        CHECK(next->from == Vec2{4.5f, 2.5f});
         CHECK(next->to == Vec2{4.5f, 8.5f});
+        CHECK(next->start == doctest::Approx(began + 0.46));   // when the first was over
+        CHECK(next->angle0 == doctest::Approx(270.0));        // from the heading the first left it with
     }
-    SUBCASE("a second look in the same frame starts the glides of a change made since, and changes nothing else") {
+    SUBCASE("a second look in the same frame takes a change made since, and changes nothing else") {
         frame(t += 0.0167, {sys, Sector{7, 2}}, 2);
         REQUIRE(g.find(ship));
         const int drawn = g.find(ship)->frame;
         frame(t, {sys, Sector{7, 2}}, 2);
         CHECK(g.find(ship)->frame == drawn);
-        frame(t, {sys, Sector{7, 3}}, 4);   // moved again at once: a new glide from where it is drawn
+        frame(t, {sys, Sector{7, 3}}, 4);   // moved again at once: queued after the glide under way
         REQUIRE(g.find(ship));
-        CHECK(g.find(ship)->to == Vec2{7.5f, 3.5f});
+        CHECK(g.find(ship)->to == Vec2{7.5f, 2.5f});
+        CHECK(g.heldAt(ship) == Location{sys, Sector{6, 2}});
     }
     SUBCASE("warps, view changes and the setting do not glide") {
         frame(2.0e3, {other, Sector{6, 2}});                   // warped out
@@ -1104,6 +1111,196 @@ TEST_CASE("client logic: a ship that moves in the shown system turns, then glide
         REQUIRE(g.active());
         frame(t += 0.0167, {sys, Sector{9, 2}}, 2, other);
         CHECK_FALSE(g.active());
+    }
+}
+
+// The queue of an engine call's steps (spec 06 §2.4 "Moves as they are made"):
+// three vehicles in system 0, a fleet of two and a lone ship, all the
+// player's own and seen; the first frame sees them where they start.
+struct GlideQueue {
+    const SystemId sys{0u}, other{1u};
+    const VehicleId a{1u}, mate{2u}, b{3u}, c{4u};
+    ShipGlides g;
+    std::vector<ShipGlides::Seen> before{{a, {sys, Sector{2, 2}}, 0, true, true, true},
+                                         {mate, {sys, Sector{2, 2}}, 0, true, true, true},
+                                         {b, {sys, Sector{6, 6}}, 0, true, true, true},
+                                         {c, {other, Sector{1, 1}}, 0, true, true, true}};
+    // Where the engine left them: the fleet two squares east, B one north, C one east elsewhere.
+    std::vector<ShipGlides::Seen> after{{a, {sys, Sector{4, 2}}, 2, true, true, true},
+                                        {mate, {sys, Sector{4, 2}}, 2, true, true, true},
+                                        {b, {sys, Sector{6, 5}}, 0, true, true, true},
+                                        {c, {other, Sector{2, 1}}, 2, true, true, true}};
+    GlideQueue() { g.track(0.0, sys, true, before); }
+    static MovementStep step(std::vector<VehicleId> members, Location from, Location to, int heading) {
+        MovementStep st;
+        st.members = std::move(members);
+        st.lead = st.members.front();
+        st.from = from;
+        st.to = to;
+        st.heading = heading;
+        return st;
+    }
+    MovementStep fleet1() const { return step({a, mate}, {sys, Sector{2, 2}}, {sys, Sector{3, 2}}, 2); }
+    MovementStep fleet2() const { return step({a, mate}, {sys, Sector{3, 2}}, {sys, Sector{4, 2}}, 2); }
+    MovementStep north() const { return step({b}, {sys, Sector{6, 6}}, {sys, Sector{6, 5}}, 0); }
+    MovementStep away() const { return step({c}, {other, Sector{1, 1}}, {other, Sector{2, 1}}, 2); }
+    void frame(double now, ShipGlides::Order order = ShipGlides::Order::OneGroupAtATime, double pause = 0.0) {
+        g.track(now, sys, true, after, 50.0f, pause, {}, order);
+    }
+};
+
+TEST_CASE("client logic: an engine call's steps play one after another, each square its own turn and slide, one group after another") {
+    GlideQueue q;
+    const MovementStep steps[] = {q.fleet1(), q.fleet2(), q.north()};
+    q.g.enqueue(steps);
+    q.frame(1.0);
+    // The fleet's first square: one sprite, its first vehicle's, turning a quarter (18 frames of 10 ms), then 50 of 1 ms.
+    const ShipGlides::Glide* fleet = q.g.find(q.a);
+    REQUIRE(fleet != nullptr);
+    CHECK(q.g.find(q.mate) == fleet);
+    CHECK(fleet->lead == q.a);
+    CHECK(fleet->from == Vec2{2.5f, 2.5f});
+    CHECK(fleet->to == Vec2{3.5f, 2.5f});
+    CHECK(fleet->turnFrames == 18);
+    CHECK(fleet->slideFrames == 50);
+    CHECK(ShipGlides::angle(*fleet) == doctest::Approx(5.0));
+    // B waits on its square, facing as it did, until the fleet's run is over.
+    CHECK(q.g.find(q.b) == nullptr);
+    CHECK(q.g.heldAt(q.b) == Location{q.sys, Sector{6, 6}});
+    CHECK(q.g.heldHeading(q.b) == 0);
+    CHECK(q.g.moving(q.b));
+    CHECK(q.g.active());
+
+    // 0.23 s later the second square begins, from where the first ended, with no turn.
+    q.frame(1.2305);
+    fleet = q.g.find(q.a);
+    REQUIRE(fleet != nullptr);
+    CHECK(fleet->from == Vec2{3.5f, 2.5f});
+    CHECK(fleet->start == doctest::Approx(1.23));
+    CHECK(fleet->turnFrames == 0);
+    CHECK(ShipGlides::position(*fleet).x == doctest::Approx(3.5f + 1.0f / 50.0f));
+    CHECK(q.g.heldAt(q.a) == Location{q.sys, Sector{3, 2}});
+    CHECK(q.g.find(q.b) == nullptr);
+
+    // Then B, when the fleet has arrived; the fleet is drawn where the game has it.
+    q.frame(1.2805);
+    CHECK(q.g.find(q.a) == nullptr);
+    CHECK_FALSE(q.g.moving(q.a));
+    REQUIRE(q.g.find(q.b) != nullptr);
+    CHECK(q.g.find(q.b)->start == doctest::Approx(1.28));
+    CHECK(ShipGlides::position(*q.g.find(q.b)).y == doctest::Approx(6.5f - 1.0f / 50.0f));
+    q.frame(1.3305);
+    CHECK_FALSE(q.g.active());
+    CHECK_FALSE(q.g.moving(q.b));
+
+    SUBCASE("the pause comes after each step") {
+        GlideQueue p;
+        p.g.enqueue(steps);
+        p.frame(1.0, ShipGlides::Order::OneGroupAtATime, 0.5);
+        p.frame(1.2305, ShipGlides::Order::OneGroupAtATime, 0.5);
+        REQUIRE(p.g.find(p.a));
+        CHECK(p.g.find(p.a)->from == Vec2{2.5f, 2.5f});   // arrived, pausing on the new square
+        CHECK(ShipGlides::position(*p.g.find(p.a)).x == doctest::Approx(3.5f));
+        p.frame(1.7305, ShipGlides::Order::OneGroupAtATime, 0.5);
+        REQUIRE(p.g.find(p.a));
+        CHECK(p.g.find(p.a)->from == Vec2{3.5f, 2.5f});
+        CHECK(p.g.find(p.a)->start == doctest::Approx(1.73));
+    }
+    SUBCASE("several steps over in one frame: the next starts when the one before ended") {
+        GlideQueue p;
+        p.g.enqueue(steps);
+        p.frame(1.0);
+        p.frame(1.3005);   // both of the fleet's squares are over; B began at 1.28
+        REQUIRE(p.g.find(p.b));
+        CHECK(p.g.find(p.b)->start == doctest::Approx(1.28));
+        CHECK(p.g.find(p.b)->frame == 21);
+    }
+}
+
+TEST_CASE("client logic: with all at once every group starts together, each with its own steps in turn") {
+    GlideQueue q;
+    const MovementStep steps[] = {q.fleet1(), q.fleet2(), q.north()};
+    q.g.enqueue(steps);
+    q.frame(1.0, ShipGlides::Order::AllAtOnce);
+    REQUIRE(q.g.find(q.a));
+    REQUIRE(q.g.find(q.b));
+    CHECK(q.g.find(q.a)->to == Vec2{3.5f, 2.5f});
+    CHECK(q.g.find(q.b)->start == doctest::Approx(1.0));
+    CHECK(q.g.all().size() == 2);
+    q.frame(1.2305, ShipGlides::Order::AllAtOnce);
+    REQUIRE(q.g.find(q.a));
+    CHECK(q.g.find(q.a)->from == Vec2{3.5f, 2.5f});   // the fleet's second square after its first
+    CHECK(q.g.find(q.a)->start == doctest::Approx(1.23));
+    CHECK(q.g.find(q.b) == nullptr);                   // B arrived at 1.05
+    q.frame(1.2805, ShipGlides::Order::AllAtOnce);
+    CHECK_FALSE(q.g.active());
+}
+
+TEST_CASE("client logic: steps not shown take no time but keep their turn; a marker waits for the steps before it") {
+    SUBCASE("another system, a jump, a vehicle not seen before") {
+        GlideQueue q;
+        q.after.push_back({VehicleId{9u}, {q.sys, Sector{9, 9}}, 0, true, true, false});   // a foreign ship, first seen now
+        q.after[2].location = {q.other, Sector{0, 6}};                                    // B jumps out instead
+        const MovementStep steps[] = {q.away(), GlideQueue::step({VehicleId{9u}}, {q.sys, Sector{9, 8}}, {q.sys, Sector{9, 9}}, 4),
+                                      GlideQueue::step({q.b}, {q.sys, Sector{6, 6}}, {q.other, Sector{0, 6}}, 0), q.fleet1()};
+        q.after[0].location = q.after[1].location = {q.sys, Sector{3, 2}};
+        q.g.enqueue(steps);
+        q.frame(1.0);
+        // The fleet's step begins at once: the others were done in their turn, without a wait.
+        REQUIRE(q.g.find(q.a));
+        CHECK(q.g.find(q.a)->start == doctest::Approx(1.0));
+        CHECK_FALSE(q.g.moving(q.b));
+        CHECK_FALSE(q.g.moving(q.c));
+        CHECK(q.g.find(VehicleId{9u}) == nullptr);
+    }
+    SUBCASE("a marker") {
+        GlideQueue q;
+        const MovementStep fleet[] = {q.fleet1(), q.fleet2()};
+        const MovementStep lone[] = {q.north()};
+        q.g.enqueue(fleet);
+        q.g.enqueueMarker(7);
+        q.g.enqueue(lone);
+        q.frame(1.0);
+        CHECK(q.g.takeReached().empty());
+        q.frame(1.2805);   // the fleet's run is over: the marker is reached, and the queue stops there
+        CHECK(q.g.takeReached() == std::vector<uint64_t>{7});
+        CHECK(q.g.find(q.b) == nullptr);
+        CHECK(q.g.active());
+        q.frame(1.2805);   // called again (the view followed): B goes on from when the fleet arrived
+        REQUIRE(q.g.find(q.b));
+        CHECK(q.g.find(q.b)->start == doctest::Approx(1.28));
+    }
+    SUBCASE("skipped, or the animation off: everything at once, every marker reached") {
+        for (const bool off : {false, true}) {
+            CAPTURE(off);
+            GlideQueue q;
+            const MovementStep fleet[] = {q.fleet1(), q.fleet2()};
+            q.g.enqueue(fleet);
+            q.g.enqueueMarker(3);
+            q.g.enqueueMarker(4);
+            if (off) {
+                q.g.track(1.0, q.sys, false, q.after);
+            } else {
+                q.frame(1.0);
+                q.g.finish();
+            }
+            CHECK_FALSE(q.g.active());
+            CHECK_FALSE(q.g.moving(q.a));
+            CHECK(q.g.find(q.a) == nullptr);
+            CHECK(q.g.takeReached() == std::vector<uint64_t>{3, 4});
+        }
+    }
+    SUBCASE("another system shown: the glide under way ends, the queue goes on there") {
+        GlideQueue q;
+        const MovementStep steps[] = {q.fleet1(), q.away()};
+        q.after[0].location = q.after[1].location = {q.sys, Sector{3, 2}};
+        q.g.enqueue(steps);
+        q.frame(1.0);
+        REQUIRE(q.g.find(q.a));
+        q.g.track(1.1, q.other, true, q.after);
+        CHECK(q.g.find(q.a) == nullptr);
+        REQUIRE(q.g.find(q.c));   // C's step, in the system now shown
+        CHECK(q.g.find(q.c)->start == doctest::Approx(1.1));
     }
 }
 

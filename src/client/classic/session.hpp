@@ -270,17 +270,27 @@ public:
     // carried out here (a failed Colonize, shown in a message box titled
     // "Colonize", spec 03 §8), oldest first; taking them forgets them.
     std::vector<game::PlayerMessage> takeMessages() { return std::exchange(messages_, {}); }
-    // Turn-based games: what the player's own groups did in the last call
-    // that carried orders out during its turn (an order given, the turn's
-    // start), in order, for the view that follows them (spec 06 §2.7).
-    // `liveStepsCall()` changes with each such call.
-    const std::vector<game::LiveStep>& liveSteps() const { return liveSteps_; }
-    uint64_t liveStepsCall() const { return liveStepsCall_; }
-    // Whether those steps came with the start of the player's turn (orders
-    // carried over), not with an order just given.
-    bool liveStepsAtTurnStart() const { return liveStepsAtTurnStart_; }
     // Called after a new turn begins (for the Log window auto-open etc.).
     std::function<void()> onNewTurn;
+
+    // What the movement animation shows of the engine calls that played the
+    // game (an order carried out, End Turn with the computer players' turns
+    // and the next human's turn start, a simultaneous turn processed here, a
+    // battle's answer that carried one on), in the order the engine made it
+    // (docs/spec/06 §2.4 "Moves as they are made", §2.7): every group's step
+    // (`step`), and, in a turn-based game during the local player's turn,
+    // the view following the player's own groups (`follow`: a group's run
+    // starts there, or it jumped through a warp point), marked `turnStart`
+    // when it came with the start of the player's turn (orders carried over)
+    // rather than with an order just given. A call a battle stopped made
+    // none: it is made again with the answer. Network and e-mail games' new
+    // states come without them. Taking them forgets them.
+    struct ShownMove {
+        std::optional<game::MovementStep> step;
+        std::optional<game::LiveStep> follow;
+        bool turnStart = false;
+    };
+    std::vector<ShownMove> takeMoves() { return std::exchange(moves_, {}); }
 
     // The game as the last engine call that carried orders out found it, for
     // the movement line drawn while its moves are shown (docs/spec/06 §2.4
@@ -471,11 +481,13 @@ private:
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
     std::vector<game::PlayerMessage> messages_;
-    std::vector<game::LiveStep> liveSteps_;
-    uint64_t liveStepsCall_ = 0;
-    bool liveStepsAtTurnStart_ = false;
-    // Takes a turn-based call's messages and steps for the local player.
-    void takeLive(game::TurnResult& res, bool turnStart);
+    // The steps of the engine call under way (runCall), and what takeMoves() gives.
+    std::vector<game::MovementStep> callSteps_;
+    std::vector<ShownMove> moves_;
+    // Takes a turn-based call's messages for the local player.
+    void takeLive(game::TurnResult& res);
+    // Adds the finished call's steps and the local player's own LiveSteps to moves_, in order.
+    void queueMoves(const game::TurnResult& res, bool turnStart);
     std::string autosaveNote_;
     // Turn-based games: the game turn whose autosave was written (or whose
     // first human turn this session began in): one autosave per game turn.

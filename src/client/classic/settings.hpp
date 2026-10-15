@@ -49,6 +49,13 @@ struct ClassicSettings {
     // divided by this, one of kMovementSpeeds (movement_pace.hpp). 1, the
     // original's waits, by default.
     double systemMovementSpeed = 1.0;
+    // How the moves of different groups follow each other in the system
+    // window (Options, under OpenSE4: "Ship movement"): one group's step after
+    // another, as the original shows them (the default), or every group at
+    // once, each one's steps in turn; also the days of the movement log
+    // replay (ship_glides.hpp, movement_replay.hpp). `ship_movement` in the
+    // file: "one-group-at-a-time" or "all-at-once".
+    bool shipsMoveAllAtOnce = false;
     // Sound effects and music fade out while the game's window is in the
     // background (another window has the focus, or it is minimized), the
     // music pausing where it is. On by default.

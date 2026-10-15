@@ -102,6 +102,28 @@ bool movementSpeedRow(UiContext& ui, ClassicSettings& s) {
     return true;
 }
 
+// OpenSE4's ship movement (ship_glides.hpp): pick one of the two lamps.
+bool shipMovementRows(UiContext& ui, ClassicSettings& s) {
+    bool changed = false;
+    const char* tip = "How the moves of different ships and fleets follow each other in the system window,\n"
+                      "and in the movement log replay. One group at a time: each group turns and slides\n"
+                      "square by square, the next after it, as the original shows them. All at once: every\n"
+                      "group starts together, each still square by square.";
+    bool one = !s.shipsMoveAllAtOnce;
+    if (lampToggle(ui, "Ship movement: one group at a time (the original's)", &one) && one) {
+        s.shipsMoveAllAtOnce = false;
+        changed = true;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+    bool all = s.shipsMoveAllAtOnce;
+    if (lampToggle(ui, "Ship movement: all at once", &all) && all) {
+        s.shipsMoveAllAtOnce = true;
+        changed = true;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+    return changed;
+}
+
 class OptionsScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
@@ -139,6 +161,7 @@ public:
         ImGui::Spacing();
         heading(ui, "OpenSE4");
         changed |= movementSpeedRow(ui, s);
+        changed |= shipMovementRows(ui, s);
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

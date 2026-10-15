@@ -1,6 +1,7 @@
 # The view follows the player's own turn-based moves (spec 06 §2.7, §7 Q102): a colony ship
 # ordered through a warp point of the home system jumps at once; the system panel then shows the
-# arrival system with the exit warp point's sector current, and the ship's report stays open.
+# arrival system with the exit warp point's sector current, and the ship's report stays open,
+# once the ship has glided to the warp point (the view follows as the moves are shown).
 # A training game of our own (tests/input/learn-orders) (docs/BUILDING.md "Input scripts").
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --learn-dir=tests/input/learn-orders --training=settlers --layout=1024x768 --size=1280x800
@@ -17,7 +18,12 @@ assert-present sector:home
 key W
 wait-until { picking = "warp" }
 click sector:0,8
-wait 10
+# It glides there square by square first, the view staying (spec 06 §2.4); the jump follows.
+wait 2
+assert-present sector:gliding
+assert-present sector:home
+wait-gone sector:gliding
+wait 2
 # The ship jumped: the arrival system is shown, its warp point's sector current (marked), the
 # report still the ship's.
 assert-absent sector:home
