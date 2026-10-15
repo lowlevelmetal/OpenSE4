@@ -387,8 +387,12 @@ std::pair<GameState, Location> battleScenario(int variant, uint64_t seed) {
         const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
         const VehicleId tr = spawn(s, frigate(s, ar.a, "Transport", 2, {"Test Cargo Bay", "Test Cargo Bay"}), there);
         s.vehicle(tr)->cargo.units.push_back({trooper, 4});
+        // A heavy escort, so that the platforms' guns fall and the troops land.
+        spawn(s, frigate(s, ar.a, "Bombard", 3, {"CT Big Gun", "CT Big Gun", "CT Big Armor"}), there);
         for (Vehicle& v : s.vehicles) v.location = there;
-        useStrategy(s, ar.a, {{"Primary Movement Strategy", "Drop Troops"}, {"Secondary Movement Strategy", "Optimal Weapons Range"}});
+        // The planet first (the largest piece, spec 04 §16), so that its guns fall in time.
+        useStrategy(s, ar.a,
+                    {{"Primary Movement Strategy", "Drop Troops"}, {"Secondary Movement Strategy", "Optimal Weapons Range"}, {"Targeting Priority 1", "Largest"}});
         ar.loc = there;
     }
     return {std::move(ar.s), ar.loc};
