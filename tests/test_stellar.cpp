@@ -6,6 +6,8 @@
 #include "client/classic/screens/ships_logic.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
+#include "game/serialize.hpp"
+#include "game/serialize_io.hpp"
 
 #include <doctest/doctest.h>
 
@@ -410,6 +412,41 @@ TEST_CASE("stellar manipulation: Construct builds the record at the order's posi
     // No size, or a position past the file's last record: the component is missing.
     CHECK(build("Mv World Builder", 0).second);
     CHECK(build("Mv World Builder", 200).second);
+}
+
+TEST_CASE("stellar manipulation: a format 10 game's Construct orders get their world's position when it is loaded (spec 01 §9)") {
+    const Rules r = sphereRules();
+    const uint8_t ring = planetSizePosition(r, "Ringworld"), sphere = planetSizePosition(r, "Sphereworld");
+    REQUIRE(ring > 0);
+    REQUIRE(sphere > 0);
+    World w(r);
+    const SystemId a = w.system("A");
+    const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});
+    const VehicleId big = w.spawn(w.ship(kA, "Big", 1, {"Mv Sphere Builder"}), at(a, 6, 6));
+    const VehicleId small = w.spawn(w.ship(kA, "Small", 1, {"Mv World Builder"}), at(a, 6, 6));
+    const VehicleId lost = w.spawn(w.ship(kA, "Lost", 1, {"Mv World Builder"}), at(a, 6, 6));
+    // Format 10 named the world by its Special Ability ID, 0 for the
+    // device's own value.
+    w.v(big).orders = {construct(star, 2)};
+    w.v(small).orders = {construct(star, 0)};
+    w.v(lost).orders = {construct(star, 9)};   // no world has that ID
+
+    // The game as format 10 wrote it, loaded and upgraded with the data set.
+    const std::vector<uint8_t> current = serializeState(w.s);
+    std::vector<uint8_t> payload;
+    serial::write(payload, w.s, 10);
+    std::vector<uint8_t> old = wrapEnvelope(std::string_view(reinterpret_cast<const char*>(current.data()), 8), payload);
+    old[8] = 10;
+    auto loaded = deserializeState(old);
+    REQUIRE_MESSAGE(loaded.has_value(), (loaded ? std::string{} : loaded.error()));
+    upgradeLoadedGame(r, *loaded, 10);
+    CHECK(loaded->vehicle(big)->orders.front().planetSize == sphere);
+    CHECK(loaded->vehicle(small)->orders.front().planetSize == ring);
+    CHECK(loaded->vehicle(lost)->orders.front().planetSize == 0);
+    // A format 11 game already holds positions: nothing changes.
+    GameState now = *loaded;
+    upgradeLoadedGame(r, now, 11);
+    CHECK(serializeState(now) == serializeState(*loaded));
 }
 
 TEST_CASE("stellar manipulation: the window lights a button by the vehicle's own ability and finds the target afterwards") {

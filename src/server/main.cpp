@@ -591,6 +591,7 @@ int runServer(std::span<char*> args) {
     if (o.has("load")) {
         auto game = game::loadGame(o.get("load"));
         if (!game) return fail(game.error(), 2);
+        game::upgradeLoadedGame(**rules, game->first, game->second.formatVersion);
         auto opened = openBots(o, externalSlotsOf(game->first), *timeout, cfg.gameName);
         if (!opened) return fail(opened.error(), 2);
         bots = std::move(*opened);

@@ -1224,6 +1224,7 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     }
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& s = loaded->first;
+    game::upgradeLoadedGame(*rules, s, loaded->second.formatVersion);
     // A game made with mods that change the game plays only with the same
     // ones (asset-only and interface-only mods may differ).
     if (const auto mods = game::modDifferences(s.mods, *rules, "the saved game"); !mods.empty()) {

@@ -199,6 +199,7 @@ std::expected<std::vector<std::pair<game::EmpireId, fs::path>>, std::string> wri
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& s = loaded->first;
     game::SaveInfo info = loaded->second;
+    game::upgradeLoadedGame(rules, s, info.formatVersion);
     readForTurn(rules, s);
     // A turn-based game between player turns plays on to the next human, as processTurn does first.
     if (game::turnBased(s) && !s.gameOver && !s.playerTurn.started) {
@@ -623,6 +624,7 @@ std::expected<ProcessReport, std::string> processGameFileWithKeys(const game::Ru
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& state = loaded->first;
     game::SaveInfo info = loaded->second;
+    game::upgradeLoadedGame(rules, state, info.formatVersion);
     if (!info.masterPasswordVerifier.empty() && !checkPassword(info.masterPasswordVerifier, options.masterPassword, info.gameId))
         return std::unexpected(std::string("This game has a master password, and the one given does not match."));
     // A master password of OpenSE4 0.6 moves to the current kind, from the password itself.

@@ -1,7 +1,9 @@
 #include "game/serialize.hpp"
 
+#include "game/abilities.hpp"
 #include "game/ai.hpp"
 #include "game/classic_save.hpp"
+#include "game/design.hpp"
 #include "game/rules.hpp"
 #include "game/serialize_io.hpp"
 
@@ -387,6 +389,43 @@ std::expected<std::pair<GameState, SaveInfo>, std::string> loadGame(const std::f
     // original: every load empties them (spec 05 §7.4, question 83).
     ai::forgetUnsavedLists(game->first);
     return game;
+}
+
+namespace {
+
+// The value of the Create Constructed Planet device that format 10 used for a
+// Construct order naming no world: the order holder's own, else that of the
+// first member of its fleet's group that has one (inferred, as format 10's
+// engine took the first member able to act).
+int64_t constructDeviceValue(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (const int64_t own = bestValue1(vehicleAbilities(r, s, v), AbilityKind::CreateConstructedPlanet); own > 0) return own;
+    if (const Fleet* f = s.fleet(v.fleet))
+        for (const VehicleId id : fleetGroup(s, *f))
+            if (const Vehicle* m = s.vehicle(id))
+                if (const int64_t value = bestValue1(vehicleAbilities(r, s, *m), AbilityKind::CreateConstructedPlanet); value > 0) return value;
+    return 0;
+}
+
+}  // namespace
+
+void upgradeLoadedGame(const Rules& r, GameState& s, uint32_t formatVersion) {
+    if (formatVersion >= 11) return;
+    // Format 10's Construct order named its world by the PlanetSize record's
+    // Special Ability ID, 0 for the one the device's value names; format 11's
+    // holds the record's position in PlanetSize.txt, from 1, as the
+    // original's order does (Order::planetSize, spec 01 §9). The position is
+    // the last constructed world with that ID, the one format 10's engine
+    // built; 0 when the data set has none.
+    const auto& sizes = r.data().planetSizes;
+    for (Vehicle& v : s.vehicles)
+        for (Order& o : v.orders) {
+            if (o.kind != OrderKind::StellarManipulation || o.amount != static_cast<int>(StellarAction::CreateConstructedPlanet)) continue;
+            const int64_t id = o.planetSize > 0 ? int64_t{o.planetSize} : constructDeviceValue(r, s, v);
+            uint8_t position = 0;
+            for (size_t i = 0; i < sizes.size() && i < 255; ++i)
+                if (sizes[i].constructed && sizes[i].specialAbilityId == id) position = static_cast<uint8_t>(i + 1);
+            o.planetSize = position;
+        }
 }
 
 std::expected<SaveInfo, std::string> readSaveInfo(const std::filesystem::path& file) {

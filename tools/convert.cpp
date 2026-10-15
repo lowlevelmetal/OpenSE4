@@ -223,6 +223,7 @@ int run(const Options& o) {
             return 1;
         }
         if (!loaded->second.gameName.empty()) gameName = loaded->second.gameName;
+        game::upgradeLoadedGame(*rules, loaded->first, loaded->second.formatVersion);
         if (o.to == "opense4") {
             std::fprintf(stderr, "%s is already an OpenSE4 saved game.\n", in.c_str());
             return 1;

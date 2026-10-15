@@ -157,6 +157,10 @@ class Rules;
 // - The Retrofit minister's yard (cmd::Retrofit::moveFirst, spec 05 §7.5
 //   *Retrofit*, spec 03 §19 Q78): retrofit there at once, or go there and
 //   retrofit on arrival. A format 10 command reads as the window's retrofit.
+// - A Construct order's world (Order::planetSize) is its position in
+//   PlanetSize.txt, as the original's order holds it (spec 01 §9); format
+//   10's held its Special Ability ID, converted with the data set once the
+//   game is loaded (upgradeLoadedGame).
 inline constexpr uint32_t kSaveVersion = 11;
 inline constexpr uint32_t kMinSaveVersion = 7;
 
@@ -214,6 +218,13 @@ std::expected<std::pair<GameState, SaveInfo>, std::string> deserializeSave(std::
 // Writes atomically (temporary file, then rename).
 std::expected<void, std::string> saveGame(const std::filesystem::path& file, const GameState& s, const SaveInfo& info);
 std::expected<std::pair<GameState, SaveInfo>, std::string> loadGame(const std::filesystem::path& file);
+// What a game file of an older format needs once the data set it is played
+// with is known (loadGame has none): `formatVersion` is the file's
+// (SaveInfo::formatVersion). Format 10's Construct orders named their world
+// by its Special Ability ID; they get its position in PlanetSize.txt
+// (Order::planetSize, spec 01 §9). Every reader of a game file that goes on
+// to play it calls this.
+void upgradeLoadedGame(const Rules& r, GameState& s, uint32_t formatVersion);
 // Only the header, e.g. for a load dialog (still verifies the checksum).
 std::expected<SaveInfo, std::string> readSaveInfo(const std::filesystem::path& file);
 
