@@ -1002,6 +1002,13 @@ does (§2.4 "Moves as they are made", §7 Q62). All at once starts every group's
 each group still square by square, the view going at once to where the last of the player's
 groups ran, and starts a replayed day's entries together, each vehicle's in turn
 (`shipMovementRows` in `screens/settings_screen.cpp`; `ship_glides.hpp`, `movement_replay.hpp`).
+Under them a lamp of its own, "Also animate other empires' and simultaneous turns' moves",
+off by default (`animateOthersMoves`, `animate_other_moves` in `classic_settings.toml`): the
+original animates only the moves made for the human player whose turn it is in a turn-based
+game (§2.4 "Moves as they are made"), and off those ships are simply drawn on their new
+squares; on, the other empires' moves the player sees and a simultaneous turn's moves at the
+next turn's start turn and slide too, in the order they were made (OpenSE4's own, since
+2026-10-14; before, they were always animated).
 
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
@@ -1785,7 +1792,8 @@ cells sit inside it after a margin:
   angle, sampling each pixel nearest-neighbour with no smoothing (45° views look
   jagged); pixels from outside the source come out black, so transparent. Headings are
   saved with the game.
-- **Moves as they are made** (confirmed: binary; settled in full on 2026-10-14, §7 Q112).
+- **Moves as they are made** (confirmed: binary; settled in full on 2026-10-14, §7 Q112;
+  observed, spec 07 session 8).
   With "animate ship movement in the system window" on, a move is animated only while it is
   carried out for the human player whose turn it is, in a turn-based game. The test is made on
   the player whose turn it is, and nothing else is tested, not the shown system and not whether
@@ -1802,48 +1810,90 @@ cells sit inside it after a margin:
     next group starts; so a Move To, a patrol or a repeating list moves its group as far as it
     can go, all its legs, before anything else moves. At the start of a human's turn the
     ministers give their orders first; then each own object whose list holds orders takes its
-    turn in the game's object order, vehicles and colonies alike: it is selected (§2.7), then
-    its run is carried out and animated. Vehicles that moved with an earlier group of the pass
-    (a fleet's members) are skipped. An order given during the turn (to the selected vehicle,
-    a fleet or the tagged vehicles, by any of the ways of §2.7) is one run, the tagged vehicles
-    one group moving together.
+    turn in the game's object order, vehicles and colonies alike: it is selected (§2.7: its
+    report opened, its orders lit, the yellow marks on its square), then its run is carried
+    out and animated, and the next object is selected right after its last square (observed).
+    Vehicles that moved with an earlier group of the pass (a fleet's members) are skipped. An
+    order given during the turn (to the selected vehicle, a fleet or the tagged vehicles, by
+    any of the ways of §2.7) is one run, the tagged vehicles one group moving together.
   - *Each square, in this order:* the Attack Sector question when the square ahead holds
     enemies (spec 03 §6.2); when the bearing from the old square to the new one, taken to the
-    nearest of the 8 headings, differs from the heading of the group's first vehicle, that
-    vehicle's mini turns on the old square, the shorter way, 5° a frame with 10 ms after each
-    frame; the whole group is placed on the new square, each member taking the new heading (a
-    fleet's location moves with it); the old square is redrawn without the group and the mini
-    slides 1 px a frame along the longer axis (36 frames a square at 800x600, 50 at 1024x768,
-    diagonals the same) with 1 ms after each (the waits of §1.10.3); the game pauses for
-    `System Ship Movement Delay Milliseconds`, but reads the value as seconds (a defect of the
+    nearest of the 8 headings, differs from the heading of the group's first vehicle, the turn:
+    the angle steps 5° a frame the shorter way with 10 ms after each frame, but nothing is drawn
+    meanwhile: the whole group is taken off the map first and the turned mini would be drawn
+    only for a vehicle still in a system, which it no longer is, so the screen keeps the old
+    square exactly as it was (the vehicle at its old heading, or the stack with its count and
+    the yellow marks) for the turn's waits, a still pause in proportion to the angle (about
+    0.3 s per 90° under Wine, observed); the whole group is placed on the new square, each
+    member taking the new heading (a fleet's location moves with it); the old square is
+    redrawn without the group and the mini slides 1 px a frame along the longer axis (36
+    frames a square at 800x600, 50 at 1024x768, diagonals the same) with 1 ms after each (the
+    waits of §1.10.3), at the new heading from its first frame; the game pauses for `System
+    Ship Movement Delay Milliseconds`, but reads the value as seconds (a defect of the
     original; the stock value 0 hides it); the old and the new square are redrawn in full;
     then what the new square does to the group (hazard damage and its "Damage Taken" box,
     minefields, a battle on arrival), each of which also redraws the galaxy panel and the
     square or the system and selects the current sector again. A move over several squares is
-    never one straight slide: a route that bends turns at each bend.
-  - *One sprite.* During the turn and the slide every member of the group is taken off the map
-    and one mini is drawn: the group's first vehicle's own design mini at its heading, with the
-    dotted circle when it is cloaked; for a fleet the first of its members in its sector's
-    list of objects, not the fleet icon; for tagged vehicles the first one tagged; for a drone
-    group with companions the acting one. The last frame of the slide stays through the pause,
-    and the redraw after it brings back the square's normal drawing (the fleet icon, the
-    counts). Between the steps only the two squares are redrawn; the report panel is refreshed
-    after a jump and once when the group's run is over.
+    never one straight slide: a route that bends pauses still at each bend, then slides on at
+    the new heading; straight on, the squares slide one after another with no gap (observed).
+  - *One sprite.* During the slide every member of the group is off the map and one mini is
+    drawn: the group's first vehicle's own design mini at its heading, with the dotted circle
+    when it is cloaked; for a fleet the first of its members in its sector's list of objects,
+    not the fleet icon and not necessarily the member that acts for it; for tagged vehicles
+    the first one tagged; for a drone group with companions the acting one. The last frame of
+    the slide stays through the pause, and the redraw after it brings back the square's normal
+    drawing (the fleet icon, the counts). Between the steps only the two squares are redrawn;
+    the report panel is refreshed after a jump and once when the group's run is over.
   - *Not animated:* warp jumps (the arrival system is then shown, §2.7, and the steps there are
-    animated in it), every other empire's moves, a simultaneous turn's moves. A minefield that
-    hits the group draws a small explosion over the square with its sound and waits half a
-    second, with the animation on or off. With the animation off there is no turn, slide or
-    pause, but the squares are still redrawn after every step and the view still follows, so
-    each group appears at once where its run ends (the look inferred).
-  - *Input.* The waits of the animation let the program handle its window messages, and the
-    main window is not locked while a human's moves are carried out, so a click or a key made
-    meanwhile is handled in the middle of them; what it can do there was not traced (§7 Q112).
+    animated in it), every other empire's moves, a simultaneous turn's moves. With the
+    animation off there is no turn, slide or pause, but the squares are still redrawn after
+    every step and the view still follows, so each group appears at once where its run ends
+    (the look inferred).
+  - *Mines.* When a minefield strikes the group during an animated move (the human whose turn
+    it is, turn-based, with the animation option on or off), once for the square, after every
+    minefield there has acted however many mines went off: a small explosion is drawn over the
+    square's 36x36 sprite place, never scaled, over whatever the square shows (the group still
+    there, the members the mines destroyed included): eight 36x36 frames from a row of
+    `Pictures/Game/General.bmp` (frame n at x = 36 (n − 1)), the row at y 64 when no member
+    was destroyed and the one at y 100 when one or more were, each cell's background keyed
+    (the key colour inferred), each frame held 0.1 s; then the square as it was before the
+    strike is put back and held 0.1 s more; then `boom1` starts (with sounds on) and the game
+    waits 0.5 s; then the square is redrawn without the destroyed members, the whole system
+    panel redrawn, the "Minefield" message box shown, the current sector selected again, and
+    the group's run stops there. Moves that are not animated get no explosion, no sound and no
+    wait.
+  - *Input* (confirmed: binary; observed). Every wait of the animation first handles the
+    window's pending messages, so the window repaints and input is dispatched in the middle of
+    the moves; what is taken depends on how the moves came:
+    - At a human's turn start the pass runs inside the End Turn call, which marks the main
+      window as ending the turn: clicks on the system and galaxy maps, the main window's keys,
+      the order buttons, End Turn, the load and quit commands and the other command buttons
+      are ignored, neither queued nor a skip (a click on a planet, F3, F4 and End Turn tried:
+      nothing opened, then or after the Log); only the buttons' hover hints are written.
+    - An order given by a click on the map (a target picked there): while that click is
+      handled, which includes all its moves, map clicks, keys, the command and order buttons
+      and End Turn are ignored, then and after (a click on a planet, F3, the Designs button
+      and End Turn tried); moving the pointer does not update the coordinate line; only the
+      hover hints are written.
+    - An order given by an order button (Resupply tried): only a second order button is
+      refused (confirmed: binary); a map click selects at once while the group slides on (the
+      run's closing refresh then shows the report of what was selected); a key or a command
+      button opens its window, and the moves stand still under it until it is closed, then go
+      on from where they stopped; End Turn asks "Confirm End Turn" with the moves standing
+      still: No lets them go on; Yes ends the turn inside them, the computer players' turns
+      and the next turn's start run unseen, and after the Log the interrupted group slides one
+      more square and the program faults (an access violation), after which the order buttons
+      and keys do nothing until the program is restarted (observed: a defect of the original).
     Nothing the turn's processing opens comes before the moves: at a turn's start the player
     sees the moves first and the Log after them (§2.7).
 
   Since 2026-10-01 our client animates moves (`ShipGlides`, `client/classic/ship_glides.cpp`):
-  the turn, 5° a frame, then the slide, 1 px a frame (36 or 50 frames a square), then the
-  pause, read as seconds; headings come from the engine and survive loading. Since 2026-10-06:
+  the turn, then the slide, 1 px a frame (36 or 50 frames a square), then the pause, read as
+  seconds; headings come from the engine and survive loading. Since 2026-10-14 nothing of the
+  turn is drawn: for the turn's frames and waits, the same as before, the group stays drawn on
+  its old square as it was, at its old heading (`ShipGlides::heldAt`, `heldHeading`;
+  `ShipGlides::sliding` is false), and the one mini appears at the new heading on the slide's
+  first frame; before, the mini turned on the old square 5° a frame. Since 2026-10-06:
   - **Pace.** The frames come by the time elapsed, whatever the display's refresh rate
     (`MovementPace`, `client/classic/movement_pace.hpp`): by default at the original's
     waits as written, 10 ms after a turn frame and 1 ms after a slide frame, so a square
@@ -1856,48 +1906,79 @@ cells sit inside it after a margin:
     written is open (§7 Q112).
   - **Order.** Since 2026-10-14 (§7 Q112) ours follows the order above. The engine reports
     each group's step as it makes it (`game::MovementStep`: the members in the group's order,
-    its first vehicle, the two squares, the heading and the warp point of a jump), to an
-    observer the caller passes in (`TurnOptions::movementStep`, `LiveOptions::movementStep`,
+    the vehicle whose mini stands for the group, the two squares, the heading and the warp
+    point of a jump; and, as a step of its own kind, mines striking the group), to an observer
+    the caller passes in (`TurnOptions::movementStep`, `LiveOptions::movementStep`,
     `applyLive`); observing changes nothing in the game. The session hands the steps of each
     engine call to the main window in the order they were made, the turn processing on its
     own thread included, with the points where the view follows the player's own groups
-    (`ClassicSession::takeMoves`, §2.7), and `ShipGlides` plays them as a queue: each square
-    its own step, the group one sprite (its first vehicle's mini, not the fleet's icon, with
-    the dotted circle when it is cloaked), each step when the one before is over, so a group's
-    run is over before the next group moves; a group waiting for its turn is drawn on its
-    square. Steps in another system, steps of vehicles the player does not see now or did not
-    see before (its own excepted) and warp jumps take no time, in their turn. Before, the moves
-    of one engine call glided together once it had made them all, several steps of a group as
-    one straight glide. Ours differs (OpenSE4's own, docs/PARITY_GAPS.md):
-    1. It also shows the other empires' moves the player sees in the shown system, in the order
-       they were made: a turn-based game's computer players (and humans under computer
-       control), before the player's own turn start, where the original shows a black main
-       window with "Player N taking turn..." and their moves not at all (§2.4 "Notices"); and
-       a simultaneous turn's moves at the next turn's start, in the order the movement days
-       made them, where the original shows none outside the replay.
+    (`ClassicSession::takeMoves`, §2.7), each marked when the original animates it (the
+    player's own, in its turn of a turn-based game), and `ShipGlides` plays them as a queue:
+    each square its own step, the group one sprite (the mini of the vehicle the engine names:
+    for a fleet the member first in its system's list of objects, `Vehicle::arrival`, which
+    ours keeps in place of the sector's own list (inferred where the two would differ), not
+    the fleet's icon, with the dotted circle when it is cloaked), each step when the one
+    before is over, so a group's run is over before the next group moves; a group waiting for
+    its turn is drawn on its square. Steps in another system, steps of vehicles the player
+    does not see now or did not see before (its own excepted) and warp jumps take no time, in
+    their turn. The player's own vehicles that the moves destroyed are drawn until their steps
+    are shown (`ClassicSession::takeGone`). Mines striking the player's group show the
+    explosion above, its frames, its sound and its waits, with the animation on or off
+    (`MineBlast`, `ShipGlides::blasts`). The moves the original does not animate (other
+    empires', a simultaneous turn's at the next turn's start) take no time in their turn, and
+    those ships are simply drawn on their new squares, unless the player asks for them in the
+    Options window (§1.9, OpenSE4's own). Ours differs (OpenSE4's own, docs/PARITY_GAPS.md):
+    1. OpenSE4's option "Also animate other empires' and simultaneous turns' moves" (off by
+       default) shows the other empires' moves the player sees in the shown system, in the
+       order they were made (a turn-based game's computer players, and humans under computer
+       control, before the player's own turn start, where the original shows a black main
+       window with "Player N taking turn..." and their moves not at all, §2.4 "Notices"), and a
+       simultaneous turn's moves at the next turn's start, in the order the movement days made
+       them, where the original shows none outside the replay.
     2. OpenSE4's option "Ship movement: all at once" (§1.9) starts every group together, each
        still square by square, and the view goes at once to where the last of the player's
        groups ran.
-    3. A network or e-mail client gets only the host's states, without their steps: each
-       vehicle it saw before and sees in a new place glides there in one straight move, the
-       moves grouped by where they start and end and shown one group after another in the
-       game's vehicle order (all together with "all at once"), with the pause of each square
-       (inferred); its view does not follow (§2.7). The network protocol carries no steps.
+    3. Since 2026-10-14 a network client gets its own moves with the host's state, as the
+       host's engine made them (protocol 10, docs/MULTIPLAYER.md "Protocol"): its commands'
+       and its turn start's steps and where its view follows, so they are shown, and the view
+       follows, as on one computer. An e-mail client's new turn file, and other players'
+       moves on a network client, come without steps: each vehicle it saw before and sees in
+       a new place glides there in one straight move when it is animated at all (its own in a
+       turn-based game, the others only with the option of 1), the moves grouped by where they
+       start and end and shown one group after another in the game's vehicle order (all
+       together with "all at once"), with the pause of each square (inferred).
     4. A battle that stops an engine call is shown before the moves that led to it, which are
        shown after the battle (§2.7).
-    5. No minefield explosion is drawn and there is no half-second wait.
-    6. The current sector stays where it was when a move order runs (§2.7, §7 Q123).
+    5. A click or a key shows a turn's start's moves at once (**Skip**, below).
+    6. A window or question opened over the moves of an order given by an order button holds
+       them, as the original's does, but End Turn's Yes first shows them at once and then ends
+       the turn (the original faults there).
 
     Whatever the call opens waits for these glides: the battles to watch, the endings, the
-    questions and the Log of a turn's start (§2.7), and a message box or question an order
-    given during the turn raised. Meanwhile the main window takes no input, as under a
-    window, but only while such a turn's start or prompt waits; the moves of an order given
-    during the turn, with nothing waiting, glide while the player plays on.
-  - **Skip** (an OpenSE4 convenience; the original's animation cannot be skipped). While
-    the main window waits for the moves, a click or a key shows them at once: every ship
-    is drawn on its square, pauses included, and what waited for them opens in the next
-    frame; the press does nothing else. The movement log replay keeps the original's rule
-    (§7 Q62: presses during a day's animations are ignored).
+    questions and the Log of a turn's start (§2.7), and a question an order given during the
+    turn raised. Meanwhile the main window takes no input, as under a window. Since
+    2026-10-14 a message box the player's own orders raise (a failed Colonize, a minefield's)
+    comes where the moves reach it, as the original's comes as the order runs: the engine
+    counts the messages made before each step (`MovementStep::messages`,
+    `PlayerMessage::liveSteps`), the session puts each in its place among the moves
+    (`ClassicSession::ShownMove::message`), and the box holds the moves after it until it is
+    answered; before, every box waited for all the call's moves.
+    Since 2026-10-14 the moves of an order given during the turn take input as the original's
+    (`mainWindowTakes`, `client/classic/turn_start.hpp`; `MainWindow::orderGiven`): after an
+    order given by a click on the map (a target picked there, or OpenSE4's right-click Move
+    To), the main window takes nothing until its moves are over, not its map clicks, keys,
+    command and order buttons, selectors, report panel or End Turn, and only the buttons'
+    hover hints show; after an order given by an order button (or, ours, by its key, inferred),
+    everything but a second order button: a click selects, a key or a button opens its window,
+    and a window or question opened over the moves holds them, their clock standing still,
+    until it is closed (`MainWindow::holdMoves`). Before, those moves glided while the player
+    played on, whatever gave the order.
+  - **Skip** (an OpenSE4 convenience; the original's animation cannot be skipped, and at a
+    turn's start it ignores clicks and keys, confirmed: binary, observed). While the main
+    window waits for the moves of a turn's start (or for something they hold back), a click or
+    a key shows them at once: every ship is drawn on its square, pauses included, and what
+    waited for them opens in the next frame; the press does nothing else. The movement log
+    replay keeps the original's rule (§7 Q62: presses during a day's animations are ignored).
 
 Contents [T][S]:
 
@@ -2367,8 +2448,9 @@ the End Turn call, so the Next Player window comes before what that start shows,
 autosave is written by the session before the start runs (`LiveOptions::beforeHumanTurn`). Since 2026-10-06 our client keeps
 this order (`turnStartGate`, `client/classic/turn_start.hpp`; `ClassicMode`): first the moves
 of the shown system glide (§2.4 "Moves as they are made"), then the battles to watch (a
-network or e-mail game's, after the turn, §1.10.5), the endings, the questions, the picker
-and the message boxes, and the Log last, each waiting for the ones before it. Before, the Log
+network or e-mail game's, after the turn, §1.10.5), the endings, the questions and the
+picker, and the Log last, each waiting for the ones before it; since 2026-10-14 the message
+boxes come in their place among the moves, as the original's (§2.4 "Order"). Before, the Log
 opened at once, the ships gliding under it, and a question or the picker waited for the Log to
 be closed. A battle that stops the engine call is still shown before the moves that led to it,
 since the game waits at the state before the call (ClassicSession, "Battles shown as they
@@ -2384,12 +2466,18 @@ run, not only to the selected one:
 - Before each order runs, if the object is in a system other than the one shown, its
   system is shown and its sector becomes the current sector (the one the yellow marks and
   the coordinate line's Range use, §2.4).
-- Steps inside a system are drawn where they happen (turned and slid when animation is
-  on, §2.4). Each run of an order that travels to a square (Move To, Move To Waypoint and the
-  other orders that head for a target square) first makes sector 0, the top-left square of
-  the shown system, the current sector, for every player and in every mode (confirmed:
-  binary); a jump later makes the exit warp point's square current. What the player sees of
-  it is inferred (§7 Q123).
+- Steps inside a system are drawn where they happen (slid when animation is on, after a
+  turn that draws nothing, §2.4). Each run of an order that travels to a square (Move To, Move
+  To Waypoint and the other orders that head for a target square) first makes sector 0, the
+  top-left square of the shown system, the current sector, for every player and in every mode
+  (confirmed: binary); a jump later makes the exit warp point's square current. What the
+  player sees of it (observed, §7 Q123): only when the run actually moves; the moving
+  object's report stays open (refreshed when its run is over) and its orders stay lit; the
+  yellow marks vanish from its square when its slide starts and are drawn on (0, 0) only
+  when that square is redrawn or selected; the coordinate line's Range counts from (0, 0)
+  while something the player sees stands there; after a tagged group's order the tags clear
+  and (0, 0) is selected once the moves are over (its object's report with the marks, or the
+  system report).
 - After each jump through a warp point, whether by a Warp order (one given while standing
   on the warp point included) or by a Move To whose route crosses systems, the arrival
   system is shown, the exit warp point's sector becomes the current sector, both panels are
@@ -2410,14 +2498,18 @@ run, not only to the selected one:
   moves by itself; the movement-log replay's Ctrl+U follows each own object instead
   (§7 Q51). A computer player's moves in a turn-based game never move the view.
 
-Since 2026-10-04 our client follows (§7 Q102) in local, hotseat and play-by-e-mail games;
-a network client's view does not follow yet. Since 2026-10-14 the view follows as the moves
+Since 2026-10-04 our client follows (§7 Q102) in local, hotseat and play-by-e-mail games,
+and since 2026-10-14 in a network game too, from the moves its host sends with the player's
+own new states (protocol 10, §2.4 "Order"). Since 2026-10-14 the view follows as the moves
 are shown (§2.4 "Moves as they are made"): each object is selected, and each jump's arrival
 system shown, once the steps made before it have been shown (`MainWindow::followMove`, the
 session's LiveSteps as markers in the glides' queue); before, the view went at once to where
 the last object ran, and the glides of other systems ended there. With OpenSE4's "Ship
 movement: all at once", the animation off, or a click or a key that shows the moves at once,
-it still goes there at once. Ours keeps the current sector when a move order runs (§7 Q123).
+it still goes there at once. Since 2026-10-14 ours makes (0, 0) current when a move run of
+the player's own moves, the marks staying where they were drawn until that square is redrawn,
+and selects the current square again after a tagged group's moves (`MainWindow::followMove`'s
+corner and reselect markers, `marksAt`; §7 Q123); before, the current sector stayed put.
 
 ### 2.8 When order buttons are lit
 
@@ -3116,7 +3208,8 @@ black-hole swirls, and the ringworld and sphereworld (cells 300, 301).
     1.95 (§1.1).
   - `General.bmp` 384x176: irregular atlas: 16 px resource/research/intel/population
     icons (y=0), 32 px versions (y≈32), coloured indicator lamps and small arrows,
-    green/red colonisation stars, two 8-frame 36 px explosion strips (y≈64, y≈100), a
+    green/red colonisation stars, two 8-frame 36 px explosion strips (y 64 and y 100: the
+    Ground Combat window's and the system panel's minefield explosion, §2.4 "Mines"), a
     dome overlay for domed colonies, and the status icons (§4.4). Needs a hand-written
     coordinate table.
   - `Finale/`: `Victory.bmp`, `Lose00N.bmp`, `HumnDead.bmp` (426x341 or 400x300),
@@ -3743,11 +3836,11 @@ the 800x600 layout in §2.1.1.
     Combat Replay and does not switch back.
     Our client follows the playback and music rules, the cloak and stellar-manipulation
     sounds and the `boom` rules of the combat maps, and its music volume is Off and five
-    steps. It differs: it plays no `boom1`/`boom2` per ground combat round and draws no
-    small explosion over a system-panel sector; a stellar manipulation sounds when the
-    player's log reports it;
+    steps. It differs: it plays no `boom1`/`boom2` per ground combat round; a stellar
+    manipulation sounds when the player's log reports it;
     a game loaded from the Game Menu keeps the music (Q53); it keeps an effects volume of
-    its own.
+    its own. Since 2026-10-14 it draws the system panel's minefield explosion with its
+    `boom1` (§2.4 "Mines"; `MineBlast`, `client/classic/ship_glides.hpp`).
 16. **Tooltips and focus.** **Answer:** there are no pop-up tooltips. Hovering a command
     or order button writes its name and key as white text at the top of the system panel,
     at once, with no delay (§2.3). Every window is modal, so main-window hotkeys do
@@ -4516,8 +4609,10 @@ all are now settled from the executable:
       another system, colonies founded, objects removed and colonies removed; then the
       system and galaxy panels are redrawn. There is no pause between days. With "animate
       ship movement in the system window" on, visible moves inside the shown system are
-      animated: the sprite first turns in 5° steps of 10 ms each, then slides 1 px per
-      step, waiting at least 1 ms per step; warp jumps are never animated. Each entry (one
+      animated: first the turn's waits, 5° a step with 10 ms each, during which nothing is
+      drawn (the vehicle stays on its square at its old heading, §2.4), then the sprite
+      slides 1 px per step at its new heading, waiting at least 1 ms per step; warp jumps
+      are never animated. Each entry (one
       per vehicle and step) is animated on its own, one after another, in the log's order;
       key presses while a day is shown are ignored (Q62). After day 30 the current turn is
       reloaded and the panels unlocked.
@@ -4544,13 +4639,18 @@ all are now settled from the executable:
     appear or are removed, and the colonies founded or lost. Ctrl+P, Ctrl+I, Ctrl+O and
     Ctrl+U then work as above, starting without their buttons; "(Day N)" follows the system
     name; the command buttons and selectors are disabled and no other main-window key
-    works; with the animation option on, visible moves in the shown system turn 5° per
-    10 ms and slide 1 px per millisecond; Ctrl+U shows each object's system and sector
+    works; with the animation option on, visible moves in the shown system wait out their
+    turn, 5° per 10 ms, drawing nothing (since 2026-10-14; before, the mini turned), and
+    slide 1 px per millisecond; Ctrl+U shows each object's system and sector
     day by day and brings back the shown system at the end. It differs:
     - Network and PBEM clients have only their own view of the game, so they rebuild a log
       from where they saw each vehicle before and after the turn: steps of one sector
       along a straight line spread over the 30 days, a jump to another system on day 15,
-      vehicles no longer seen removed after day 30 (inferred).
+      vehicles no longer seen removed after day 30 (inferred). Since protocol 10 the host
+      sends a player its own moves of a turn-based game with its states (§2.4 "Order"); a
+      simultaneous turn's log is not sent: each entry would need the host to decide what
+      the player saw at that moment of the replay, with the vehicles as they stood then,
+      more than the protocol carries (2026-10-14).
     - No turn file is written: the log lives in memory, so a game just loaded has none and
       the keys say Replay Unavailable, as a notice in the system panel rather than a box.
     - Without the animation one day is shown per frame (inferred).
@@ -4714,18 +4814,23 @@ the executable and Q63 has no counterpart; Q60 was observed under Wine:
       the group's order. A day of the replay applies its entries in the order they were
       written, which is the order in which that day's movement carried them out.
     - **No grouping.** Each entry is animated on its own, and in full, before the next
-      starts, so a fleet's members turn and slide one after another along the same path.
+      starts, so a fleet's members wait out their turns and slide one after another along
+      the same path.
     - **When an entry is animated:** only with "animate ship movement in the system
       window" on, for a move that stays in one system, when that system is shown and the
       viewer sees the vehicle.
     - **The turn.** When the bearing from the vehicle's sector to its new one, taken to
-      the nearest of the 8 headings, differs from its heading, the mini first turns the
-      shorter way (clockwise for a half-turn), 5° a frame (9 frames per 45°), 0.01 s after
-      each frame.
+      the nearest of the 8 headings, differs from its heading, the turn comes first: the
+      angle steps the shorter way (clockwise for a half-turn), 5° a frame (9 frames per
+      45°), 0.01 s after each frame, but nothing is drawn meanwhile, as in the moves as
+      they are made (§2.4; confirmed: binary 2026-10-14, the same turn routine): the
+      vehicle stays on its square as it was, at its old heading, for the turn's waits.
+      (Corrected on 2026-10-14: this answer said the mini turned.)
     - **The slide.** The vehicle is then placed in its new sector with its new heading
       (its fleet's location moves with it), its old square is redrawn without it, and the
-      mini slides 1 px a frame along the longer axis: 36 frames per sector at 800x600, 50
-      at 1024x768, diagonal steps the same, 1 ms after each frame (with the tick counter
+      mini slides at its new heading 1 px a frame along the longer axis: 36 frames per
+      sector at 800x600, 50 at 1024x768, diagonal steps the same, 1 ms after each frame
+      (with the tick counter
       of §1.10.3, so about 15.6 ms a frame on current Windows).
     - **Never animated or paused:** no switch shortens these waits; the Settings pause
       after a normal move is not used in the replay; warp jumps, colonies and removals are
@@ -4744,7 +4849,9 @@ the executable and Q63 has no counterpart; Q60 was observed under Wine:
     since 2026-10-14 once per group, `game::MovementStep` with its members in the group's
     order) and the log keeps one entry per vehicle and step in that order
     (`MovementRecorder::step`); each entry is animated on its own, frame by frame (5° a
-    turn frame, 1 px a slide frame, 36 or 50 frames a sector; since 2026-10-06 by the time
+    turn frame, since 2026-10-14 with nothing drawn, the vehicle held on its square,
+    `MovementReplay::held`, where the mini used to turn; 1 px a slide frame, 36 or 50
+    frames a sector; since 2026-10-06 by the time
     elapsed, at the original's waits divided by OpenSE4's movement speed, §1.9, §2.4, where
     each frame used to stay at least one display refresh); the engine keeps each vehicle's
     heading, saved with the game
@@ -6086,9 +6193,10 @@ an imported turn-based game of the original.
      least there should be an option to do that or to have all move at the same time."
      **Answer** (confirmed: binary): the original animates only the moves of the human player
      whose turn it is, in a turn-based game, one group after another, never interleaved: each
-     group's whole run, every square of it a turn (when the heading changes), a slide and the
-     pause, is over before the next group moves; the group is one sprite, its first vehicle's
-     mini; at a turn's start each own object with orders is selected in turn, then moves; warp
+     group's whole run, every square of it a turn (when the heading changes, a still pause in
+     which nothing is drawn), a slide and the pause, is over before the next group moves; the
+     group is one sprite, its first vehicle's mini; at a turn's start each own object with
+     orders is selected in turn, then moves; warp
      jumps, computer players' turns and simultaneous turns are not animated (§2.4 "Moves as they
      are made", §2.7). Ours glided all the moves of an engine call together once it had made
      them all, several squares of a group as one straight glide.
@@ -6098,13 +6206,27 @@ an imported turn-based game of the original.
      (`ClassicSession::takeMoves`), and the main window plays them as a queue, square by
      square, one group after another, the view following the player's own groups
      (`ShipGlides`, `MainWindow::followMove`). Our client differs where the owner chose so
-     (§2.4 "Order", docs/PARITY_GAPS.md): it also shows the other empires' moves the player
-     sees and a simultaneous turn's moves at the next turn's start, in the same order; the
-     Options window has OpenSE4's "Ship movement: one group at a time (the original's)", the
-     default, and "all at once", every group starting together, each still square by square
-     (§1.9); a network or e-mail client, which gets no steps from its host, glides each changed
-     group straight to its new square, one group after another (inferred). Still open: what a
-     click or a key made in the middle of the original's animated moves does (§2.4 "Input").
+     (§2.4 "Order", docs/PARITY_GAPS.md): the Options window has OpenSE4's "Ship movement: one
+     group at a time (the original's)", the default, and "all at once", every group starting
+     together, each still square by square (§1.9); a network or e-mail client, which got no
+     steps from its host, glided each changed group straight to its new square, one group
+     after another (inferred); and it showed the other empires' moves the player sees and a
+     simultaneous turn's moves at the next turn's start.
+
+     Watched in the running original the same day (observed, spec 07 session 8), and settled
+     for the input from the executable (confirmed: binary): a turn draws nothing (the old
+     square stays as it was for the turn's waits, then the mini slides at its new heading);
+     at a turn's start clicks and keys are ignored throughout the moves; after an order given
+     by a click on the map nothing is taken until its moves are over; after an order given by
+     an order button everything but a second order button gets through, a window opened
+     meanwhile holding the moves until it closes, and End Turn's Yes ending the turn inside
+     them, after which the original faults (§2.4 "Input"); a move run makes (0, 0) current
+     (Q123); a minefield strike shows its explosion (§2.4 "Mines"). Since 2026-10-14 ours
+     follows all of this, with the original's moves alone animated by default: OpenSE4's
+     option "Also animate other empires' and simultaneous turns' moves", off by default,
+     shows the others (§1.9); the moves a network client's host made for it come with its
+     states (protocol 10); a click or a key still shows a turn's start's moves at once, and
+     End Turn's Yes shows an order's moves at once before the turn ends (§2.4 "Order").
 
 113. **Choices left by the designs and research audit (2026-10-11).** The executable gave the
      rules of spec 05 §2.1 and Q92–Q94 above; these details it did not settle, and OpenSE4
@@ -6241,16 +6363,41 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      battles with seekers can now last longer than before. Our client draws the small maps as
      §1.10.5 says (`CombatMapPainter::squares`). Open: what the original credits for the kill
      of a seeker whose launcher has died (the engine credits the dead launcher, inferred).
-123. **The current sector during a move order** (to observe). Each run of an order that
-     travels to a square (Move To, Move To Waypoint and the other orders that head for a target
-     square: a patrol leg, a pursuit) first makes sector 0, the top-left square of the shown
-     system, the current sector, for every player and in every mode, before its first step; a
-     jump later makes the exit warp point's square current (§2.7; confirmed: binary, found while
-     settling Q112). What the player then sees is inferred: the yellow marks and the Range of
-     the coordinate line would follow only while something visible stands on that corner square
-     (§2.4, Q64); a later selection of the current sector (an event that selects it again after
-     a step, §2.4 "Moves as they are made", or the re-selection that clears the tags after a
-     tagged group's order, Q52) would select the corner square, its object's report or the
-     system report; at a turn's start the next object's selection makes its own sector current
-     again. Watching the original after a Move To within a system would settle it. Our client
-     keeps the current sector where it was when a move order runs (inferred).
+123. **The current sector during a move order.** Each run of an order that travels to a
+     square (Move To, Move To Waypoint and the other orders that head for a target square: a
+     patrol leg, a pursuit) first makes sector 0, the top-left square of the shown system, the
+     current sector, for every player and in every mode, before its first step; a jump later
+     makes the exit warp point's square current (§2.7; confirmed: binary, found while settling
+     Q112). What does the player see of it?
+     **Answer** (observed, spec 07 session 8; a Move To given by a map click and a Resupply
+     given by its order button alike):
+     - The moving object's report stays open in the report panel, refreshed when its run is
+       over, and its orders stay lit.
+     - The yellow marks vanish from its starting square when its slide starts and are not
+       drawn anywhere afterwards, not on (0, 0) either, even with one of the player's ships
+       standing there.
+     - The coordinate line's Range counts from (0, 0) while something the player sees stands
+       there (Range 5 over (5, 5)), and shows no Range at all while (0, 0) is empty.
+     - After a tagged group's order the tags are cleared and (0, 0) is selected once all the
+       moves are over: the report of what stands there with the marks round it, or the
+       system's report and no marks when it is empty.
+     - When nothing moves (a Move To kept for the next turn by a ship with no movement left,
+       a tagged group that could not move) the current sector stays, and so do the marks.
+       Whether the jump to (0, 0) needs movement left or the first step taken was not
+       separated (inferred: the first step).
+     - At a turn's start each object's selection makes its own sector current again, so after
+       the pass the marks stand on the last object that moved (there a ship that ended on
+       (0, 0), whose arrival redrew it).
+     In the original the marks are drawn on a square when it is selected or redrawn while it
+     is the current sector (inferred from the above). Not watched: a simultaneous turn's
+     processing and the computer players' turns, which also run move orders; their current
+     sector is not shown to anyone until a human's turn restores its own view (§2.7).
+
+     Since 2026-10-14 ours does the same in a turn-based game: when a run of the player's own
+     makes its first step the shown system's (0, 0) becomes current; the selection, the report
+     and the lit orders stay; the marks stay where they were drawn until that square is
+     redrawn (a slide leaving it, a step ending on it) and come on the current square only
+     when it is selected or redrawn; the coordinate line's Range counts from it; after a
+     tagged group's order the current square is selected again once its moves are shown
+     (`MainWindow::followMove`'s corner and reselect markers, `marksAt`,
+     `noteRedrawnSquares`). Before, the current sector stayed where it was.

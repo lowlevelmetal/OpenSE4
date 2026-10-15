@@ -100,6 +100,8 @@ Use*. Its choices are kept on this computer, except the autosave choice, which b
 | Tactical Combat | Fast Tactical Combat | off |
 | System Display | Display Ship Movement Lines: the route of the ship, base or fleet whose report is open, a blue line marked with the turn each square is reached. `Ctrl+L` switches it too. Starting a new simultaneous game switches it on. | off |
 | OpenSE4 | Ship movement speed: how fast ships turn and slide in the system window when they move, and in the movement log replay, from 1/8x to 8x. | 1x, the original's pace |
+| OpenSE4 | Ship movement: one group at a time, each ship or fleet making its whole move before the next starts, as the original shows them; or all at once, every group starting together. | one group at a time |
+| OpenSE4 | Also animate other empires' and simultaneous turns' moves: the original shows only your own ships moving, in your turn of a turn-based game; with this on, the other empires' ships you see, and a simultaneous turn's moves at the start of the next turn, move square by square too. Off, they are simply on their new squares. | off |
 | Autosave For This Game | None, or every 1, 2, 3, 5 or 10 turns (local and hotseat games only) | None, unless chosen at setup |
 
 `Settings` opens the Settings window, and `Close` closes this one.
