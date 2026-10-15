@@ -4899,7 +4899,10 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
     memories and the name lists, as the original's does (spec 08 §13.2); the copy has
     computer control off. The empire window's Save To File asks about the designs too.
     After saving, *Save for SE IV* also writes the empire as the original's empire file
-    (`.emp`, spec 08 §13), with its designs on Yes.
+    (`.emp`, spec 08 §13), with its designs on Yes. Since 2026-10-14 Game Setup's Save To File
+    writes no design into either file, whatever the answer, as the original's (spec 08 §11.1
+    Q26, confirmed: binary), unless the OpenSE4 option "Game Setup's Save To File saves the
+    designs" (Options) is on; the Game Menu's Save Empire saves them on Yes.
 
 Bringing the battle flow in line with Q30–Q33 (2026-10-01) left these choices of ours,
 each marked "(inferred)" in the client. Q73 and Q76 are settled from the executable (what

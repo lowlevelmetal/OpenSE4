@@ -219,7 +219,9 @@ and writes games back in its format (1.95), so a game can move between the two. 
   as the twenty stock empires. Like the original, it checks the empire at once against
   the setup on the screen (its racial points, and an original file's technology) and adds
   nothing when it does not fit. Save To File (Players page) and Save Empire (Game Menu) ask
-  whether to save the designs, write OpenSE4's empire file, and then offer *Save for SE IV*,
+  whether to save the designs (as in the original, Save To File then saves none, unless the
+  OpenSE4 option "Game Setup's Save To File saves the designs" in Options is on), write
+  OpenSE4's empire file, and then offer *Save for SE IV*,
   which writes the empire as the original's empire file, by default into OpenSE4's
   `empires` folder; copy it into the original's `Empires` folder to use it there. A
   password cannot go to the original's file (OpenSE4 keeps only a check of it); one read
