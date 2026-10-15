@@ -194,9 +194,16 @@ int64_t cloakSupply(const Rules& r, const GameState& s, const Vehicle& v);
 // ---- Stellar manipulation (spec 01 §9) --------------------------------------------------------------
 // The location the acting ship must stand on (Open Warp Point acts where the ship is).
 std::optional<Location> stellarTarget(const GameState& s, const Order& o, Location here);
-// Performs the action with the first capable member. Returns an empty string
-// on success, else the reason it failed.
+// Performs the action with the first capable member (movement.cpp passes one
+// member at a time: every member acts for itself, spec 03 §8). Returns an
+// empty string on success, else the reason it failed.
 // `consumed` is false for a harmless no-op (closing an already closed link).
 std::string stellarManipulation(TurnContext& ctx, std::span<const VehicleId> members, const Order& o, bool& consumed);
+// The refusals for a member without movement left and without the device
+// (spec 01 §9; our words).
+inline constexpr std::string_view kNoMovement = "It has no movement left for stellar manipulation.";
+inline constexpr std::string_view kNoComponent = "It does not have the component that manipulation needs.";
+// Any of the 13 stellar-manipulation abilities among `abilities`.
+bool hasStellarAbility(std::span<const ParsedAbility> abilities);
 
 } // namespace opense4::game::movement::detail

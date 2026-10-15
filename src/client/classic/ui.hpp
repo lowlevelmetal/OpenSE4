@@ -416,9 +416,26 @@ std::optional<bool> tacticalStrategicKey();
 // the focused button (the keys above decide).
 inline constexpr ImGuiWindowFlags kPromptFlags = ImGuiWindowFlags_NoNavInputs;
 
+// The original's `nd` switch (spec 05 §9.2, confirmed: binary): it holds for
+// the whole run. Every message box is then skipped, its text going to the log
+// (skippedBox), and a skipped Yes/No question counts as No. Windows that ask
+// for something to be typed or picked are not boxes and still show. Set once
+// at startup from the command line (AppOptions::noDialogs).
+void setNoDialogs(bool on);
+bool noDialogs();
+// Notes a box that noDialogs skips, in the log.
+void skippedBox(std::string_view title, std::string_view text);
+// Opens the message box or Yes/No question `id` (ImGui::OpenPopup at the
+// current ID stack), or under noDialogs only marks it skipped. boxSkipped is
+// then true once for that id: its caller takes the box as dismissed and a
+// question as answered No.
+void openBox(const char* id);
+bool boxSkipped(const char* id);
+
 class UiContext;
 // A Yes/No message box with those keys, centred on the frame. open() asks;
-// call draw() every frame: it returns true once, when Yes is chosen.
+// call draw() every frame: it returns true once, when Yes is chosen. Under
+// noDialogs nothing shows and the answer is No.
 class YesNoPrompt {
 public:
     void open(std::string question, std::string title = "Confirm");
@@ -429,6 +446,7 @@ public:
 private:
     std::string question_, title_;
     bool pending_ = false;
+    bool skipped_ = false;   // noDialogs: answered No without showing
 };
 
 // ---- Classic dialog layout -----------------------------------------------------------------

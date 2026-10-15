@@ -26,9 +26,15 @@ namespace {
 // Titles of the reports that destroy a planet or a star (isDestructiveStellarReport).
 constexpr std::string_view kPlanetDestroyed = "Planet Destroyed: ";
 constexpr std::string_view kStarDestroyed = "Star Destroyed: ";
+// Those of the two shockwaves that make a new system kind (findings B1).
+constexpr std::string_view kNebulaeCreated = "Nebulae Created: ";
+constexpr std::string_view kBlackHoleCreated = "Black Hole Created: ";
 } // namespace
 
-bool isDestructiveStellarReport(std::string_view title) { return title.starts_with(kPlanetDestroyed) || title.starts_with(kStarDestroyed); }
+bool isDestructiveStellarReport(std::string_view title) {
+    return title.starts_with(kPlanetDestroyed) || title.starts_with(kStarDestroyed) || title.starts_with(kNebulaeCreated) ||
+           title.starts_with(kBlackHoleCreated);
+}
 
 std::string stellarReportText(const GameState& s, EmpireId culprit, std::string_view vehicle) {
     return std::format("By {} of the {}.", vehicle, effects::empireFullName(s.empire(culprit)));
@@ -119,22 +125,29 @@ void eraseVehicle(GameState& s, VehicleId id) {
     std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.id == id; });
 }
 
+// What the shockwave does to the planets and asteroid fields (findings A1).
+enum class Shockwave {
+    Asteroids,  // Destroy Star, Create Nebulae, the Star - Destroyed event: each becomes a new asteroid field
+    Removed,    // Create Black Hole: each is removed with its colony, and nothing is made in its place
+};
+
 // The shockwave of a destroyed star (spec 01 §9, spec 03 §19 Q72, confirmed:
 // binary): one pass over the system's objects in slot order, vehicles and
-// stellar objects together. Each planet or asteroid field is replaced by a new
-// asteroid field of any size that keeps its name, values and conditions (its
-// colony lost), in the lowest slot empty at that moment, which may be one
-// emptied earlier in the pass; every other object except warp points and
-// stars is removed: ships, bases, unit groups, storms, comets. The stars go
-// after the pass.
-void shockwave(TurnContext& ctx, SystemId sys, std::string_view cause, Rng& rng) {
+// stellar objects together. With `Asteroids`, each planet or asteroid field is
+// replaced by a new asteroid field of any size that keeps its name, values and
+// conditions (its colony lost), in the lowest slot empty at that moment,
+// which may be one emptied earlier in the pass; with `Removed` (a black hole)
+// each is removed, its colony with it, and no random number is drawn. Every
+// other object except warp points is removed where the pass reaches it:
+// ships, bases, unit groups, storms, comets and the stars too, so a star's
+// slot can take a later replacement (findings A8).
+void shockwave(TurnContext& ctx, SystemId sys, std::string_view cause, Rng& rng, Shockwave planets = Shockwave::Asteroids) {
     GameState& s = ctx.state;
     std::vector<ObjectRef> pass;
     for (const ObjectRef& ref : objectOrder(s)) {
         if (ref.vehicle.valid() ? s.vehicle(ref.vehicle)->location.system == sys : s.galaxy.object(ref.object).system == sys)
             pass.push_back(ref);
     }
-    std::vector<ObjectId> stars;
     for (const ObjectRef& ref : pass) {
         if (ref.vehicle.valid()) {
             if (Vehicle* v = s.vehicle(ref.vehicle)) {
@@ -145,11 +158,17 @@ void shockwave(TurnContext& ctx, SystemId sys, std::string_view cause, Rng& rng)
         }
         const ObjectKind kind = s.galaxy.object(ref.object).kind;
         if (kind == ObjectKind::WarpPoint) continue;
-        if (isStar(kind)) stars.push_back(ref.object);
-        else if (kind == ObjectKind::Planet || kind == ObjectKind::Asteroids) replaceByAsteroids(ctx, ref.object, 0, cause, rng);
-        else removeObject(s, ref.object);
+        if (kind == ObjectKind::Planet || kind == ObjectKind::Asteroids) {
+            if (planets == Shockwave::Asteroids) {
+                replaceByAsteroids(ctx, ref.object, 0, cause, rng);
+            } else {
+                loseColony(ctx, ref.object, cause);
+                removeObject(s, ref.object);
+            }
+        } else {
+            removeObject(s, ref.object);
+        }
     }
-    for (ObjectId star : stars) removeObject(s, star);
     s.tidyFleets();
 }
 
@@ -206,9 +225,13 @@ public:
 protected:
     const StarSystem& system() const { return cs_.galaxy.system(here_.system); }
 
-    // The first member with a working device that can act: movement remaining
-    // (except Construct, which needs none; the movement is not spent), not
-    // cloaked, and enough supply for the device (spec 01 §9, confirmed: binary).
+    // The vehicle that acts (one: since 2026-10-14 every member of a group
+    // acts for itself, movement.cpp `stellar`). Its checks, in the original's
+    // order (spec 01 §9, spec 03 §8, confirmed: binary): movement remaining
+    // (except Construct, which needs none; the movement is not spent), the
+    // first working device with the ability, enough supply for that device
+    // (its own `Supply Amount Used`, without the racial Supply Cost modifier,
+    // findings A4), and not cloaked. The first refusal is the answer.
     std::string chooseActor(std::span<const VehicleId> members) {
         const AbilityKind k = abilityFor(action_);
         std::string firstReason;
@@ -217,23 +240,29 @@ protected:
             if (!v || !alive(*v) || v->status == VehicleStatus::Mothballed) continue;
             const Design& d = cs_.design(v->design);
             const int movement = planning_ ? turnMovement(r_, cs_, *v) : v->movement;
-            for (size_t i = 0; i < d.entries.size(); ++i) {
-                if (!entryIntact(r_, cs_, *v, i)) continue;
-                const auto ab = r_.componentAbilities(d.entries[i].component);
-                if (!hasAbility(ab, k)) continue;
-                const int64_t supply = scaledSupply(r_, cs_, v->owner, mounted(r_, d.entries[i]).supplyUsed);
-                std::string why;
-                if (action_ != StellarAction::CreateConstructedPlanet && movement <= 0) why = "No movement left for stellar manipulation";
+            std::string why;
+            if (action_ != StellarAction::CreateConstructedPlanet && movement <= 0) why = std::string(kNoMovement);
+            std::optional<size_t> device;
+            for (size_t i = 0; i < d.entries.size() && why.empty() && !device; ++i)
+                if (entryIntact(r_, cs_, *v, i) && hasAbility(r_.componentAbilities(d.entries[i].component), k)) device = i;
+            if (why.empty() && !device) why = std::string(kNoComponent);
+            int64_t supply = 0;
+            if (why.empty()) {
+                supply = mounted(r_, d.entries[*device]).supplyUsed;
+                if (v->supply < supply) why = "Not enough supply for stellar manipulation";
                 else if (v->status == VehicleStatus::Cloaked) why = "A cloaked ship cannot manipulate stars";
-                else if (v->supply < supply) why = "Not enough supply for stellar manipulation";
-                if (why.empty()) {
-                    actor_ = Actor{id, i, bestValue1(ab, k), supply};
-                    return {};
-                }
-                if (firstReason.empty()) firstReason = why;
             }
+            if (why.empty()) {
+                const auto ab = r_.componentAbilities(d.entries[*device].component);
+                // Construct takes the vehicle's best value over all its
+                // abilities (findings A10); the others the device's own.
+                const int64_t value = action_ == StellarAction::CreateConstructedPlanet ? bestValue1(vehicleAbilities(r_, cs_, *v), k) : bestValue1(ab, k);
+                actor_ = Actor{id, *device, value, supply};
+                return {};
+            }
+            if (firstReason.empty()) firstReason = why;
         }
-        return firstReason.empty() ? "No working component for that manipulation" : firstReason;
+        return firstReason.empty() ? std::string(kNoComponent) : firstReason;
     }
 
     // An owner without a treaty of Non-Aggression or better with us (war,
@@ -410,15 +439,15 @@ protected:
     std::string constructConditions() {
         plan_.object = target(ObjectKind::Star);
         if (!plan_.object) return "No star here";
-        // The world the order names: the size chosen in the window, at most
-        // the device's value (spec 06 §1.3, confirmed: binary); none (the
-        // computer players' orders) is the one the value names, and a size
-        // above the value is refused here (both inferred, spec 01 §9).
-        if (o_.planetSize > actor_.value) return "The device cannot build a world that large";
-        const int64_t size = o_.planetSize > 0 ? o_.planetSize : actor_.value;
-        for (const auto& ps : r_.data().planetSizes)
-            if (ps.constructed && ps.specialAbilityId == size) plan_.world = &ps;
-        if (!plan_.world) return "Unknown constructed planet";
+        // The world the order names: the PlanetSize record at its position in
+        // PlanetSize.txt, counted from 1 (Order::planetSize, the size chosen in
+        // the window). It must exist, and its `Special Ability ID` must equal
+        // the vehicle's best Create Constructed Planet value, else the vehicle
+        // lacks the component (spec 01 §9, findings A10, confirmed: binary).
+        const auto& sizes = r_.data().planetSizes;
+        const size_t position = o_.planetSize;
+        if (position >= 1 && position <= sizes.size() && sizes[position - 1].specialAbilityId == actor_.value) plan_.world = &sizes[position - 1];
+        if (!plan_.world) return std::string(kNoComponent);
         // Every requirement: the ships in this sector, whoever owns them, carry at
         // least Val 2 kT of components whose Custom Group is Val 1. The count goes
         // by design: every such component, damaged or not, with its mounted size;
@@ -514,52 +543,54 @@ private:
         return a;
     }
 
-    // `picture`: the entry's (spec 06 §4.1): PlanetCreated, StarDestroyed,
-    // WPOpened and the others, the new object's for a constructed planet,
-    // none where the game has no file.
-    void announce(std::string title, const std::string& picture) {
+    // Who is told of a result, and how (spec 01 §9, spec 05 §7.3 term 2,
+    // Q50, findings B1, confirmed: binary). Each empire in `to` gets one log
+    // entry naming the culprit, with `picture` (spec 06 §4.1: PlanetCreated,
+    // StarDestroyed, WPOpened and the others, the new object's for a
+    // constructed planet). The acting empire's history keeps every result
+    // (OpenSE4's record, spec 05 Q30), whoever is told.
+    void report(std::string title, const std::string& picture, const std::vector<EmpireId>& to) {
         addHistory(s_, owner_, owner_, std::format("{} (by {})", title, name_), here_);
         const std::string text = stellarReportText(s_, owner_, name_);
-        // A destroyed planet or star (a new nebula or black hole reports the
-        // star it consumed) is reported to every empire present in the system
-        // when it happens, naming the empire responsible: what the computer
-        // players' anger term 2 counts in their own logs (spec 05 §7.3, open
-        // question 44, confirmed: binary).
-        if (isDestructiveStellarReport(title))
-            for (EmpireId w : witnesses_)
-                if (w != owner_) ctx_.log(w, LogCategory::Events, title, text, here_, picture);
-        ctx_.log(owner_, LogCategory::Events, std::move(title), text, here_, picture);
+        for (EmpireId w : to) ctx_.log(w, LogCategory::Events, title, text, here_, picture);
     }
 
-    // Who gets a destroyed planet's or star's report (spec 05 §7.3 term 2,
-    // open question 50, confirmed: binary). Destroy Planet: the empires
-    // present in the system once the planet is gone, with a ship, base,
-    // colony, or fighter, satellite or drone group there; mine fields do not
-    // count (`mines` false, taken after the result). The shockwave (Destroy
-    // Star, Create Nebulae, Create Black Hole): every empire that loses a
-    // colony or any object of its own there, mine fields included (`mines`
-    // true, taken before the result, which removes them all).
-    void noteWitnesses(bool mines) {
-        witnesses_.clear();
+    // The empires present in these systems now: a ship, base, colony, or
+    // fighter, satellite or drone group there; mine fields and troops do not
+    // count. Every result but the shockwave's is reported to them, taken
+    // after the result (Destroy Planet: the destroyed colony no longer
+    // counts, Q50; Open and Close Warp Point: both systems).
+    std::vector<EmpireId> presentIn(std::initializer_list<SystemId> systems) const { return empiresIn(systems, false); }
+
+    // The shockwave's (Destroy Star, Create Nebulae, Create Black Hole):
+    // every empire that loses a colony or any object of its own there, mine
+    // fields included, taken before the result, which removes them all; the
+    // culprit, whose ship goes too, among them.
+    std::vector<EmpireId> losers() const { return empiresIn({here_.system}, true); }
+
+    std::vector<EmpireId> empiresIn(std::initializer_list<SystemId> systems, bool mines) const {
+        std::vector<EmpireId> out;
         auto add = [&](EmpireId e) {
-            if (e.valid() && std::find(witnesses_.begin(), witnesses_.end(), e) == witnesses_.end()) witnesses_.push_back(e);
+            if (e.valid() && std::find(out.begin(), out.end(), e) == out.end()) out.push_back(e);
         };
-        for (const Vehicle& v : s_.vehicles) {
-            if (!alive(v) || v.location.system != here_.system) continue;
-            const ruleset::VehicleType t = vehicleType(r_, s_, v);
-            if ((mines || t != ruleset::VehicleType::Mine) && t != ruleset::VehicleType::Troop) add(v.owner);
+        for (const SystemId sys : systems) {
+            if (!sys.valid() || sys.index() >= s_.galaxy.systems.size()) continue;
+            for (const Vehicle& v : s_.vehicles) {
+                if (!alive(v) || v.location.system != sys) continue;
+                const ruleset::VehicleType t = vehicleType(r_, s_, v);
+                if ((mines || t != ruleset::VehicleType::Mine) && t != ruleset::VehicleType::Troop) add(v.owner);
+            }
+            for (ObjectId o : s_.galaxy.system(sys).objects)
+                if (const Colony* c = s_.colony(o)) add(c->owner);
         }
-        for (ObjectId o : s_.galaxy.system(here_.system).objects)
-            if (const Colony* c = s_.colony(o)) add(c->owner);
-        std::sort(witnesses_.begin(), witnesses_.end());
+        std::sort(out.begin(), out.end());
+        return out;
     }
-    std::vector<EmpireId> witnesses_;
 
     std::string planetName(SystemId sys) const { return std::format("{} {}", s_.galaxy.system(sys).name, romanNumeral(nextPlanetNumeral(s_.galaxy, sys))); }
 
     // The result, after every check has passed.
     void perform() {
-        witnesses_.clear();
         StarSystem& sys = system();
         const auto& rs = r_.data();
         switch (action_) {
@@ -581,15 +612,12 @@ private:
                     append(std::move(planet), sys.id);
                 }
                 remove(*plan_.object);
-                announce(std::format("Planet Created: {}", name), "PlanetCreated");
+                report(std::format("Planet Created: {}", name), "PlanetCreated", presentIn({sys.id}));
                 return;
             }
             case StellarAction::DestroyPlanet: {
                 destroyPlanet(ctx_, *plan_.object, "The planet was destroyed.", s_.rng);
-                // Destroy Planet takes the empires present after its result:
-                // the destroyed colony no longer counts (spec 05 Q50).
-                noteWitnesses(false);
-                announce(std::format("{}{}", kPlanetDestroyed, s_.galaxy.object(*plan_.object).name), "PlanetDestroyed");
+                report(std::format("{}{}", kPlanetDestroyed, s_.galaxy.object(*plan_.object).name), "PlanetDestroyed", presentIn({sys.id}));
                 return;
             }
             case StellarAction::CreateStar: {
@@ -598,19 +626,24 @@ private:
                 star.sector = here_.sector;
                 applySectorType(rs, star, pick(plan_.types));
                 star.name = sys.name + " Star";
-                announce(std::format("Star Created: {}", star.name), "StarCreated");
+                const std::string title = std::format("Star Created: {}", star.name);
                 append(std::move(star), sys.id);
+                report(title, "StarCreated", presentIn({sys.id}));
                 return;
             }
-            case StellarAction::DestroyStar:
-                noteWitnesses(true);
-                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name), "StarDestroyed");
+            case StellarAction::DestroyStar: {
+                const std::vector<EmpireId> to = losers();
+                report(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name), "StarDestroyed", to);
                 destroyStar(ctx_, *plan_.object, "A star exploded in the system.", s_.rng);
                 return;
+            }
             case StellarAction::OpenWarpPoint: openWarpPoint(); return;
             case StellarAction::CloseWarpPoint: {
-                announce(std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, *plan_.object)), "WPClosed");
+                const std::string title = std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, *plan_.object));
+                const ObjectId farEnd = s_.galaxy.object(*plan_.object).destination;
+                const SystemId farSystem = farEnd.valid() && farEnd.index() < s_.galaxy.objects.size() ? s_.galaxy.object(farEnd).system : SystemId{};
                 closeWarpPoint(s_, *plan_.object);
+                report(title, "WPClosed", presentIn({sys.id, farSystem}));
                 return;
             }
             case StellarAction::CreateStorm: {
@@ -632,22 +665,28 @@ private:
                     storm.abilities.push_back(ability(effects[k].first, effects[k].second));
                 }
                 storm.name = "Storm";
-                announce(std::format("Storm created in {}", sys.name), {});
+                // No log entry for a storm made or destroyed, only the sound
+                // (findings B1; the Stellar Manipulation window plays it).
+                report(std::format("Storm created in {}", sys.name), {}, {});
                 append(std::move(storm), sys.id);
                 return;
             }
             case StellarAction::DestroyStorm:
-                announce(std::format("Storm destroyed in {}", sys.name), {});
+                report(std::format("Storm destroyed in {}", sys.name), {}, {});
                 remove(*plan_.object);
                 return;
             case StellarAction::CreateNebulae:
             case StellarAction::CreateBlackHole: {
                 const bool nebula = action_ == StellarAction::CreateNebulae;
-                noteWitnesses(true);
-                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name), "StarDestroyed");
-                // A nebula created shows StarDestroyed (a quirk of the original, spec 06 §4.1).
-                announce(std::format("{} created in {}", nebula ? "Nebula" : "Black hole", sys.name), nebula ? "StarDestroyed" : "BlackHoleCreated");
-                shockwave(ctx_, sys.id, nebula ? "The system became a nebula." : "The system collapsed into a black hole.", s_.rng);
+                // One entry for each empire that loses something, titled after
+                // the result; a nebula's shows StarDestroyed (a quirk of the
+                // original, spec 06 §4.1) (findings B1, confirmed: binary).
+                const std::vector<EmpireId> to = losers();
+                report(std::format("{}{}", nebula ? kNebulaeCreated : kBlackHoleCreated, sys.name), nebula ? "StarDestroyed" : "BlackHoleCreated", to);
+                // A black hole removes the planets and asteroid fields; a
+                // nebula turns them into asteroid fields (findings A1).
+                shockwave(ctx_, sys.id, nebula ? "The system became a nebula." : "The system collapsed into a black hole.", s_.rng,
+                          nebula ? Shockwave::Asteroids : Shockwave::Removed);
                 if (nebula) setSystemKind(system(), "Nebulae", {ability(AbilityKind::SectorSightObscuration, 3)});
                 else
                     setSystemKind(system(), "Black Hole",
@@ -658,8 +697,9 @@ private:
             case StellarAction::DestroyNebulae:
             case StellarAction::DestroyBlackHole: {
                 const bool nebula = action_ == StellarAction::DestroyNebulae;
-                announce(std::format("{} removed from {}", nebula ? "Nebula" : "Black hole", sys.name), nebula ? "NebulaeDestroyed" : "BlackHoleDestroyed");
                 setSystemKind(sys, "Normal", {});  // a standard, start-eligible system; the objects stay
+                report(std::format("{} removed from {}", nebula ? "Nebula" : "Black hole", sys.name), nebula ? "NebulaeDestroyed" : "BlackHoleDestroyed",
+                       presentIn({sys.id}));
                 return;
             }
             case StellarAction::CreateConstructedPlanet: construct(); return;
@@ -693,7 +733,7 @@ private:
         s_.galaxy.object(near).destination = far;
         s_.galaxy.object(far).destination = near;
         sight::learnWarpLink(s_, owner_, near);
-        announce(std::format("Warp Point Opened to {}", s_.galaxy.system(to).name), "WPOpened");
+        report(std::format("Warp Point Opened to {}", s_.galaxy.system(to).name), "WPOpened", presentIn({from, to}));
     }
 
     void construct() {
@@ -723,7 +763,6 @@ private:
         const std::string title = std::format("Planet Created: {}", world.name);
         remove(*plan_.object);  // the star is used up
         const ObjectId made = append(std::move(world), sysId);
-        announce(title, logpicture::planet(made));   // the new object's picture
         // Every object of the builder here carrying the device or any component of a
         // required group is destroyed, whole ship included, mothballed ships too
         // (spec 01 §9, confirmed: binary).
@@ -737,6 +776,10 @@ private:
             }
             if (used) vehicleLost(ctx_, v, "Used up in planet construction.");
         }
+        // Reported to the empires present once all that is done (findings B1;
+        // that the builder's losses come first is inferred), with the new
+        // object's picture.
+        report(title, logpicture::planet(made), presentIn({sysId}));
     }
 
     TurnContext& ctx_;
@@ -744,6 +787,12 @@ private:
 };
 
 } // namespace
+
+bool hasStellarAbility(std::span<const ParsedAbility> abilities) {
+    for (int a = 0; a < static_cast<int>(StellarAction::Count); ++a)
+        if (hasAbility(abilities, abilityFor(static_cast<StellarAction>(a)))) return true;
+    return false;
+}
 
 std::optional<Location> stellarTarget(const GameState& s, const Order& o, Location here) {
     if (o.amount < 0 || o.amount >= static_cast<int>(StellarAction::Count)) return std::nullopt;

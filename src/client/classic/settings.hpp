@@ -88,6 +88,12 @@ struct ClassicSettings {
     // adds OpenSE4's lines (Group, Limit, Requires, the mount's To Hit) after
     // the original's (spec 06 §1.2). Off by default. `report_extras` in the file.
     bool reportExtras = false;
+    // Game Setup's Save To File keeps the empire's designs in OpenSE4's
+    // empire file when Save Designs is answered Yes (Options, under OpenSE4).
+    // The original's never saves them there, whatever the answer (spec 08
+    // §11.1 Q26, confirmed: binary), so it is off by default, and the
+    // original's empire file (.emp) written from Game Setup never holds any.
+    bool setupSavesDesigns = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

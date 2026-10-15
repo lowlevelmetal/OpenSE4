@@ -6,6 +6,7 @@
 
 #include "client/classic/classic_mode.hpp"
 #include "client/classic/command_line.hpp"
+#include "client/classic/ui.hpp"
 #include "client/script/items.hpp"
 #include "client/script/sdl_input.hpp"
 #include "client/ui/imgui_errors.hpp"
@@ -52,7 +53,8 @@ std::filesystem::path findDir(const std::string& override, const char* name, con
 
 void fatal(const std::string& message) {
     log::error("{}", message);
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenSE4", message.c_str(), nullptr);
+    // -nd: no box for the whole run (spec 05 §9.2).
+    if (!classic::noDialogs()) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenSE4", message.c_str(), nullptr);
 }
 
 // Neither renderer started: what the game needs, what to do about it, and why each
@@ -90,9 +92,10 @@ SDL_HitTestResult SDLCALL windowHitTest(SDL_Window*, const SDL_Point* point, voi
 
 // The original's command line as the host (docs/spec/05 §9.2): the game
 // file's turn is processed from the players' orders files, saved, and the
-// program quits, with no window. A wrong host password quits without a word
-// (but the log and standard error say why); OpenSE4's other refusals show a
-// box unless -nd.
+// program quits, with no window. A game file that is not found (or no name)
+// quits at once without a word, with exit code 0, and a wrong host password
+// with exit code 1 (the log and standard error say why); OpenSE4's other
+// refusals show a box unless -nd.
 int hostFromCommandLine(const AppOptions& options, const classic::CommandLineGame& line, const std::filesystem::path& dataDir) {
     auto refuse = [&](const std::string& why, bool box) {
         log::error("{}", why);
@@ -101,14 +104,19 @@ int hostFromCommandLine(const AppOptions& options, const classic::CommandLineGam
     };
     const std::filesystem::path gameRoot = dataDir.parent_path();
     const auto file = classic::findGameFile(line.gameFile, classic::gameFileFolders(line, gameRoot));
-    if (!file) return refuse(std::format("The game file {} was not found.", line.gameFile), true);
+    if (!file) {
+        log::error("The game file {} was not found: the program quits (spec 05 §9.2).", line.gameFile);
+        return classic::kGameFileNotFound;
+    }
     log::info("Command line: hosting the turn of {}", file->string());
     // The data set with the mods given (--mod, the command line's mod
     // folder), else with the game's own, as `opense4-server pbem process`.
+    // A mod folder that does not exist changes nothing: the original then
+    // finds every file in the game's own folders.
     std::vector<std::string> mods = options.mods;
     bool modsGiven = options.modsGiven;
-    if (!line.modFolder.empty()) {
-        mods.push_back(classic::modFolderPath(line.modFolder, gameRoot).string());
+    if (const auto folder = classic::commandLineModFolder(line.modFolder, gameRoot)) {
+        mods.push_back(folder->string());
         modsGiven = true;
     }
     const std::filesystem::path userDir = userDataDirectory();
@@ -151,6 +159,8 @@ int App::run(const AppOptions& options) {
     // The identifier is the Wayland app ID and X11 window class, which desktops
     // match to packaging/linux/io.github.lowlevelmetal.OpenSE4.desktop.
     SDL_SetAppMetadata("OpenSE4", OPENSE4_CLIENT_VERSION, "io.github.lowlevelmetal.OpenSE4");
+    // The original's `nd` switch holds for the whole run (spec 05 §9.2).
+    classic::setNoDialogs(options.noDialogs);
     // The game is the player's own installed copy: without one there is nothing
     // to play. Checked before any window or renderer exists.
     const auto dataDir = ruleset::findInstalledDataDir(options.installDir);

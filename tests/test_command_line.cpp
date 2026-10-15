@@ -134,6 +134,15 @@ TEST_CASE("command line: the arguments as the original reads them") {
     // The nd switch, with a dash or a slash, in any letter case.
     for (const char* s : {"-nd", "/nd", "-ND", "/Nd"}) CHECK_MESSAGE(isNoDialogsSwitch(s), s);
     for (const char* s : {"nd", "--nd", "-n", "/ndx", "-dn"}) CHECK_FALSE_MESSAGE(isNoDialogsSwitch(s), s);
+    // It takes a place among the arguments (spec 05 §9.2, confirmed: binary):
+    // first, it is the game file's name; third, "not a number", so the host.
+    auto first = commandLineGame(std::vector<std::string>{"-nd"});
+    REQUIRE(first.has_value());
+    CHECK(first->gameFile == "-nd");
+    auto third = commandLineGame(std::vector<std::string>{"game.gam", "boss", "/nd"});
+    REQUIRE(third.has_value());
+    CHECK(third->host());
+    CHECK(kGameFileNotFound == 0);
 
     // Passwords: the spaces around them and letter case do not count.
     CHECK(samePassword("  Secret ", "sECRET"));
@@ -168,8 +177,13 @@ TEST_CASE("command line: the game file is found as given, then in the folders in
     CHECK(where[0] == fs::path("TestMod"));   // no such folder in the game folder: the name as a path
     CHECK(where[1] == savesDir());
     CHECK(where[2] == pbemDir());
+    // A mod folder that does not exist changes nothing (a `-nd` in fourth place among them).
+    CHECK_FALSE(commandLineModFolder("TestMod", tmp.path()).has_value());
+    CHECK_FALSE(commandLineModFolder("-nd", tmp.path()).has_value());
+    CHECK_FALSE(commandLineModFolder("", tmp.path()).has_value());
     fs::create_directories(tmp.path() / "TestMod");
     CHECK(modFolderPath("TestMod", tmp.path()) == tmp.path() / "TestMod");
+    CHECK(commandLineModFolder("TestMod", tmp.path()) == tmp.path() / "TestMod");
     CHECK(gameFileFolders(CommandLineGame{}, tmp.path()).size() == 2);
 }
 
@@ -291,8 +305,24 @@ TEST_CASE("command line: signing in to an OpenSE4 saved game, the password befor
     CHECK(signInToSavedGame(sharedRules(), sim, 1, "second").check.verdict == SignInVerdict::WrongPassword);
     CHECK(signInToSavedGame(sharedRules(), sim, 2, "something").check.verdict == SignInVerdict::WrongPassword);   // no password: an empty one only
     CHECK(signInToSavedGame(sharedRules(), sim, 9, "").check.verdict == SignInVerdict::WrongPassword);
-    // The computer's empire signs nobody in.
-    CHECK(signInToSavedGame(sharedRules(), sim, 3, "").check.verdict == SignInVerdict::NotPlayable);
+    // No other check (spec 05 §9.2, confirmed: binary): the computer's empire
+    // opens too, the computer still playing it.
+    SavedGameSignIn computer = signInToSavedGame(sharedRules(), sim, 3, "");
+    REQUIRE_MESSAGE(computer.check.ok(), computer.check.why);
+    CHECK(computer.session->player() == game::EmpireId{2u});
+    CHECK(computer.session->state().empire(game::EmpireId{2u}).kind == game::PlayerKind::Computer);
+    // And a destroyed empire.
+    {
+        auto loaded = game::loadGame(sim);
+        REQUIRE(loaded.has_value());
+        loaded->first.empires[1].alive = false;
+        const fs::path dead = tmp.path() / "hearth_dead.gam";
+        REQUIRE(game::saveGame(dead, loaded->first, loaded->second).has_value());
+        SavedGameSignIn gone = signInToSavedGame(sharedRules(), dead, 2, "");
+        REQUIRE_MESSAGE(gone.check.ok(), gone.check.why);
+        CHECK(gone.session->player() == game::EmpireId{1u});
+        CHECK_FALSE(gone.session->state().empire(game::EmpireId{1u}).alive);
+    }
 
     // Signed in: that empire's turn, no Login To Game.
     SavedGameSignIn second = signInToSavedGame(sharedRules(), sim, 2, "  ");
@@ -310,7 +340,8 @@ TEST_CASE("command line: signing in to an OpenSE4 saved game, the password befor
     CHECK(signInToSavedGame(sharedRules(), foreign, 1, "wrong").check.verdict == SignInVerdict::WrongPassword);
     CHECK(signInToSavedGame(sharedRules(), foreign, 1, "first").check.verdict == SignInVerdict::InvalidDataFiles);
 
-    // A turn-based game: only the empire whose turn it is.
+    // A turn-based game: only the empire whose turn it is (OpenSE4 cannot hand
+    // that turn to another; the original opens it).
     const fs::path tb = writeLocalGame(tmp.path(), false);
     SavedGameSignIn notYet = signInToSavedGame(sharedRules(), tb, 2, "");
     CHECK(notYet.check.verdict == SignInVerdict::NotPlayable);
@@ -358,11 +389,17 @@ TEST_CASE("command line: signing in to a saved game of the original compares the
     CHECK(signInToSavedGame(sharedRules(), otherData, 1, "nope").check.verdict == SignInVerdict::WrongPassword);
     CHECK(signInToSavedGame(sharedRules(), otherData, 1, "OPEN SESAME").check.verdict == SignInVerdict::InvalidDataFiles);
 
-    // A file without checksums (a Quick Start game's are all 0) is not compared (inferred).
+    // A file whose seven checksums are all 0 (a Quick Start game's) is compared
+    // too, so it never matches (spec 05 §9.2, confirmed: binary); only a file
+    // older than 1.42 skips the test.
     game::classic::ClassicSave none = *save;
     none.options.checksums = {};
     const fs::path quick = tmp.path() / "Quick.gam";
     write(quick, none);
-    CHECK_MESSAGE(signInToSavedGame(sharedRules(), quick, 1, "open sesame").check.ok(),
-                  signInToSavedGame(sharedRules(), quick, 1, "open sesame").check.why);
+    CHECK(signInToSavedGame(sharedRules(), quick, 1, "open sesame").check.verdict == SignInVerdict::InvalidDataFiles);
+    none.version = "1.41";
+    const fs::path old = tmp.path() / "Old.gam";
+    write(old, none);
+    SavedGameSignIn older = signInToSavedGame(sharedRules(), old, 1, "open sesame");
+    CHECK_MESSAGE(older.check.verdict != SignInVerdict::InvalidDataFiles, older.check.why);
 }

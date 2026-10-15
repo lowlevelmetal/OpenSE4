@@ -188,6 +188,11 @@ public:
             ImGui::SetTooltip("The Component Report shows the original's lines. With this on it also shows\n"
                               "OpenSE4's own: the component's group, its limit per vehicle, the technology\n"
                               "it requires and a weapon mount's to-hit modifier.");
+        changed |= lampToggle(ui, "Game Setup's Save To File saves the designs", &s.setupSavesDesigns);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Off, as in the original: Save To File on Game Setup's Players page writes no design, whatever is\n"
+                              "answered to Save Designs. On: Yes keeps the empire's designs in OpenSE4's empire file. The file\n"
+                              "for Space Empires IV written there never holds designs; Save Empire during a game saves them.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {
@@ -269,11 +274,17 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(w, ui.px(26)))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
-        if (!resets_.empty()) ImGui::OpenPopup("Password Reset");
+        if (!resets_.empty()) openBox("Password Reset");
     }
 
     // One "Password Reset" message per empire, to the host only.
     void resetNotice(UiContext& ui) {
+        // -nd (spec 05 §9.2): the messages go to the log, and the resets are kept.
+        if (boxSkipped("Password Reset")) {
+            for (const std::string& r : resets_) skippedBox("Password Reset", r);
+            resets_.clear();
+            return;
+        }
         ImGui::SetNextWindowSize(ui.size({380, 0}));
         if (!ImGui::BeginPopupModal("Password Reset", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
         if (!resets_.empty()) ImGui::TextWrapped("%s", resets_.front().c_str());

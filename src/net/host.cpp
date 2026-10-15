@@ -1014,8 +1014,9 @@ std::expected<uint32_t, std::string> HostSession::addComputerEmpire(game::Empire
     s->info.id = nextSlotId_++;
     s->info.kind = SlotKind::Computer;
     s->info.ready = true;
+    const bool neutral = setup.kind == game::PlayerKind::Neutral;
     s->info.setup = std::move(setup);
-    s->info.setup.kind = game::PlayerKind::Computer;
+    s->info.setup.kind = neutral ? game::PlayerKind::Neutral : game::PlayerKind::Computer;   // a neutral empire stays neutral
     s->info.setup.passwordHash.clear();
     const uint32_t id = s->info.id;
     slots_.push_back(std::move(s));
@@ -1124,12 +1125,45 @@ std::string HostSession::startProblem(bool force) const {
 std::expected<void, std::string> HostSession::startGame(bool force) {
     if (std::string problem = startProblem(force); !problem.empty()) return std::unexpected(problem);
     game::GameSetup setup = config_.setup;
+    const uint32_t firstRandom = nextSlotId_;   // the random players' slots come from here on
+    // The random players of a game hosted over TCP/IP (spec 05 §7.1, §9.4,
+    // confirmed: binary): added as the game starts (the original: when its
+    // host generates the first turn), each with a computer slot of its own.
+    if (config_.randomComputers || config_.randomNeutrals) {
+        std::vector<std::string> styles;
+        size_t empires = 0;
+        for (const auto& s : slots_) {
+            if (s->info.open()) continue;
+            ++empires;
+            if (!s->info.setup.preset.empty()) styles.push_back(s->info.setup.preset);
+        }
+        Rng rng(setup.seed ^ 0x510e527fade682d1ull);
+        const std::vector<game::EmpireSetup> added = game::networkRandomPlayers(
+            rules_, config_.randomPlayersLevel, config_.randomComputers, config_.randomNeutrals, empires, styles, setup.options.racialPoints, rng);
+        for (const game::EmpireSetup& e : added) {
+            auto slot = std::make_unique<Slot>();
+            slot->info.id = nextSlotId_++;
+            slot->info.kind = SlotKind::Computer;
+            slot->info.ready = true;
+            slot->info.setup = e;
+            slots_.push_back(std::move(slot));
+        }
+        if (!added.empty()) emit(EventType::Info, std::format("{} random computer and neutral players join the game.", added.size()));
+    }
     setup.empires.clear();
     for (const auto& s : slots_) {
         if (s->info.open()) continue;
         game::EmpireSetup es = s->info.setup;
-        es.kind = s->info.kind == SlotKind::Human ? game::PlayerKind::Human : game::PlayerKind::Computer;
+        // A computer slot's empire stays neutral when it is one.
+        es.kind = s->info.kind == SlotKind::Human ? game::PlayerKind::Human
+                  : es.kind == game::PlayerKind::Neutral ? game::PlayerKind::Neutral
+                                                          : game::PlayerKind::Computer;
         es.passwordHash = s->info.kind == SlotKind::Human ? s->verifier : std::string{};
+        // Only random players get the chosen Computer Player Difficulty.
+        if (s->info.kind == SlotKind::Computer && s->info.id >= firstRandom) {
+            setup.options.randomAiPlayers.resize(setup.empires.size() + 1, 0);
+            setup.options.randomAiPlayers[setup.empires.size()] = 1;
+        }
         setup.empires.push_back(std::move(es));
     }
     std::expected<game::GameState, std::string> created = std::unexpected(std::string("unknown error"));

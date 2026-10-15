@@ -658,10 +658,16 @@ private:
             d.scrapped = in.scrapped;
             d.enemyTonnageDestroyed = in.tonnageDestroyed;
             d.retrofitted = in.everBuilt && in.built == 0;
-            const bool free = in.owner == 0;
+            // A free slot (§3.7), or a design whose owner is no player of the
+            // game: Game Setup keeps the designs an Add Existing read before
+            // its empire was refused, and saves them with the game (§13.3,
+            // inferred that nothing removes them). Either is a placeholder
+            // no empire lists.
+            const bool unowned = in.owner != 0 && !player(in.owner).valid();
+            if (unowned) count("designs owned by no player of the game (kept as free slots)");
+            const bool free = in.owner == 0 || unowned;
             if (free) {
-                // A free slot (§3.7): a placeholder no empire lists; its old
-                // fields are kept when they still fit the data set.
+                // Its old fields are kept when they still fit the data set.
                 d.owner = EmpireId{0u};
                 d.obsolete = true;
                 const bool fits = inRange(in.hull, d_.vehicleSizes.size()) &&
@@ -676,7 +682,6 @@ private:
                 continue;
             }
             const EmpireId owner = player(in.owner);
-            if (!owner.valid()) return fail(std::format("{} belongs to player {}; the save has {} empires", where, in.owner, s_.empires.size()));
             d.owner = owner;
             const auto hull = position(in.hull, d_.vehicleSizes.size(), "VehicleSize.txt", where);
             if (!hull) return;
@@ -1135,9 +1140,10 @@ private:
             case 60: stellar(StellarAction::CreateNebulae); o.object = target.object; return o;
             case 62: stellar(StellarAction::CreateBlackHole); o.object = target.object; return o;
             case 66:
+                // The extra byte: the world's position in PlanetSize.txt, from 1 (§3.8.8, confirmed: binary).
                 stellar(StellarAction::CreateConstructedPlanet);
                 o.object = target.object;
-                count("stellar construction orders (their size parameter is not known, §11.1 Q7)");
+                o.planetSize = rec.extra;
                 return o;
             case 25: o.kind = OrderKind::Sentry; return o;
             case 34:

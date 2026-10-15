@@ -10,6 +10,7 @@
 #include "engine_fixture.hpp"
 #include "temp_dir.hpp"
 
+#include "datafile/datafile.hpp"
 #include "game/classic_files.hpp"
 #include "game/classic_save.hpp"
 #include "game/generate.hpp"
@@ -388,7 +389,11 @@ TEST_CASE("classic files: a new game gives an empire what its empire file brough
     first.customRace->characteristics = Race{}.characteristics;
     EmpireSetup plain;
     plain.name = "Plain";
-    g.empires = {first, plain};
+    // The same file as a computer player's.
+    EmpireSetup computer = first;
+    computer.name = "Machine Choir";
+    computer.kind = PlayerKind::Computer;
+    g.empires = {first, plain, computer};
     auto s = createGame(r, g);
     REQUIRE_MESSAGE(s.has_value(), (s ? std::string{} : s.error()));
     const Empire& a = s->empires[0];
@@ -400,10 +405,33 @@ TEST_CASE("classic files: a new game gives an empire what its empire file brough
     CHECK_FALSE(a.chooseColonyType);
     CHECK_FALSE(a.interfaceOptions.warpPointNames);
     CHECK(a.interfaceOptions.facilityMarkers == 0b101);
-    CHECK(a.designTypes == first.designTypes);
-    CHECK(a.colonyTypes == first.colonyTypes);
+    // The file's lists, with the data set's names they lack appended (spec 08
+    // §11.1 Q25, confirmed: binary).
+    auto withDefaults = [](std::vector<std::string> list, const std::vector<std::string>& defaults) {
+        for (const std::string& n : defaults)
+            if (std::none_of(list.begin(), list.end(), [&](const std::string& have) { return datafile::keysEqual(have, n); })) list.push_back(n);
+        return list;
+    };
+    REQUIRE(withDefaults(first.designTypes, r.data().names.designTypes).size() > first.designTypes.size());   // "Scout Ship"
+    CHECK(a.designTypes == withDefaults(first.designTypes, r.data().names.designTypes));
+    CHECK(std::equal(first.designTypes.begin(), first.designTypes.end(), a.designTypes.begin()));
+    CHECK(a.colonyTypes == withDefaults(first.colonyTypes, r.data().names.colonyTypes));
     CHECK(a.repairPriorities == first.repairPriorities);
     CHECK(a.email == first.email);
+    // A human keeps the file's strategies.
+    auto names = [](const std::vector<ruleset::CombatStrategy>& list) {
+        std::vector<std::string> out;
+        for (const auto& st : list) out.push_back(st.name);
+        return out;
+    };
+    CHECK(names(a.strategies) == names(first.strategies));
+    // A computer player's strategies are its AI table's (here the data set's,
+    // as the test data has none), whatever the file brought, and all 25 of
+    // its minister switches are set (spec 08 §11.1 Q24, confirmed: binary).
+    const Empire& c = s->empires[2];
+    CHECK(names(c.strategies) == names(r.data().combatStrategies));
+    CHECK(names(c.strategies) != names(first.strategies));
+    CHECK(c.ministers == kAllMinisters);
     // An empire of Empire Setup starts as before: a new empire's settings, the data set's lists.
     const Empire& b = s->empires[1];
     const Empire fresh;
@@ -649,5 +677,11 @@ TEST_CASE("classic files: the installed empire files import and round-trip (opt-
     auto game = createGame(*r, g);
     REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
     CHECK(validateState(*game, r).empty());
-    CHECK(game->empires[0].designTypes == imported[0].designTypes);
+    // The file's design types first, then each name of the data set's it lacks
+    // (spec 08 §11.1 Q25, confirmed: binary).
+    const auto& types = game->empires[0].designTypes;
+    REQUIRE(types.size() >= imported[0].designTypes.size());
+    CHECK(std::equal(imported[0].designTypes.begin(), imported[0].designTypes.end(), types.begin()));
+    for (const std::string& name : r->data().names.designTypes)
+        CHECK_MESSAGE(std::any_of(types.begin(), types.end(), [&](const std::string& t) { return datafile::keysEqual(t, name); }), name);
 }

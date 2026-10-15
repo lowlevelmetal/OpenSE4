@@ -322,8 +322,8 @@ def stellar_manipulation(amount: Union[int, str] = 0, object: Optional[Ref] = No
     object: A stellar object: a warp point, a planet, a manipulation's target.
     location: Where: a sector (Move To, Seek, a stellar manipulation's target).
     planet_size: Construct (create_constructed_planet): the world to build, by its planet size's
-        special ability number, at most the device's value; 0 builds the one the device's value
-        names.
+        position in PlanetSize.txt, from 1; that size's special ability number must equal the
+        device's value, or the order is refused.
     """
     return {
         'kind': 'stellar_manipulation',

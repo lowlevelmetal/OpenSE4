@@ -220,15 +220,27 @@ std::optional<std::string> setModOption(const game::Rules& r, NewGameSettings& s
 // Appends the random computer players, then the neutral ones, to `g` after
 // the empires it holds: counts and races drawn from an Rng seeded from
 // g.seed (so the same seed gives the same players), races not yet in the
-// game, names made unique. Marks them in g.options.randomAiPlayers.
-void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlayers& computers, const RandomPlayers& neutrals);
+// game, names made unique, never more than 20 empires in all. Marks them in
+// g.options.randomAiPlayers. `maxComputers`: Quick Start lowers the computer
+// players' count to 9 when it is higher (spec 01 §2.1, confirmed: binary).
+void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlayers& computers, const RandomPlayers& neutrals,
+                      std::optional<int> maxComputers = std::nullopt);
 
-// Quick Start (spec 01 §2.1, §2.2, spec 07 session 5): the player (`preset`,
-// its first tier) in a new game's settings, so with random computer and
-// neutral players at Medium, their numbers and races drawn from the seed.
-// With `opponents` (a lesson's, or --empires): that many computer players of
-// other races, shuffled with the seed, and no neutral one.
+// Quick Start (spec 01 §2.1, §2.2, spec 07 session 5): the player in a new
+// game's settings, so with random computer and neutral players at Medium,
+// their numbers and races drawn from the seed, at most 9 computer players.
+// The player's empire is made as a random computer player of the style
+// `preset` is (spec 05 §7.1 "Random race build": the style's Race Opt set
+// for the game's racial points, its planet type and atmosphere, its AI
+// strategies), then made human with all 25 minister switches off and both
+// Ship Orders options on (clear orders on meeting an enemy and on meeting
+// any other empire) (confirmed: binary). With `opponents` (a lesson's, or
+// --empires): that many computer players of other races, shuffled with the
+// seed, and no neutral one.
 game::GameSetup quickStartGame(const game::Rules& r, std::string_view preset, uint64_t seed, std::optional<int> opponents = std::nullopt);
+// The Quick Start player's empire for `preset` in a game with `racialPoints`
+// (quickStartGame), its race drawn from `seed`.
+game::EmpireSetup quickStartPlayer(const game::Rules& r, std::string_view preset, int racialPoints, uint64_t seed);
 
 // ---- Races --------------------------------------------------------------------------------
 

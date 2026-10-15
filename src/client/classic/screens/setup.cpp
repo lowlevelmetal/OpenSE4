@@ -29,6 +29,7 @@
 #include <format>
 #include <memory>
 #include <random>
+#include <utility>
 
 namespace opense4::client::classic {
 
@@ -824,8 +825,17 @@ private:
         MenuContext& ctx = a.ctx();
         const Painter p = ctx.painter();
         if (!pendingPopup_.empty()) {
-            ImGui::OpenPopup(pendingPopup_.c_str());
-            pendingPopup_.clear();
+            const std::string id = std::exchange(pendingPopup_, {});
+            // -nd (spec 05 §9.2): the messages are not shown, and Save Designs
+            // counts as No; the password and Save Empire windows still show.
+            if (noDialogs() && (id == "Invalid Empire" || id == "Invalid Password")) {
+                skippedBox(id, popupText_);
+            } else if (noDialogs() && id == "Save Designs") {
+                skippedBox(id, "No");
+                saveToFile(false);
+            } else {
+                ImGui::OpenPopup(id.c_str());
+            }
         }
         // A message with OK (Invalid Empire, Invalid Password).
         for (const char* id : {"Invalid Empire", "Invalid Password"}) {
@@ -897,7 +907,7 @@ private:
                 game::classic::EmpireExportOptions options;
                 options.keySeed = std::random_device{}();
                 options.player = static_cast<uint8_t>(std::clamp(saveIndex_ + 1, 1, kMaxEmpires));
-                options.designs = saveDesigns_;
+                options.designs = false;   // the original's file from Game Setup holds none (§11.1 Q26)
                 const auto saved = game::classic::writeClassicEmpire(rules(), saveCopy_, file, report, options);
                 classicSaved_ = saved.has_value();
                 classicNote_ = saved ? withNotes(std::format("Saved for Space Empires IV as {}. Copy it into the original's Empires folder to add it there.",
@@ -912,11 +922,13 @@ private:
     }
 
     // Save To File (spec 08 §13.5): OpenSE4's empire file, its copy with
-    // computer control off, and the designs only with `designs`.
+    // computer control off. The original's never saves the designs, whatever
+    // the answer to Save Designs (spec 08 §11.1 Q26, confirmed: binary); ours
+    // keeps them only with `designs` and the OpenSE4 option on (Options), and
+    // never in the original's file.
     void saveToFile(bool designs) {
         if (saveIndex_ < 0 || static_cast<size_t>(saveIndex_) >= s_.players.size()) return;
-        saveCopy_ = savedCopy(s_.players[static_cast<size_t>(saveIndex_)], designs);
-        saveDesigns_ = designs;
+        saveCopy_ = savedCopy(s_.players[static_cast<size_t>(saveIndex_)], designs && settings().setupSavesDesigns);
         auto file = saveEmpireFile(rules(), userDataDir() / "empires", saveCopy_);
         saveNote_ = file ? std::format("Saved to {}", file->string()) : file.error();
         setStatus(saveNote_, !file.has_value());
@@ -1134,7 +1146,6 @@ private:
     std::string passwordInput_;
     int saveIndex_ = -1;
     game::EmpireSetup saveCopy_;
-    bool saveDesigns_ = false;
     std::string saveNote_;
     std::string classicName_, classicNote_;
     bool classicSaved_ = false;

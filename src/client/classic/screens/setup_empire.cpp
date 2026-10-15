@@ -169,7 +169,12 @@ EmpireEditor::Result EmpireEditor::draw(MenuContext& ctx) {
         // The first check that fails says so in a titled message (spec 02 §9).
         if (auto problem = checkDraft(rules(), d, racialPoints_)) {
             problem_ = std::move(*problem);
-            ImGui::OpenPopup("###draftproblem");
+            if (noDialogs()) {   // -nd (spec 05 §9.2)
+                skippedBox(problem_->title, problem_->text);
+                problem_.reset();
+            } else {
+                ImGui::OpenPopup("###draftproblem");
+            }
         } else if (auto done = finishDraft(rules(), d, racialPoints_)) {
             result_ = std::move(*done);
             result = Result::Created;

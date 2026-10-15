@@ -56,6 +56,12 @@ struct Form {
     // the game's mods offer computer players, docs/sdk/ai-protocol.md §1).
     game::Controller aiPlayer;
     bool aiSeesEverything = false;
+    // Random computer and neutral players, rolled as a game hosted over
+    // TCP/IP rolls them (spec 05 §9.4); one level (0 Low, 1 Medium, 2 High)
+    // serves both. Off: OpenSE4's lobby adds its computer empires itself.
+    bool randomComputers = false;
+    bool randomNeutrals = false;
+    int randomLevel = 1;
 };
 Form& lastForm() {
     static Form form;
@@ -130,10 +136,13 @@ public:
         upnp_ = f.upnp;
         aiPlayer_ = f.aiPlayer;
         aiSeesEverything_ = f.aiSeesEverything;
+        randomComputers_ = f.randomComputers;
+        randomNeutrals_ = f.randomNeutrals;
+        randomLevel_ = f.randomLevel;
     }
     ~MultiplayerScreen() override {
         lastForm() = Form{race_,     name_,      gameName_, address_, port_, humans_, computers_, quadrantSize_, timeout_, turnStyle_, upnp_,
-                          aiPlayer_, aiSeesEverything_};
+                          aiPlayer_, aiSeesEverything_, randomComputers_, randomNeutrals_, randomLevel_};
     }
 
     void draw(MenuContext& ctx) override {
@@ -244,6 +253,17 @@ private:
         ImGui::SliderInt("Human players", &humans_, 2, 20);
         ImGui::SetNextItemWidth(w);
         ImGui::SliderInt("Computer players", &computers_, 0, 19);
+        // Random players as a game hosted over TCP/IP rolls them when it starts
+        // (spec 05 §9.4): the counts from the level, at most 5 neutral ones.
+        ImGui::Checkbox("Random computer players", &randomComputers_);
+        ImGui::SameLine();
+        ImGui::Checkbox("Random neutral players", &randomNeutrals_);
+        if (randomComputers_ || randomNeutrals_) {
+            static constexpr std::array<const char*, 3> kLevels{"Low (1-3)", "Medium (3-7)", "High (6-10)"};
+            ImGui::SetNextItemWidth(w);
+            ImGui::Combo("Number of random players", &randomLevel_, kLevels.data(), static_cast<int>(kLevels.size()));
+            randomLevel_ = std::clamp(randomLevel_, 0, 2);
+        }
         // OpenSE4's own, when the game's mods offer computer players: who plays
         // the computer empires (each can be changed in the lobby), and their view.
         if (offersPlayers(ctx)) {
@@ -360,6 +380,9 @@ private:
         cfg.setup.options.quadrantSize = quadrantSize_;
         cfg.setup.options.simultaneous = turnStyle_ == 0;
         cfg.setup.options.aiSeesEverything = aiSeesEverything_ && offersPlayers(ctx);
+        cfg.randomComputers = randomComputers_;
+        cfg.randomNeutrals = randomNeutrals_;
+        cfg.randomPlayersLevel = randomLevel_;
         cfg.joinPassword = joinPassword_;
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
@@ -807,6 +830,9 @@ private:
     int port_ = net::kDefaultPort;
     int humans_ = 2;
     int computers_ = 2;
+    bool randomComputers_ = false;
+    bool randomNeutrals_ = false;
+    int randomLevel_ = 1;
     int quadrantSize_ = 1;  // Medium, the default
     int timeout_ = 0;
     int turnStyle_ = 0;     // 0 simultaneous, 1 turn-based

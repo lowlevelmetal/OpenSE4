@@ -1133,7 +1133,11 @@ private:
                     case StellarAction::DestroyNebulae: rec.kind = 61; place(o.location); break;
                     case StellarAction::CreateBlackHole: rec.kind = 62; targetObject(o.object); break;
                     case StellarAction::DestroyBlackHole: rec.kind = 63; place(o.location); break;
-                    case StellarAction::CreateConstructedPlanet: rec.kind = 66; targetObject(o.object); break;
+                    case StellarAction::CreateConstructedPlanet:
+                        rec.kind = 66;
+                        targetObject(o.object);
+                        rec.extra = o.planetSize;   // the world's position in PlanetSize.txt (§3.8.8)
+                        break;
                     case StellarAction::Count: return std::nullopt;
                 }
                 break;

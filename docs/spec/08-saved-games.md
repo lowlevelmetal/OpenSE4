@@ -1077,7 +1077,7 @@ written with the current order as 1.
 | 18, 20, 22, 24 | Close warp point, destroy storm, destroy planet, destroy star | target = the object | StellarManipulation |
 | 19, 21, 23, 61, 63 | Create storm, create planet, create star, destroy nebulae, destroy black hole | act where the ship is | StellarManipulation |
 | 60, 62 | Create nebulae, create black hole | target = an object (a star for nebulae) | StellarManipulation |
-| 66 | Stellar construction | target = object, a planet-size parameter: the size chosen in the window (spec 06 §1.3, confirmed: binary; inferred: in extra) | StellarManipulation (CreateConstructedPlanet); the size, `planetSize`, is neither read nor written while its place is open (§11.1 Q7) |
+| 66 | Stellar construction | target = object; extra = the world chosen in the window, as its position in PlanetSize.txt counted from 1 (spec 06 §1.3, confirmed: binary) | StellarManipulation (CreateConstructedPlanet) with `planetSize` = extra, read and written since 2026-10-14 |
 | 25 | Sentry | | Sentry |
 | 34, 35 | Launch, recover units | extra = unit kind in the cargo-kind numbering of Load: 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms; 0 every kind **(confirmed: binary)**. Not the closing list's vehicle types (§3.9), which number mines and satellites the other way round | LaunchUnits, RecoverUnits with `cargo` = that kind |
 | 42..46 | Analyze, mothball, unmothball, self-destruct, fire on | | Analyze, Mothball, Unmothball, SelfDestruct, FireOn |
@@ -1176,7 +1176,11 @@ no upper version bound (the beta-authorization and demo checks of this build alw
 pass). The stored check value K6 is not compared (§2.2). A load fails only when the
 stream is broken: a string with a wrong tag, reading past the end, or a range error in
 the runtime. The player then sees an "Unable to load game" message, and the previous
-game is gone (every empire slot is freed before reading).
+game is gone (every empire slot is freed before reading). Every file routine (game, map,
+empire, orders file, setup file) shows "Unable to load/save ..." under Load Error or Save
+Error and passes the failure on; `nd` and a quiet load show no box; a failed game load
+restores nothing; the orders-file reader reuses the empire file's wording (confirmed:
+binary, 2026-10-14).
 
 ### 5.2 Version gates
 
@@ -1209,7 +1213,7 @@ their defaults:
 |---|---|
 | 1.42 | Options: the seven data-set checksums (0) |
 | 1.43 | Options: the connection (1, manual file moving) |
-| 1.46 | Empires: the network name (empty). Fleets and ships: experience as a float; before, a whole number in an int **(inferred)** |
+| 1.46 | Empires: the network name (empty). Fleets and ships: experience as a float; before, one byte (0 to 255) turned into a float (confirmed: binary; corrected 2026-10-14, complete listing: not an int). Since 2026-10-14 ours reads and writes it so (`classic_save_codec.cpp` `experience`) |
 | 1.51 | Empires: the drone-name counter (0); strategies: the Drones target category, the last of 14, in both the type priorities and the break-formation flags (13 categories before); orders: the target name (empty); drone groups: their name (empty). Reading an empire of an older file appends the design types Anti-Planet Drone and Anti-Ship Drone to its list |
 | 1.62 | Designs: the computer players' template name (empty) |
 | 1.72 | Options: the game code, the turn code and the program's byte sum (0) |
@@ -1582,27 +1586,52 @@ carries out OpenSE4's start of that player's turn before writing (§12).
 
 ### 11.1 Open questions
 
-1. What the log's "event-style notice" flag is for (no reader found).
-2. Which of the log entry kinds 15..18 is which intelligence outcome.
+1. What the log's "event-style notice" flag is for (no reader found). **Answer**
+   (confirmed: binary, 2026-10-14): nothing but copying, saving and loading reads it.
+2. Which of the log entry kinds 15..18 is which intelligence outcome. **Answer**
+   (confirmed: binary, 2026-10-14): 17 is the acting empire's own intelligence result
+   (success or failure), 18 the victim's report (50 for one project type), 57 a
+   counter-intelligence success; 15 and 16 are never written.
 3. The value of a package item of kind 6 (units): an object, since the item check compares
-   its name (confirmed: binary); that it is the carrier is inferred.
+   its name (confirmed: binary); that it is the carrier is inferred. **Answer** (confirmed:
+   binary, 2026-10-14): a ship carrying units, handed over with its cargo exactly as kind 5;
+   OpenSE4 imports both as a vehicle, which matches.
 4. Which column numbers the sort-key slots store, per window, and whether they match
-   OpenSE4's column identities.
+   OpenSE4's column identities. (Still open on 2026-10-14: interface only, not traced.)
 5. The full rule that gives a design its computer type code when its type name is not
-   one of the 39 standard ones.
+   one of the 39 standard ones. **Answer** (confirmed: binary, 2026-10-14): the code is the
+   position of the exact type name among the 39 standard names, otherwise derived from the
+   design's abilities in a fixed order, identical to OpenSE4's rule used by the export.
 6. **Answered:** the formulas are in §3.2.1 (confirmed: binary; they reproduce the stock
    values). They are set when a game is made through Game Setup and whenever a host
    processes a turn, and they are needed by every simultaneous game, hotseat included
    (observed).
 7. The exact parameters of the Stellar Construction order. It carries the size the player
-   chose (spec 06 §1.3, confirmed: binary); where in the record is not known.
+   chose (spec 06 §1.3, confirmed: binary); where in the record is not known. **Answer**
+   (confirmed: binary, 2026-10-14): in the extra byte, as the record's position in
+   PlanetSize.txt counted from 1; when the order is carried out that record must exist and its
+   `Special Ability ID` must equal the vehicle's best Create Constructed Planet value (spec 01
+   §9). Nothing but the window makes this order. Since 2026-10-14 ours reads and writes it
+   (`classic_save_import.cpp`, `classic_save_export.cpp`, `Order::planetSize`).
 8. The formats of the statistics and events companion files, for exporting OpenSE4's
-   history (the statistics file is plain text, one line per turn).
-9. Whether militia units (design ids from 65000) can remain in a saved colony.
-10. Whether status 2 (under construction) ever reaches a save.
+   history (the statistics file is plain text, one line per turn). **Answer** (confirmed:
+   binary, 2026-10-14): the statistics file has one line per turn for each empire the viewer
+   may compare (player, date, then eleven values); the events file has the date, the other
+   empire, two zeros and a text, for treaties, war, contact made or lost and an empire
+   destroyed; the surrender lines are never written.
+9. Whether militia units (design ids from 65000) can remain in a saved colony. **Answer**
+   (confirmed: binary, 2026-10-14): militia exist only during a ground battle and are removed
+   at its end; OpenSE4 drops them on import, which matches.
+10. Whether status 2 (under construction) ever reaches a save. **Answer** (confirmed: binary,
+    2026-10-14): status 2 is a new ship's state, cleared at its first recalculation; OpenSE4
+    imports it as finished.
 11. Whether fighters and drones can cloak at all (the flag is not saved for them).
-12. Why the turn counter starts at 367 (nothing reads it).
-13. The best rule for finding a system's type on import (§3.5).
+    **Answer** (confirmed: binary, 2026-10-14): they can, and lose the cloak on saving, as the
+    flag's absence says.
+12. Why the turn counter starts at 367 (nothing reads it). **Answer** (confirmed: binary,
+    2026-10-14): it starts there, goes up by one per turn and is read by nothing.
+13. The best rule for finding a system's type on import (§3.5). (A choice for OpenSE4, left
+    as it is on 2026-10-14.)
 14. `playerTurn.started` and the turn-based turn state on import: a loaded turn-based
     game opened directly on the current player's main window (observed, with the large
     sample). **Answered (observed)** for a file without the autosave and hand-over flags
@@ -1672,7 +1701,10 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     - The autosave and hand-over flags (§3.1) open the next-player screen on loading, and a
       loaded hand-over file starts the turn of the empire it names (spec 05 §9.1). Writing
       one of them might let the original carry out the start itself, but how a game on one
-      machine (play style 1) treats them has not been tried.
+      machine (play style 1) treats them has not been tried. **In part answered** (confirmed:
+      binary, 2026-10-14): a loaded turn-based game starts no turn unless the autosave flag
+      (any play style) or the hand-over flag (different machines only) is set; then Next
+      Player shows and the current player's turn starts.
 23. **The options' codes and sums in files before 1.72 (inferred).** §5.2 gives the
     options' game code, turn code, program byte sum and seven data-set checksums two gates,
     1.42 and 1.72, and a 1.58 file holds seven of the ten ints (all 0 in the tutorial's
@@ -1680,31 +1712,64 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     three codes to come with 1.72. Which fields each gate covers, in the executable, would
     settle it; only a pre-1.72 file with non-zero values there would show the difference.
     Likewise a fleet's or ship's experience before 1.46 is read as a whole number in an
-    int, which no file of that age has confirmed.
+    int, which no file of that age has confirmed. **Answer** (confirmed: binary, 2026-10-14):
+    the 1.72 gate covers the game code, the turn code and the byte sum, the 1.42 gate the seven
+    checksums, as OpenSE4 assumes; before 1.46 the fleet's and the ship's experience are one
+    byte each (0 to 255), not an int (§5.2). Since 2026-10-14 ours reads and writes the byte.
 24. **Empire files: what game creation resets (§13).** Begin Game copies each listed
     empire into the game whole (confirmed: binary); whether anything at game creation then
     resets what an empire file brought (the minister switches, the Empire Options, anger
     and turns since war) was not traced. 45 of the 163 files examined have all 25 minister
     switches on; the 20 stock files have all 25 off (observed). OpenSE4 keeps them
-    (inferred).
+    (inferred). **Answer** (confirmed: binary, 2026-10-14, complete listing): a
+    computer-controlled empire has its strategies replaced by its race's computer-player
+    strategies file and all 25 minister switches set; an empire left with no strategies gets
+    the default strategies file. Nothing resets a human's minister switches, Empire Options,
+    anger (50) or turns since war (999) (confirmed for the creation routines read, inferred
+    for the rest of the path). Since 2026-10-14 ours follows (`setup.cpp` `createGame`).
 25. **Empire files with empty lists (§13).** Files saved from Game Setup's Players page
     have no strategies and no design-type or colony-type list (observed). Whether the game
     gives such an empire the defaults at creation, and whether an empire saved during a game
     then gets them a second time, is not known. OpenSE4 gives an empty list the data set's
-    (inferred).
+    (inferred). **Answer** (confirmed: binary, 2026-10-14, complete listing): at game creation
+    every empire's design-type and colony-type lists get each name of the default files that
+    they lack, appended (design types up to 250), so an empty list becomes the defaults and a
+    list that has them gets none twice. Since 2026-10-14 ours follows (`setup.cpp`
+    `withDefaultNames`; names compared ignoring letter case, inferred).
 26. **Save To File and the designs it picks (§13.5).** The Players page's Save To File
     selects the designs by the empire's present place in the list, while designs that Add
     Existing brought keep the key they were added with; after a Remove the two can differ,
     so the original may save another empire's designs (inferred). OpenSE4 keeps each listed
-    empire's designs with the empire and saves those.
+    empire's designs with the empire and saves those. **Answer** (confirmed: binary,
+    2026-10-14, complete listing): Save To File asks "Save Designs" and then writes the
+    designs whose owner is the empire's place in the list (1 to 20), but Game Setup holds its
+    designs under keys from 100 up, so it never writes a design, whatever the answer. The Game
+    Menu's Save Empire during a game does save the player's designs. Since 2026-10-14 ours
+    follows by default: the question is asked, and the empire file holds no design, OpenSE4's
+    and the original's alike; the OpenSE4 option "Game Setup's Save To File saves the
+    designs" (Options, per computer, off by default) keeps them in OpenSE4's file on Yes, never
+    in the original's (`screens/setup.cpp` `saveToFile`, `ClassicSettings::setupSavesDesigns`).
 27. **The game seed after a loaded or generated map.** After Load Map or Generate Map Now,
     Begin Game makes no quadrant; which seed the game then keeps is not known (spec 01).
+    **Answer** (confirmed: binary, 2026-10-14): a new quadrant seeds the generator from the
+    clock, draws the game seed as R(9999) and reseeds with it; after Load Map or Generate Map
+    Now, Begin Game draws no seed: the stored seed keeps the session's previous value and the
+    sequence just continues. OpenSE4 keeps its own seed and generator state, so nothing
+    follows from it (PARITY_GAPS).
 28. **Map files of a finite-resources game (§14).** A planet's values are written as they
     are, so a map saved from a finite-resources game stores the remaining stocks, which a
-    normal game reads as percentages (inferred).
+    normal game reads as percentages (inferred). **Answer** (confirmed: binary, 2026-10-14):
+    map files carry no options and are read without conversion, as said.
 29. **The map editor's files (§14).** Whether the separate map-editor program of the
     install writes this same format was not analysed; no `.map` sample exists on this
-    machine.
+    machine. (Still open on 2026-10-14: the map editor is a separate program, outside the
+    permission to analyse the game's executable; its strings share the version text and the
+    map messages, which suggests the same format.)
+30. **Choices of 2026-10-14 (inferred).** At game creation the default design-type and
+    colony-type names an empire's lists lack are found ignoring letter case (Q25); and that
+    nothing between Game Setup and Save Game removes the designs a refused Add Existing left
+    in the list (§13.4), which OpenSE4's import keeps as free slots. Do the original's
+    lists compare names exactly, and does anything else remove those designs?
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
@@ -1951,7 +2016,8 @@ count is 0.
    valid design goes into the list's first free slot, or at its end, marked changed; an
    invalid one is dropped without a message.
 4. Any error in the stream ends the load with a "Load Error" box saying that the empire
-   file could not be loaded and naming it; nothing is added.
+   file could not be loaded and naming it; the empire is not added. The designs already read
+   stay in Game Setup's list (corrected 2026-10-14, complete listing; see §13.4).
 
 ### 13.4 Game Setup's Players page
 
@@ -1963,7 +2029,15 @@ The buttons, in order: Add New, Add Existing, Edit, Remove, Save To File
   Directory. No password is asked. The file is read with its designs, then checked at once
   against the setup on the screen; if both checks pass the empire is added as the next
   player, its stored player number ignored (it becomes its place in the list). A failed
-  check shows one "Invalid Empire" box and adds nothing **(confirmed: binary)**:
+  check shows one "Invalid Empire" box and does not add the empire **(confirmed: binary)**.
+  Game Setup keeps the designs Add Existing read under a key from 100 up, and when the empire
+  is refused (or its file fails partway) the designs already read stay in that list. Begin
+  Game gives designs only to the keys of the listed empires, the design clean-up looks only at
+  players 1 to N, and Save Game writes every design, so such a game's file holds designs owned
+  by a number above the player count (confirmed: binary, but for the last step: inferred
+  that nothing else removes them). Since 2026-10-14 OpenSE4's import keeps such a design as a
+  free slot, which no empire lists (`classic_save_import.cpp`), where it refused the whole
+  file before. The checks:
   - *Technology:* the sum of the empire's tech levels, each capped at its area's maximum,
     must not exceed the sum, over the allowed areas, of the level a new player gets at the
     setup's Technology Level for New Player (Low: the area's start level; Medium: its raise
@@ -1993,7 +2067,8 @@ Save To File (Players page) and the Game Menu's Save Empire **(confirmed: binary
 4. An error shows a message that the empire could not be saved.
 
 The Game Menu saves the empire of the player whose turn it is. The copy Save To File writes
-always has computer control off (§13.2).
+always has computer control off (§13.2), and holds no design, whatever the answer to Save
+Designs (§11.1 Q26, confirmed: binary).
 
 **Network** (context only; OpenSE4 replaces it): a TCP/IP player's Game Setup writes the
 player's empire with its designs in this format to `temp\CurrEmp.dat` and sends it; the host
@@ -2020,9 +2095,10 @@ the lobby; a failure shows "Empire Load Error".
   (an empty list stands for the data set's in OpenSE4). What has no counterpart is left out
   and noted: the queue templates (OpenSE4 keeps its own per computer), the computer
   players' memory and difficulty, the source game's player number and home. A
-  computer-controlled empire in the file comes in computer-controlled, with the data set's
-  strategies (inferred for OpenSE4's computer players, which do not read the race's
-  strategy file).
+  computer-controlled empire in the file comes in computer-controlled. At game creation
+  (`createGame`) every empire's design-type and colony-type lists get the data set's names
+  they lack, and a computer-controlled empire gets its AI strategies table's strategies and
+  all 25 minister switches, whatever its file brought (§11.1 Q24, Q25).
 - **Export** writes "1.95", the reset values of §13.2, one flag per racial trait of the data
   set and one tech level per tech area (all 0), and for what OpenSE4 does not hold the
   values a new empire record has: computer state 1, staging, secured and incursion systems
@@ -2041,13 +2117,17 @@ the lobby; a failure shows "Empire Load Error".
   Game Menu's Save Empire ask "Save Designs" first, write OpenSE4's own empire file with
   computer control off, and offer *Save for SE IV*, which writes the empire as a `.emp` file
   into a folder of the player's (by default the user's `empires` folder), its file name in
-  lower case.
+  lower case. Save To File writes no design into either file, as the original (§11.1 Q26),
+  unless the OpenSE4 option "Game Setup's Save To File saves the designs" is on; then a Yes
+  keeps them in OpenSE4's file only. The Game Menu's Save Empire saves them on Yes.
 - **Our client differs:** OpenSE4 keeps only the hash of an imported password, of its
   trimmed lower-case text, so Edit (an exact comparison of what is typed) accepts it typed
   in lower case; Save for SE IV lower-cases the file name, not the folder (folder names can
   matter outside Windows); there is no New Empire File button (the file is named after
   the empire, or typed); a file that cannot be read is named under the picker's list
-  rather than in a "Load Error" box, and the picker stays open.
+  rather than in a "Load Error" box, and the picker stays open; a refused empire's designs
+  are not kept (in the original they stay in Game Setup's list and are saved with the game
+  owned by no player, §13.4, which changes nothing in play).
 - **Checked** on the 20 stock files (opt-in test): each decodes to its end with the data
   set's trait count, encodes again with its own keys to the same bytes, imports, and
   exports and imports again to the same empire.

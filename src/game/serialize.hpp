@@ -154,6 +154,9 @@ class Rules;
 //   which a turn-based game runs only at the list's next run
 //   (cmd::SetOrders::hold, cmd::OrderTagged::hold, Set Patrol's points; spec
 //   03 §8). A format 10 command reads with neither.
+// - The Retrofit minister's yard (cmd::Retrofit::moveFirst, spec 05 §7.5
+//   *Retrofit*, spec 03 §19 Q78): retrofit there at once, or go there and
+//   retrofit on arrival. A format 10 command reads as the window's retrofit.
 inline constexpr uint32_t kSaveVersion = 11;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

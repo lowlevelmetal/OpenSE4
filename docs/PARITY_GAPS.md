@@ -16,7 +16,7 @@ outcomes, **L** is an edge case.
 |---|---|---|---|
 | Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played locally, hotseat, over the network and by e-mail. On different machines a host is in charge: over the network (an OpenSE4 extension) it carries out the commands of the player whose turn it is; by e-mail each player plays their turn on their own view (a turn file) and sends its commands (`.plr`), and the host carries them out on the whole game and sends the next player their turn file. A player who is away, out of time or without a `.plr` is played by the computer for that turn (spec 05 open question 33). The game client opens a PBEM turn file (Multiplayer, Play by E-mail, or `--pbem`), plays the player's turn in either style and writes the `.plr` at End Turn (spec 05 open question 36). A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. As in the original, nobody is asked Tactical or Strategic in a game played on different machines: the host resolves the battle (local and hotseat games stop at each battle they show). The host never stops, so a client shows those battles afterwards, where the original shows the player whose turn it is the Strategic Combat window before the battle (spec 06 §7 Q74) | Spec 05 §9.1: on different machines the save file passes from player to player, and TCP/IP is for simultaneous games only; spec 04 §2, §3 step 1; spec 06 §2.7 | M |
 | Random generator after a load | A saved game keeps the generator's state, so a loaded game continues the same random sequence | Every load reseeds the generator from the game's stored seed, which never changes in play (spec 08 §3.4, §11.2, confirmed: binary) | L |
-| Minister switches of a new empire (`Empire::ministers`) | A new human empire starts with the 14 individual minister areas on | A new human empire, from Quick Start or Game Setup, starts with all 25 switches off (spec 08 §3.6.9, §11.2, observed) | L |
+| Minister switches of a new empire (`Empire::ministers`) | A new human empire of Game Setup starts with the 14 individual minister areas on (Quick Start's has all 25 off since 2026-10-14) | A new human empire, from Quick Start or Game Setup, starts with all 25 switches off (spec 08 §3.6.9, §11.2, observed) | L |
 
 Since 2026-10-04 the original's saved games (spec 08) are read and written, closing the row
 that said OpenSE4 could neither import nor export them: Load Game and `--load` import a
@@ -604,7 +604,9 @@ and keeps an empty name for the letters of later planets there (Q43).
 | Passwords of the original's empire files (`classic_files.cpp`) | Read as OpenSE4's check of the trimmed lower-case password, so Edit (an exact comparison) and the game take it typed in lower case; *Save for SE IV* writes none (OpenSE4 cannot recover the text) | The plain text, compared exactly by Edit and trimmed and in lower case in the game (spec 08 §3.6.1, §13.4) | L |
 | What an empire file brings besides (`classic_files.cpp`) | The queue templates (OpenSE4 keeps them per computer), the computer players' memory and difficulty and the source game's player number and home are left out | The whole empire record goes into the new game (spec 08 §13.2, §13.4) | L |
 | The original's file pickers (`screens/setup.cpp`, `game_menu.cpp`) | Add Existing lists OpenSE4's `empires` folder (both kinds of file) and the install's `Empires` folder together; *Save for SE IV* takes a folder and a file name, lower-cases only the file name, and has no New Empire File or New Map File button | Load Empire lists the Empires folder (the mod's when it has one); the Save Empire and Save Map pickers have New Empire File / New Map File and lower-case the whole path (spec 08 §13.4, §13.5, §14.3) | L |
-| Begin Game after a loaded or generated map | OpenSE4's game seed is the setup's | Not known which seed the original keeps (spec 08 §11.1 Q27) | L |
+| Begin Game after a loaded or generated map | OpenSE4's game seed is the setup's | The original keeps the session's generator as it stands; OpenSE4 keeps its own seed and generator state, so nothing follows from it (spec 08 §11.1 Q27) | L |
+| Random players of a network game (`net::HostConfig::randomComputers`, `randomNeutrals`) | OpenSE4's lobby and `opense4-server` offer them, off by default (its lobby adds computer empires one by one), rolled from the TCP/IP host's fixed ranges as the game starts | The TCP/IP host's Game Setup has both random kinds on at Medium in a new game, rolled from the fixed ranges at its first turn (spec 05 §7.1, §9.4) | L |
+| Game Setup's Save To File with designs (`screens/setup.cpp`, an OpenSE4 option) | Off by default, as the original: no design is written, whatever the answer to Save Designs. With Options' "Game Setup's Save To File saves the designs" on, a Yes keeps them in OpenSE4's empire file (never in the original's) | No design is ever written there (spec 08 §11.1 Q26) | L |
 
 Colony (planetary) cloaking (§6.9) came on 2026-10-01: cloak and sensor levels from facilities
 alone, stored and recalculated only at the moments the spec names; Cloak and Decloak at once
@@ -917,10 +919,15 @@ additions:
   no question for a missing orders file (the computer plays that empire), and no hosting of
   a local game, a turn file or the original's saved game, whose `.plr` files OpenSE4 does
   not read. Signing in takes a turn file, an OpenSE4 saved game or the original's saved
-  game; for OpenSE4's files the data check is the data set's identity and the mods, and the
-  original's Quick Start files, whose checksums are 0, are not compared. A password set
-  with capitals must be typed with them (OpenSE4 keeps only a hash). The not-found case,
-  the boxes `-nd` suppresses and turn-based games are our choices (spec 05 question 84).
+  game; for OpenSE4's files the data check is the data set's identity and the mods. A
+  password set with capitals must be typed with them (OpenSE4 keeps only a hash). Since
+  2026-10-14 the not-found case (exit code 0, no box), `-nd` (every box of the run, a
+  question counting as No, and one of the four arguments), the original's all-zero checksums
+  (refused) and the missing eligibility checks (a destroyed or computer-played empire signs
+  in) follow the original (spec 05 Q84). What OpenSE4 cannot hand over is still refused
+  with exit code 2: another empire's turn file, a turn-based game in which it is another
+  empire's turn, an empire number the game does not have; and under `-nd` the questions
+  before quitting still show, so that the program can be left.
   The original's TCP/IP sounds
   play in OpenSE4's network games and lobby (spec 06 §5.5); its host generates the turn by
   itself once every order is in, so it has no alert for being ready to generate one.
@@ -1055,8 +1062,7 @@ What remains:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Stellar Manipulation's targets and Construct's sizes (`shipui::stellarCandidates`, `constructSizes`) | Every object of the kind in the vehicle's sector, seen or not, as Colonize's pick lists them; the size picker always shown, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114) | L |
-| Stellar Construction in the original's saved games (`classic_save_*`) | The order's size is neither read nor written; an imported order builds the size its device names | The record carries the size, in a place not known (spec 08 §11.1 Q7) | L |
+| Construct's size picker (`shipui::constructSizes`) | Always shown, even for a single size, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114); the sizes it offers (those whose ID equals the device's best value) and the targets (every object of the kind in the sector, seen or not) match since 2026-10-14 | L |
 
 The REA parity audit of the main window (2026-10-14, spec 06 §2.3, §2.4, §2.8, §3, §7 Q99(d),
 Q115–Q118; spec 03 §8, §8.1) brought the client and engine in line with the executable:

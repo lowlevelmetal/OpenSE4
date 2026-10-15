@@ -835,8 +835,10 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         case Effect::ShipLoseMovement:
             // Movement points of the current turn only, never below 0 (confirmed:
-            // binary). They are refilled when movement starts, so after the
-            // movement phases this changes nothing.
+            // binary). They are refilled when movement starts (and in a
+            // simultaneous game already after the 30 days, spec 03 §6.3 step
+            // 9), so after the movement phases this changes only what the next
+            // orders see, not how far the vehicle moves.
             // A ship with no movement points left: the operation fails (confirmed: binary).
             if (!v || v->movement <= 0) return out;
             out.actual = std::clamp<int64_t>(amount, 0, v->movement);

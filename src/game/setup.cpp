@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <format>
 #include <optional>
 #include <string>
@@ -33,6 +34,20 @@ uint32_t indexByName(const std::vector<T>& list, std::string_view name) {
     for (uint32_t i = 0; i < list.size(); ++i)
         if (keysEqual(list[i].name, name)) return i;
     return 0;
+}
+
+// The design-type list's limit at game creation (spec 08 §11.1 Q25, confirmed: binary).
+constexpr size_t kMaxDesignTypes = 250;
+
+// An empire's name list with each name of `defaults` it lacks appended, while
+// the list holds fewer than `limit` names (spec 08 §11.1 Q25, confirmed:
+// binary); the comparison ignores letter case (inferred).
+std::vector<std::string> withDefaultNames(std::vector<std::string> list, const std::vector<std::string>& defaults, size_t limit) {
+    for (const std::string& name : defaults) {
+        if (list.size() >= limit) break;
+        if (std::none_of(list.begin(), list.end(), [&](const std::string& have) { return keysEqual(have, name); })) list.push_back(name);
+    }
+    return list;
 }
 
 AbilityKind colonizeKind(std::string_view surface) {
@@ -397,6 +412,42 @@ std::vector<int> startingTechLevels(const Rules& r, const GameOptions& o, const 
     return levels;
 }
 
+int networkRandomPlayerCount(int level, Rng& rng) {
+    // Low 1-3, Medium 3-7, High 6-10; any other setting 1 (confirmed: binary).
+    switch (level) {
+        case 0: return rng.rangeInt(1, 3);
+        case 1: return rng.rangeInt(3, 7);
+        case 2: return rng.rangeInt(6, 10);
+        default: return 1;
+    }
+}
+
+std::vector<EmpireSetup> networkRandomPlayers(const Rules& r, int level, bool computers, bool neutrals, size_t empires,
+                                              std::vector<std::string> usedStyles, int racialPoints, Rng& rng) {
+    constexpr size_t kMaxEmpireCount = 20;
+    size_t computerCount = computers ? static_cast<size_t>(networkRandomPlayerCount(level, rng)) : 0;
+    size_t neutralCount = neutrals ? static_cast<size_t>(networkRandomPlayerCount(level, rng)) : 0;
+    neutralCount = std::min<size_t>(neutralCount, kMaxNetworkNeutrals);
+    const size_t room = empires < kMaxEmpireCount ? kMaxEmpireCount - empires : 0;
+    computerCount = std::min(computerCount, room);
+    neutralCount = std::min(neutralCount, room - computerCount);
+    std::vector<EmpireSetup> out;
+    for (const bool neutral : {false, true}) {
+        const size_t count = neutral ? neutralCount : computerCount;
+        for (const std::string& folder : ai::randomRacePresets(r, static_cast<int>(count), neutral, usedStyles, rng)) {
+            const ruleset::RacePreset* p = findPreset(r, folder);
+            if (!p) continue;
+            EmpireSetup e;
+            e.preset = folder;
+            e.customRace = ai::randomPlayerRace(r, *p, racialPoints, rng);
+            e.kind = neutral ? PlayerKind::Neutral : PlayerKind::Computer;
+            usedStyles.push_back(folder);
+            out.push_back(std::move(e));
+        }
+    }
+    return out;
+}
+
 std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup& setup, const StartExtras& extras) {
     if (setup.empires.empty()) return std::unexpected("A game needs at least one empire.");
     GameState s;
@@ -491,20 +542,25 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         e.knowledge.lastSeen.assign(s.galaxy.systems.size(), 0);
         e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), s.options.allSystemsSeen ? 1 : 0);
         e.knowledge.notes.assign(s.galaxy.systems.size(), {});
-        // The strategies saved with the empire (spec 06 §7 Q72). Otherwise a
-        // computer player takes those of its AI strategies table, found as its
-        // other AI tables are; when that gives none, and for a human, the data
-        // set's (spec 05 §7.7, confirmed: binary).
-        if (!es.strategies.empty()) e.strategies = es.strategies;
-        else if (e.kind != PlayerKind::Human) e.strategies = ai::profileFor(r, e).strategies;
+        // A human keeps the strategies saved with it (spec 06 §7 Q72). A
+        // computer-controlled empire's are replaced by its AI strategies
+        // table, found as its other AI tables are, whatever its empire file
+        // brought; an empire left with none gets the data set's (spec 05
+        // §7.7, spec 08 §11.1 Q24, confirmed: binary).
+        e.strategies = e.kind == PlayerKind::Human ? es.strategies : ai::profileFor(r, e).strategies;
         if (e.strategies.empty()) e.strategies = r.data().combatStrategies;
         if (e.strategies.empty()) e.strategies.push_back({"Default", {}});
-        // An empire file's name lists and settings come with it whole (spec 08
-        // §13.4, confirmed: binary); an empty list is the data set's (inferred, §11.1 Q25).
-        e.designTypes = !es.designTypes.empty() ? es.designTypes : r.data().names.designTypes;
-        e.colonyTypes = !es.colonyTypes.empty() ? es.colonyTypes : r.data().names.colonyTypes;
+        // An empire file's name lists come with it, and every name of the
+        // data set's lists it lacks is appended, design types up to 250
+        // (spec 08 §11.1 Q25, confirmed: binary; the names compared ignoring
+        // letter case, inferred). An empire without lists gets the data set's.
+        e.designTypes = withDefaultNames(es.designTypes, r.data().names.designTypes, kMaxDesignTypes);
+        e.colonyTypes = withDefaultNames(es.colonyTypes, r.data().names.colonyTypes, SIZE_MAX);
         e.repairPriorities = !es.repairPriorities.empty() ? es.repairPriorities : r.data().names.repairPriorities;
         if (es.settings) applySettings(e, *es.settings);
+        // A computer-controlled empire has all 25 minister switches set (spec
+        // 08 §11.1 Q24, confirmed: binary); nothing resets a human's.
+        if (e.kind != PlayerKind::Human) e.ministers = kAllMinisters;
         s.empires.push_back(std::move(e));
         starts.push_back({s.empires.back().name, s.empires.back().race.nativeSurface, s.empires.back().race.atmosphere});
     }

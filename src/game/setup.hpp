@@ -5,6 +5,7 @@
 // design of its own (spec 01 §3.6 "Starting assets"): only an empire file's
 // designs, the Quick Start design run and a lesson's ships (StartExtras).
 
+#include "core/rng.hpp"
 #include "game/map_file.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -126,6 +127,20 @@ const ruleset::RacePreset* findPreset(const Rules& r, std::string_view folderOrN
 int racialPointCost(const Rules& r, const Race& race);
 
 std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup& setup, const StartExtras& extras = {});
+
+// The random players of a game hosted over TCP/IP (spec 05 §7.1, §9.4,
+// confirmed: binary): added when its host starts the game, not with the
+// setup. Their counts do not come from Settings.txt: each kind asked for
+// draws its count with networkRandomPlayerCount at `level` (computers
+// first); the neutrals are then capped at 5, and both so that the game has
+// at most 20 empires with the `empires` it has. Each race is drawn as Game
+// Setup draws them (ai::pickRandomRace, never one of `usedStyles`) and built
+// for `racialPoints` (ai::randomPlayerRace); each player is a computer or
+// neutral empire with that race.
+inline constexpr int kMaxNetworkNeutrals = 5;
+int networkRandomPlayerCount(int level, Rng& rng);
+std::vector<EmpireSetup> networkRandomPlayers(const Rules& r, int level, bool computers, bool neutrals, size_t empires,
+                                              std::vector<std::string> usedStyles, int racialPoints, Rng& rng);
 
 // Starting technology levels per the tech-start option (spec 05 §1.2).
 std::vector<int> startingTechLevels(const Rules& r, const GameOptions& o, const Race& race);

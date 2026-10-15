@@ -305,12 +305,12 @@ std::optional<game::ObjectKind> stellarTargetKind(game::StellarAction a);
 // Object; none gives the "Cannot Perform Action" box and no order.
 std::vector<game::ObjectId> stellarCandidates(const game::GameState& s, const game::Vehicle& v, game::StellarAction a);
 
-// Construct's size picker (spec 06 §1.3, confirmed: binary): the constructed
-// worlds (PlanetSize records with `Constructed`) whose `Special Ability ID`
-// is from 1 to the vehicle's best Create Constructed Planet value, in
-// PlanetSize.txt order (the order inferred, §7 Q114).
+// Construct's size picker (spec 06 §1.3, confirmed: binary): the PlanetSize
+// records whose `Special Ability ID` equals the vehicle's best Create
+// Constructed Planet value (the largest Val 1 over all its abilities), in
+// PlanetSize.txt order.
 struct ConstructSize {
-    int id = 0;          // the record's Special Ability ID: what the order stores
+    int id = 0;          // the record's position in PlanetSize.txt, from 1: what the order stores (Order::planetSize)
     std::string name;    // "Ringworld"
 };
 std::vector<ConstructSize> constructSizes(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);

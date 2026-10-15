@@ -114,10 +114,9 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
             const auto action = static_cast<game::StellarAction>(std::clamp(o.amount, 0, static_cast<int>(game::StellarAction::Count) - 1));
             std::string out = std::format("{}: {}", name, stellarInfo(action).name);
             // Construct names the world chosen (spec 06 §1.3).
-            if (action == game::StellarAction::CreateConstructedPlanet && o.planetSize > 0) {
-                for (const ruleset::PlanetSize& ps : ui.rules().data().planetSizes)
-                    if (ps.constructed && ps.specialAbilityId == o.planetSize) out = std::format("{}: Construct {}", name, ps.name);
-            }
+            // (Order::planetSize: its position in PlanetSize.txt, from 1).
+            if (action == game::StellarAction::CreateConstructedPlanet && o.planetSize > 0 && size_t{o.planetSize} <= ui.rules().data().planetSizes.size())
+                out = std::format("{}: Construct {}", name, ui.rules().data().planetSizes[o.planetSize - 1u].name);
             // An unexplored destination is never named (spec 01 §6.1).
             if (action == game::StellarAction::OpenWarpPoint && o.location.system.valid() && o.location.system.index() < s.galaxy.systems.size())
                 out += " to " + (ui.me().hasExplored(o.location.system) ? s.galaxy.system(o.location.system).name : std::string("an unexplored system"));
@@ -577,6 +576,8 @@ std::optional<TypeAmountPicker::Result> TypeAmountPicker::draw(UiContext& ui) {
 void Confirm::open(std::string title, std::string text) {
     title_ = std::move(title);
     text_ = std::move(text);
+    // -nd: no box, and the question counts as No (spec 05 §9.2).
+    if (noDialogs()) return skippedBox(title_, text_ + " (No)");
     request_ = true;
 }
 

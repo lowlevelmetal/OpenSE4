@@ -15,7 +15,8 @@
 #   5. then the original's command line (docs/spec/05 §9.2): a player signs in
 #      with "<turn file> <password> <player>", and the client hosts the turn of
 #      a simultaneous e-mail game with "<game file> <host password>", with no
-#      window; wrong passwords quit with exit codes 1 (host) and 2 (player).
+#      window; wrong passwords quit with exit codes 1 (host) and 2 (player), a
+#      game file that is not found with 0.
 # Keys, trusted host keys and settings go to a scratch user folder
 # (OPENSE4_USER_DIR), never the user's own.
 # Needs a data set (the installed classic game is found automatically, or pass
@@ -174,7 +175,9 @@ EOF
     }
     expect_exit 1 "$WORK/line/line.gam" wrong
     expect_exit 2 "$WORK/line/Line_01.turn" wrong 1 --pbem-end-turn
-    expect_exit 1 "$WORK/line/missing.gam" Boss
+    # A game file that is not found quits at once, without a word, with exit code 0.
+    expect_exit 0 "$WORK/line/missing.gam" Boss
+    expect_exit 0 "$WORK/line/missing.gam" Boss 1
     SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio "$WORK/line/Line_01.turn" " C " 1 --pbem-end-turn -nd "${CLIENT_ARGS[@]}" | tee "$WORK/line1.log"
     grep -q "Orders saved to .*Line_01.plr" "$WORK/line1.log"
     SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio "$WORK/line/line.gam" "Boss " -nd "${CLIENT_ARGS[@]}" | tee "$WORK/line2.log"

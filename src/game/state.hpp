@@ -667,10 +667,12 @@ struct Order {
     // values; with any other value the order does nothing (spec 02 §5.6).
     uint8_t from = 0;
     uint8_t to = 0;
-    // Construct (StellarAction::CreateConstructedPlanet): the constructed
-    // world the player chose in the Stellar Manipulation window, by its
-    // PlanetSize `Special Ability ID`, at most the device's value; 0 builds
-    // the one whose ID equals the device's value (spec 01 §9, spec 06 §1.3).
+    // Construct (StellarAction::CreateConstructedPlanet): the world the
+    // player chose in the Stellar Manipulation window, by its position in
+    // PlanetSize.txt, from 1, as the original's order stores it; the record's
+    // `Special Ability ID` must equal the device's value when it is carried
+    // out (spec 01 §9, spec 06 §1.3, spec 08 §3.8.8; confirmed: binary).
+    // Before 2026-10-14 it held the record's Special Ability ID instead.
     uint8_t planetSize = 0;
     // Load, Drop, Launch and Recover: the kind of cargo (save format 10).
     CargoKind cargo = CargoKind::None;

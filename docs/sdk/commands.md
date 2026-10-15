@@ -1028,7 +1028,7 @@ same fields; each kind uses some of them.
 | `amount` | int | A number whose meaning depends on the kind (see below). |
 | `from_resource` | resource | Convert Resources: the resource converted. |
 | `to_resource` | resource | Convert Resources: the resource it becomes. |
-| `planet_size` | int | Construct (`create_constructed_planet`): the world to build, by its planet size's special ability number, at most the device's value; 0 builds the one the device's value names. |
+| `planet_size` | int | Construct (`create_constructed_planet`): the world to build, by its planet size's position in PlanetSize.txt, from 1; that size's special ability number must equal the device's value, or the order is refused. |
 | `cargo` | cargo_kind | Load, Drop, Launch and Recover: the kind of cargo they move; `none` (the default) when `design` names it. |
 
 `from_resource` and `to_resource` are `"minerals"` unless the order converts

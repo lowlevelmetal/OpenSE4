@@ -332,9 +332,12 @@ vehicle's sector and a button for each of the 13 manipulations.
   gives it); Create Planet, Destroy Planet, Open Warp Point and Construct also need the
   ability's value above 0. Nothing else is tested: the order's own checks (spec 01 §9) are
   made when it is carried out.
-- Construct first asks for the world's size: the constructed worlds (PlanetSize records
-  with `Constructed`) whose `Special Ability ID` is at most the ability's value. Our list
-  offers them in PlanetSize.txt order (inferred).
+- Construct first asks for the world's size: the PlanetSize records whose `Special Ability
+  ID` **equals** the vehicle's best `Create Constructed Planet` value (the largest Val 1 over
+  all its abilities), and the order stores the chosen record's position in PlanetSize.txt,
+  counted from 1 (confirmed: binary; corrected 2026-10-14, complete listing: not every world
+  up to the value). Our list offers them in PlanetSize.txt order and always shows the picker
+  (inferred, §7 Q114).
 - With Empire Options' "confirm stellar manipulation" on, a "Confirm Action" Yes/No names
   the effect; for Construct it names the size, asking whether to build that world around
   this star (§7 Q46). No gives no order.
@@ -347,7 +350,7 @@ vehicle's sector and a button for each of the 13 manipulations.
   window asks which; with none a "Cannot Perform Action" box says the sector holds no such
   object, and no order is given. The candidates are every object of that kind in the
   sector, in the system's object order, whether or not the player sees it, as for Colonize
-  (§2.9) (inferred; §7 Q114).
+  (§2.9) (confirmed: binary, 2026-10-14; §7 Q114).
 - The order is appended to the vehicle's **own** order list, never given to its fleet: the
   other members' lists stay as they are (a fleet member's own list can then differ from
   theirs; spec 03 §8 says how a fleet acts on such lists).
@@ -5100,7 +5103,10 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
     memories and the name lists, as the original's does (spec 08 §13.2); the copy has
     computer control off. The empire window's Save To File asks about the designs too.
     After saving, *Save for SE IV* also writes the empire as the original's empire file
-    (`.emp`, spec 08 §13), with its designs on Yes.
+    (`.emp`, spec 08 §13), with its designs on Yes. Since 2026-10-14 Game Setup's Save To File
+    writes no design into either file, whatever the answer, as the original's (spec 08 §11.1
+    Q26, confirmed: binary), unless the OpenSE4 option "Game Setup's Save To File saves the
+    designs" (Options) is on; the Game Menu's Save Empire saves them on Yes.
 
 Bringing the battle flow in line with Q30–Q33 (2026-10-01) left these choices of ours,
 each marked "(inferred)" in the client. Q73 and Q76 are settled from the executable (what
@@ -6371,6 +6377,11 @@ an imported turn-based game of the original.
      does the Construct size picker list the constructed worlds in PlanetSize.txt order, and
      appear when only one size qualifies? Our client lists every object of the kind, seen or
      not, and always shows the size picker, its sizes in file order (inferred).
+     **Answer, in part** (confirmed: binary, 2026-10-14): the targets are every object of the
+     kind in the vehicle's sector, with no sight test, in the system's object order, as ours;
+     the size picker lists only the records whose `Special Ability ID` equals the vehicle's
+     best value (§1.3). Whether the picker shows for a single size, and its order, stay open.
+     Since 2026-10-14 ours follows (`shipui::constructSizes`).
 
 **The REA parity audit's main window (2026-10-14).** The audit of the original's main window
 against the executable settled the ship cycle, the location keys, Set Patrol, Change Name,

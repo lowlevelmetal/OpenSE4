@@ -652,8 +652,9 @@ class Order(Record):
 
     @property
     def planet_size(self) -> int:
-        """Construct (create_constructed_planet): the world to build, by its planet size's special
-        ability number, at most the device's value; 0 builds the one the device's value names."""
+        """Construct (create_constructed_planet): the world to build, by its planet size's position in
+        PlanetSize.txt, from 1; that size's special ability number must equal the device's value, or
+        the order is refused."""
         return self._d['planet_size']
 
     @property

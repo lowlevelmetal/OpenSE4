@@ -546,6 +546,9 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
     // Point's destination is picked on the Galaxy Map afterwards.
     game::Order o = stellarOrder(v, a, {});
     if (a == StellarAction::OpenWarpPoint) o.location = {};
+    // Construct: the first size the window offers (the order names one).
+    if (a == StellarAction::CreateConstructedPlanet)
+        if (const std::vector<ConstructSize> sizes = constructSizes(r, s, v); !sizes.empty()) o.planetSize = static_cast<uint8_t>(sizes.front().id);
     if (std::string why = game::movement::stellarProblem(r, s, v.id, o, &c.target); !why.empty()) {
         c.reason = why + ".";
         return c;
@@ -572,7 +575,7 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
         case StellarAction::DestroyNebulae: c.reason = "The nebula is cleared from the system."; break;
         case StellarAction::CreateBlackHole:
             c.destroysSystem = true;
-            c.reason = "The star collapses; everything in the system is destroyed, this ship included.";
+            c.reason = "The star collapses: every planet and asteroid field is lost, and everything else in the system but warp points is destroyed, this ship included.";
             break;
         case StellarAction::DestroyBlackHole: c.reason = "The black hole is removed from the system."; break;
         case StellarAction::CreateConstructedPlanet: c.reason = "A world is built around the star."; break;
@@ -623,9 +626,10 @@ std::vector<game::ObjectId> stellarCandidates(const game::GameState& s, const ga
 
 std::vector<ConstructSize> constructSizes(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     std::vector<ConstructSize> out;
-    const int64_t cap = game::bestValue1(game::vehicleAbilities(r, s, v), AbilityKind::CreateConstructedPlanet);
-    for (const ruleset::PlanetSize& ps : r.data().planetSizes)
-        if (ps.constructed && ps.specialAbilityId >= 1 && ps.specialAbilityId <= cap) out.push_back({ps.specialAbilityId, ps.name});
+    const int64_t best = game::bestValue1(game::vehicleAbilities(r, s, v), AbilityKind::CreateConstructedPlanet);
+    const auto& sizes = r.data().planetSizes;
+    for (size_t i = 0; i < sizes.size() && i < 255; ++i)
+        if (best >= 1 && sizes[i].specialAbilityId == best) out.push_back({static_cast<int>(i) + 1, sizes[i].name});
     return out;
 }
 

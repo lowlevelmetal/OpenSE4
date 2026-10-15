@@ -828,8 +828,10 @@ private:
 
     void confirmPopup(UiContext& ui) {
         if (confirm_) {
-            ImGui::OpenPopup("Are you sure?");
             confirm_ = false;
+            // -nd (spec 05 §9.2): no box, and the question counts as No.
+            if (noDialogs()) return skippedBox("Are you sure?", "No");
+            ImGui::OpenPopup("Are you sure?");
         }
         ImGui::SetNextWindowSize(ui.size({420, 170}), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ui.at({(frameW() - 420) * 0.5f, (frameH() - 170) * 0.5f}), ImGuiCond_Always);

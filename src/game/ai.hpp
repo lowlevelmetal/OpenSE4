@@ -352,10 +352,10 @@ const ruleset::RacePreset* pickRandomRace(const Rules& r, Rng& rng, bool neutral
 // A planet type and atmosphere pair that is not allowed is redrawn from `rng`.
 Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints, Rng& rng);
 
-// Spec 05 §7.1 "random AIs": how many random computer (or neutral) players a
-// Low/Medium/High setting (0..2) brings, and a race preset folder for each.
-// Races are drawn with pickRandomRace; none is drawn twice.
-std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool neutral, Rng& rng);
+// Spec 05 §7.1 "Random race choice": `count` race preset folders for random
+// computer (or neutral) players, drawn one after another with pickRandomRace,
+// none drawn twice nor any of `used` (fewer when the races run out).
+std::vector<std::string> randomRacePresets(const Rules& r, int count, bool neutral, std::vector<std::string> used, Rng& rng);
 // "Computer Player Bonus" (spec 02 §5.4, §6.2; spec 05 §8; confirmed: binary).
 // A computer-controlled empire's income of each kind, after tariffs, is
 // multiplied by 1, 2, 3 or 5 for None, Low, Medium or High and rounded; its

@@ -244,6 +244,10 @@ TEST_CASE("classic options: the per-computer settings keep the Options window's 
     CHECK(settingsFromToml(settingsToToml(s)).reportExtras);
     s.explainFailedOrders = false;
     s.reportExtras = false;
+    // Game Setup's Save To File saves no design, as the original's, unless asked to (OpenSE4's option).
+    CHECK_FALSE(s.setupSavesDesigns);
+    s.setupSavesDesigns = true;
+    CHECK(settingsFromToml(settingsToToml(s)).setupSavesDesigns);
     // New empires start with the Empire Options defaults of spec 06 §1.9.
     const InterfaceOptions o;
     CHECK(o.confirmEndTurn);

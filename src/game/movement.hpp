@@ -345,8 +345,9 @@ void closeWarpPoint(GameState& s, ObjectId warpPoint);
 // ---- Shared helpers (AI, UI, other subsystems) --------------------------------------------------
 
 // Whether an Events log title written by a stellar manipulation reports a
-// destroyed planet or star (a new nebula or black hole reports the star it
-// consumed, once): what the computer players' anger term 2 counts (spec 05 §7.3).
+// destroyed planet or star, or a nebula or black hole made of a star ("Nebulae
+// Created", "Black Hole Created", findings B1): what the computer players'
+// anger term 2 counts (spec 05 §7.3).
 bool isDestructiveStellarReport(std::string_view title);
 // The text of a stellar manipulation report, naming the vehicle and the
 // empire responsible; and whether a log entry is a destructive report that

@@ -3376,14 +3376,17 @@ TEST_CASE("movement: stellar manipulation - storms and constructed worlds") {
 
     // A ringworld needs 20 kT of girders on ships in the star's sector, whoever owns them.
     const VehicleId builder = w.spawn(w.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", "Mv World Builder", "Mv Girder"}), at(a, 6, 6));
-    w.order(builder, stellar(StellarAction::CreateConstructedPlanet, star));
+    // The order names the world by its position in PlanetSize.txt.
+    Order ring = stellar(StellarAction::CreateConstructedPlanet, star);
+    ring.planetSize = planetSizePosition(w.rules(), "Ringworld");
+    w.order(builder, ring);
     w.move();
     CHECK(w.logged(kA, "materials"));
     w.s.empire(kA).relation(kB).contact = w.s.empire(kB).relation(kA).contact = true;
     w.setTreaty(kA, kB, Treaty::TradeAlliance);
     const VehicleId hauler = w.spawn(w.ship(kB, "Girders", 3, {"Mv Girder"}), at(a, 6, 6));
     const VehicleId bystander = w.spawn(w.ship(kA, "Bystander", 3), at(a, 6, 6));
-    w.order(builder, stellar(StellarAction::CreateConstructedPlanet, star));
+    w.order(builder, ring);
     const size_t count = w.s.galaxy.objects.size();
     w.move();  // no movement needed: the builder has no engines
     REQUIRE(w.s.galaxy.objects.size() == count + 1);
@@ -4926,4 +4929,30 @@ TEST_CASE("orders: deleting a waypoint clears every own queue's automatic Move T
     CHECK(w.v(yard).queue.autoWaypoint == -1);
     CHECK(w.s.colony(theirs)->queue.autoWaypoint == 9);   // another empire's queue
     CHECK_FALSE(w.s.empire(kA).waypoints[9].set);
+}
+
+TEST_CASE("movement: a simultaneous turn refills every vehicle's movement after the 30 days (spec 03 §6.3 step 9)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.object(a, ObjectKind::Star, {6, 6});
+    w.spawn(w.ship(kB, "Keeper", 1), at(a, 12, 12));
+    // Its supply runs out on the first step: its maximum falls to 1 during the
+    // action, which leaves it 0 for the rest of the movement phases.
+    const VehicleId ship = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 0));
+    w.v(ship).supply = movement::moveSupplyCost(r, w.s, w.v(ship));
+    w.order(ship, moveTo(a, 12, 0));
+    const GameState before = w.s;
+    w.move();   // the movement phases alone
+    REQUIRE(w.v(ship).supply == 0);
+    CHECK(w.v(ship).movement == 0);
+    w.s = before;
+    TurnOptions o;
+    o.aiForMissing = false;
+    processTurn(r, w.s, {}, o);
+    REQUIRE(w.s.vehicle(ship) != nullptr);
+    CHECK(w.v(ship).location.sector != Sector{0, 0});   // it moved
+    // After the 30 days: its maximum again, as the next orders see it.
+    CHECK(w.v(ship).movement == movement::detail::turnMovement(r, w.s, w.v(ship)));
+    CHECK(w.v(ship).movement == 1);
 }

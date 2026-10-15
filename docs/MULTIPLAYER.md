@@ -122,6 +122,8 @@ port forwarding.
 | `--players=N` | human player slots (default 2) |
 | `--ai=N` | computer empires (default 0) |
 | `--ai=PLAYER` | who plays the computer empires: `builtin`, a mod's player `<mod id>:<player>`, `external:N` for the external bot of slot N, or `external` for a bot of its own each (see [Bots on a host](#bots-on-a-host)) |
+| `--random-ai=LEVEL` | random computer players join as the game starts, rolled as the classic game's TCP/IP host rolls them: `low` 1–3, `medium` 3–7, `high` 6–10, races drawn as Game Setup draws them (off by default) |
+| `--random-neutrals=LEVEL` | random neutral players the same way, at most 5; one level serves both kinds (off by default). The lobby's Host form has the same two boxes and level |
 | `--bot-port=N`, `--bot-bind=ADDR`, `--bot-token=T`, `--bot-timeout=SEC` | where external bots connect, with which token, and their time per request (see [Bots on a host](#bots-on-a-host)) |
 | `--seed=N`, `--quadrant-size=N`, `--systems=N`, `--quadrant=NAME` | galaxy settings (by default the number of systems is rolled from the quadrant size) |
 | `--setup=FILE.toml` | name, seed, options and computer empires from a [setup file](#setup-files) |
@@ -649,16 +651,27 @@ opense4 campaign_02.turn my-password 2     # empire 2: play its turn
 - **With a player number**, that empire signs in with its password and plays its turn: a
   turn file opens as `--pbem` opens it (`--pbem-orders` and `--pbem-end-turn` work with
   it), and an OpenSE4 saved game or a saved game of the original opens on that empire's
-  turn, without the Login To Game window. A wrong password quits with exit code 2. So does
-  a game made with other data files or other mods, after the "Invalid Data Files" box.
+  turn, without the Login To Game window, even for an empire that is destroyed or that the
+  computer plays (the computer goes on playing it), as in the classic game. A wrong password
+  quits with exit code 2. So does a game made with other data files or other mods, after
+  the "Invalid Data Files" box; a saved game of the original whose seven data-file checksums
+  are all 0 (a Quick Start game's) is one of them, as in the classic game. OpenSE4 also
+  refuses with exit code 2 what it cannot hand over: another empire's turn file, a
+  turn-based game in which it is another empire's turn, and an empire number the game does
+  not have.
 - Passwords count without the spaces around them and, as far as OpenSE4's password
   hashes allow, without regard to letter case: a password set with capitals must be typed
   with them, and one set in small letters may be typed in any case.
 - The game file is looked for as given, then in the mod folder, the saves folder and the
-  `pbem` folder of OpenSE4's user folder. A file that is not found quits with exit code 1.
-- `-nd` (or `/nd`) shows no message box: the reason goes to the log and to standard error
-  only. OpenSE4's own options can stand beside these arguments, except `--load`, `--pbem`,
-  `--tutorial` and `--training`.
+  `pbem` folder of OpenSE4's user folder. A file that is not found (or an empty name) quits
+  at once, without a box, with exit code 0, as the classic game does; the log says why. A
+  `MODFOLDER` that does not exist changes nothing.
+- `-nd` (or `/nd`) shows no message box for the whole run: a box's text goes to the log
+  only, and a Yes/No question counts as No (the questions before quitting still show). As in
+  the classic game, the switch also counts as one of the four arguments where it stands, so
+  `opense4 game.gam boss -nd` hosts (`-nd` is "not a number") and `opense4 -nd` alone looks
+  for a game file named `-nd`. OpenSE4's own options can stand beside these arguments, except
+  `--load`, `--pbem`, `--tutorial` and `--training`.
 
 ## Setup files
 

@@ -1992,6 +1992,26 @@ TEST_CASE("classic save: a game whose mods only change data is written, with wha
     CHECK(compareSaves(*save, exportOrFail(r, plain), 20).empty());   // the mods leave the file as it was
 }
 
+TEST_CASE("classic save: a design owned by no player of the game imports as a free slot (§13.3)") {
+    const Rules& r = test::engineRules();
+    const GameState s = playedGame(false, 4, 41);
+    ClassicSave save = exportOrFail(r, s);
+    REQUIRE_FALSE(save.designs.empty());
+    // Game Setup kept a refused Add Existing's designs under a number past the players.
+    DesignRecord stray = save.designs.front();
+    stray.owner = static_cast<uint8_t>(save.empires.size() + 3);
+    stray.name = "Stray";
+    save.designs.push_back(stray);
+    ConversionReport report;
+    auto game = importClassicSave(r, save, report);
+    REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+    REQUIRE(game->designs.size() == save.designs.size());
+    const Design& kept = game->designs.back();
+    CHECK(kept.obsolete);
+    for (const Empire& e : game->empires) CHECK(std::find(e.designs.begin(), e.designs.end(), kept.id) == e.designs.end());
+    CHECK(std::any_of(report.details.begin(), report.details.end(), [](const std::string& d) { return d.find("owned by no player") != std::string::npos; }));
+}
+
 // ---- Older versions (spec 08 §5.2) and the scenario fields (§3.4) --------------------------------------
 
 TEST_CASE("classic save: files of older versions leave out the fields added later (§5.2)") {
@@ -2013,7 +2033,7 @@ TEST_CASE("classic save: files of older versions leave out the fields added late
     now.empires[0].strategies[0].breakFormation[kStrategyCategories - 1] = true;
     REQUIRE_FALSE(now.designs.empty());
     now.designs[0].templateName = "Template";
-    // A ship's experience: a float from 1.46, a whole number before (inferred).
+    // A ship's experience: a float from 1.46, one byte before (confirmed: binary).
     const auto ship = std::find_if(now.objects.begin(), now.objects.end(), [](const ObjectRecord& o) { return o.cls == uint8_t(ObjectClass::Ship); });
     REQUIRE(ship != now.objects.end());
     const size_t shipAt = static_cast<size_t>(ship - now.objects.begin());
@@ -2073,6 +2093,13 @@ TEST_CASE("classic save: files of older versions leave out the fields added late
         CHECK(v.options.connection == 2);
         CHECK(v.empires[0].networkName.empty());
         CHECK(float80Tenths(v.objects[shipAt].experience) == 120);
+        // One byte: 0 to 255 (§5.2, confirmed: binary).
+        ClassicSave seasoned = now;
+        seasoned.version = "1.43";
+        seasoned.objects[shipAt].experience = tenthsToFloat80(3000);
+        auto back = decodeClassicSave(encodeOrFail(seasoned), traits);
+        REQUIRE(back.has_value());
+        CHECK(float80Tenths(back->objects[shipAt].experience) == 2550);
     }
     {
         const ClassicSave v = at("1.46");   // the network name, experience as a float

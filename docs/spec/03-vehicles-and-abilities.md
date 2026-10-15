@@ -877,6 +877,12 @@ over a **30-day** month (confirmed: binary):
 7. Also after each day, pursuit orders (Attack, §8) whose target is gone are removed.
 8. Combat does **not** clear orders or stop movement. Its only effect on orders is that a Sentry
    order at the head of a participant's list is removed, even with Repeat on.
+9. After the 30th day, every vehicle's MP is reset to its maximum once more, fleet members as
+   in step 1, so the rest of the turn (the empires' end-of-turn steps, the event step) and the
+   orders of the next turn see full movement (confirmed: binary; corrected 2026-10-14,
+   complete listing: the routine's tail, past its first finally block, was missing from the old
+   export). Since 2026-10-14 ours follows (`turn.cpp`, `movement::startTurn` after
+   `runMovementAndCombat`).
 
 **The day counter's arithmetic.** The counter is a 64-bit floating-point number (a double). Each
 day the original divides speed by 30 and adds the stored counter in x87 extended precision, each
@@ -946,7 +952,8 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - Being in combat in a simultaneous game neither stops movement nor clears orders.
 - Each empire has two **Ship Orders** options: clear orders on encountering an enemy empire (on
   for a new empire) and on encountering any empire (off); computer players take them from their
-  AI settings. They are checked only at the end of a warp transit that met no other trouble
+  AI settings. Quick Start sets both on for the player (spec 01 §2.1, confirmed: binary;
+  since 2026-10-14 ours does too, `setup::quickStartPlayer`). They are checked only at the end of a warp transit that met no other trouble
   (turbulence damage, mines, turn-based combat), whether the jump belongs to a Warp order, a Move
   To or a pursuit; never on in-system steps, and not for groups made only of drones. They count
   the objects of other empires in the arrival system that the group's owner can see (colonies
@@ -1385,7 +1392,13 @@ member dropped anything.
   the current supply. That amount is paid on success, without the racial supply modifier, and the
   part is destroyed if it has `Component Destroyed On Use`.
 - A refusal for lack of movement makes the order wait in simultaneous games; any other refusal
-  fails it.
+  fails it. In a turn-based game the lack of movement fails it too, and the player is told so
+  (confirmed: binary; corrected 2026-10-14, complete listing).
+- The test is made per member, not for the group: every member of the acting group that has any
+  stellar-manipulation ability carries the action out for itself, with its own checks, cost and
+  result, and the last member tried decides whether the order is done, waits or fails (spec 01
+  §9, confirmed: binary; corrected 2026-10-14). Since 2026-10-14 ours follows (`movement.cpp`
+  `stellar`).
 - Open Warp Point is also refused when the two systems are already linked, when either system has
   10 warp points, when the target is the same system, or when any object of any empire in either
   system has `Stop Open Warp Point`. The distance is the straight-line distance between the two
@@ -2674,7 +2687,9 @@ binary.
       field gets a new asteroid field in the lowest slot empty at that moment, which may be
       one emptied earlier in the same pass; then the old object is removed. Every other object
       except warp points is removed in the same pass: ships, bases, unit groups, storms,
-      comets. The star goes after the pass.
+      comets, and the stars too, where the pass reaches them (corrected 2026-10-14, complete
+      listing: not after the pass), so a later field can take a star's slot. Create Black Hole
+      replaces nothing: its pass removes every planet and asteroid field (spec 01 §9).
     - Anything that named the old object finds it gone. A Colonize, an Attack, or another
       ship's Create Planet aimed at it fails, and a pursuit of it ends (§8).
 
@@ -2682,7 +2697,9 @@ binary.
     old one still holds its slot, and the old one is removed (its record stays, so ids remain
     stable); the shockwave is one pass in slot order over vehicles and stellar objects, a
     destroyed vehicle leaving the game at once; Create Planet with no planet type of the
-    field's size removes the field, pays and reports.
+    field's size removes the field, pays and reports. Since 2026-10-14 the stars leave in the
+    pass and Create Black Hole removes the planets and fields (`movement_stellar.cpp`
+    `shockwave`).
 73. **A fleet member away from the fleet's location that acts (§8, Q61):** its order is carried
     out by the members at the location. The engine also moves that member's own list on (the
     order leaves it, or goes to its back under Repeat), so the member does not carry out the

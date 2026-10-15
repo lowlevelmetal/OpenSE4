@@ -10,6 +10,7 @@
 // button plays its film strip from Pictures/Stellar and says what the
 // order's checks would say now.
 
+#include "client/audio.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
@@ -43,6 +44,12 @@ const char* targetWord(game::StellarAction a) {
         case game::ObjectKind::Planet: return "planet";
         default: return "star";
     }
+}
+
+size_t stormsIn(const game::GameState& s, game::SystemId sys) {
+    if (!sys.valid() || sys.index() >= s.galaxy.systems.size()) return 0;
+    const auto& objects = s.galaxy.system(sys).objects;
+    return static_cast<size_t>(std::count_if(objects.begin(), objects.end(), [&](game::ObjectId o) { return s.galaxy.object(o).kind == game::ObjectKind::Storm; }));
 }
 
 class StellarScreen final : public Screen {
@@ -182,7 +189,7 @@ private:
         if (a == game::StellarAction::CreateConstructedPlanet) {
             sizes_ = constructSizes(ui.rules(), ui.state(), v);
             if (sizes_.empty()) {
-                notice_.open("No constructed world is small enough for this vehicle's device.", "Cannot Perform Action");
+                notice_.open("No planet size matches this vehicle's device.", "Cannot Perform Action");
                 return;
             }
             askSize_ = true;
@@ -255,6 +262,12 @@ private:
     void give(UiContext& ui, const game::Vehicle& v, const game::Order& order) {
         const game::StellarAction a = *pending_;
         const bool turnBased = ui.session.turnBased();
+        // A storm made or destroyed is logged nowhere: only its sound plays
+        // (spec 01 §9), here, when the order carried out at once changed the
+        // system's storms.
+        const bool storm = a == game::StellarAction::CreateStorm || a == game::StellarAction::DestroyStorm;
+        const game::SystemId system = v.location.system;
+        const size_t stormsBefore = storm ? stormsIn(ui.state(), system) : 0;
         if (!status_.issue(ui, stellarCommand(v, order),
                            std::format("{}: ordered.{}", stellarInfo(a).name, turnBased ? "" : " It happens when the turn is processed.")))
             return;
@@ -262,6 +275,8 @@ private:
             closeNow_ = true;
             return;
         }
+        if (storm)
+            if (const size_t after = stormsIn(ui.state(), system); after != stormsBefore) audio().play(stormSound(after > stormsBefore));
         shown_ = a;
         filmStart_ = ui.time;
         lastFilm_.reset();

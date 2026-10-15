@@ -83,6 +83,14 @@ fs::path modFolderPath(const std::string& folder, const fs::path& gameRoot) {
     return path;
 }
 
+std::optional<fs::path> commandLineModFolder(const std::string& folder, const fs::path& gameRoot) {
+    if (folder.empty()) return std::nullopt;
+    const fs::path path = modFolderPath(folder, gameRoot);
+    std::error_code ec;
+    if (!fs::is_directory(path, ec)) return std::nullopt;
+    return path;
+}
+
 GameFileKind gameFileKind(const fs::path& file) {
     if (game::readSaveInfo(file)) return GameFileKind::OpenSE4Game;
     const auto bytes = game::readFileBytes(file);
@@ -145,8 +153,11 @@ SavedGameSignIn signInToSavedGame(std::shared_ptr<const game::Rules> rules, cons
             out.check = refused(SignInVerdict::WrongPassword, std::format("Wrong password for empire {}.", player));
             return out;
         }
+        // Compared for every file from 1.42 on, so a newer file whose seven
+        // checksums are all 0 (a Quick Start game's) never matches (spec 05
+        // §9.2, spec 08 §5.2, confirmed: binary).
         const game::classic::DataSetChecksums& stored = save->options.checksums;
-        const bool held = std::any_of(stored.begin(), stored.end(), [](int32_t v) { return v != 0; });
+        const bool held = save->version >= game::classic::release::kChecksums;
         if (held) {
             const auto computed = game::classic::dataSetChecksums(rules->data().dataDir);
             if (!computed || *computed != stored) {
@@ -208,14 +219,9 @@ SavedGameSignIn signInToSavedGame(std::shared_ptr<const game::Rules> rules, cons
     (void)(*session)->takeSignIn();   // signed in here: no Login To Game, no Next Player window
     const game::GameState& s = (*session)->state();
     const game::Empire& e = s.empire(empire);
-    if (!e.alive) {
-        out.check = refused(SignInVerdict::NotPlayable, std::format("{} has been destroyed.", e.name));
-        return out;
-    }
-    if (e.kind != game::PlayerKind::Human) {
-        out.check = refused(SignInVerdict::NotPlayable, std::format("The computer plays {}.", e.name));
-        return out;
-    }
+    // No other check (spec 05 §9.2, confirmed: binary): a destroyed empire and
+    // one the computer plays open too, the computer still playing it. But
+    // OpenSE4 cannot hand a turn-based game's turn to another empire.
     if ((*session)->turnBased() && game::activePlayer(s) != empire) {
         out.check = refused(SignInVerdict::NotPlayable, std::format("It is {}'s turn, not {}'s.", empireLabel(s, game::activePlayer(s)), e.name));
         return out;
