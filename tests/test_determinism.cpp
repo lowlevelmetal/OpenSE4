@@ -202,8 +202,13 @@ TEST_CASE("determinism: the movement observer changes nothing in the game") {
         size_t steps = 0, jumps = 0, wrongFrom = 0, wrongDay = 0, wrongHeading = 0, empty = 0;
         TurnOptions options;
         options.movementStep = [&](const MovementStep& st) {
-            ++steps;
             if (st.members.empty()) ++empty;
+            if (st.kind == MovementStep::Kind::MinesStruck) {
+                // Mines striking a group where it stands, no move.
+                if (st.from != st.to || st.warp.valid()) ++wrongFrom;
+                return;
+            }
+            ++steps;
             for (const VehicleId id : st.members)
                 if (const Vehicle* v = watched.vehicle(id); !v || v->location != st.from || v->owner != st.owner) ++wrongFrom;
             if (simultaneous ? st.day < 1 || st.day > 30 : st.day != 0) ++wrongDay;

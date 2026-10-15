@@ -218,6 +218,7 @@ public:
     void run() {
         for (int day = 1; day <= kDaysPerTurn; ++day) {
             day_ = day;
+            ctx_.dayUnderWay = day;
             newDay();
             const std::vector<ObjectRef> order = refreshObjectOrder();
             for (const ObjectRef& ref : order) {
@@ -265,6 +266,7 @@ public:
             }
             if (ctx_.movementDay) ctx_.movementDay(day, s_);
         }
+        ctx_.dayUnderWay = 0;
         // The ministers' Seek orders last the movement phase (spec 05 §7.5).
         endSeeks([](const Vehicle&) { return true; });
     }
@@ -1120,7 +1122,7 @@ private:
         MovementStep st;
         st.day = live_ ? 0 : day_;
         st.owner = g.owner;
-        st.lead = g.lead;
+        st.lead = spriteOf(g);
         st.fleet = g.fleet;
         st.from = where(g);
         st.to = next;
@@ -1131,6 +1133,20 @@ private:
         for (VehicleId id : g.members)
             if (const Vehicle* v = s_.vehicle(id); v && alive(*v)) st.members.push_back(id);
         if (!st.members.empty()) ctx_.movementStep(st);
+    }
+
+    // The vehicle whose mini stands for the group in the client's animation
+    // (MovementStep::lead, spec 06 §2.4, confirmed: binary): for a fleet the
+    // member first in its sector's list of objects, which ours keeps as the
+    // system's list (Vehicle::arrival, then object order); otherwise the lead.
+    VehicleId spriteOf(const Group& g) const {
+        if (!g.fleet.valid() || g.tagged) return g.lead;
+        const Vehicle* first = nullptr;
+        for (VehicleId id : g.members)
+            if (const Vehicle* v = s_.vehicle(id); v && alive(*v) && v->fleet == g.fleet &&
+                                                   (!first || std::pair(v->arrival, v->slot) < std::pair(first->arrival, first->slot)))
+                first = v;
+        return first ? first->id : g.lead;
     }
 
     void arrive(Group& g) {

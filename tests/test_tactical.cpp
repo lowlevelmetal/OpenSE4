@@ -830,6 +830,46 @@ struct TurnBasedDuel {
 
 } // namespace
 
+TEST_CASE("turn-based: mines striking a group are reported in the stream of steps, right after the step into their sector") {
+    // Spec 06 §2.4 (confirmed: binary): a minefield that strikes the group
+    // during the human's own move shows a small explosion over the square;
+    // the client reads it from the steps (MovementStep::Kind::MinesStruck).
+    Arena ar = makeArena(13);
+    GameState& s = ar.s;
+    s.options.simultaneous = false;
+    for (Empire& e : s.empires) e.kind = PlayerKind::Human;
+    const Location to = ar.loc;
+    const Location from{to.system, Sector{to.sector.x - 2, to.sector.y}};
+    const Location beside{to.system, Sector{to.sector.x - 1, to.sector.y}};
+    const VehicleId ship = spawn(s, frigate(s, ar.a, "Pilgrim", 3, {"CT Big Armor", "CT Big Armor"}), from);
+    const VehicleId field = spawn(s, design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"}), to, 1);
+    for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+    resumeTurnBased(combatRules(), s);
+    REQUIRE(activePlayer(s) == ar.a);
+    Order o;
+    o.kind = OrderKind::MoveTo;
+    o.location = to;
+    std::vector<MovementStep> steps;
+    const MovementObserver observe = [&](const MovementStep& st) { steps.push_back(st); };
+    TurnResult res = applyLive(combatRules(), s, ar.a, cmd::SetOrders{ship, {}, {o}}, nullptr, observe);
+    // A minefield it sees asks first; the answer carries the ship in.
+    if (!res.questions.empty()) res = applyLive(combatRules(), s, ar.a, cmd::EnterSector{ship, {}, to, true}, nullptr, observe);
+    const Vehicle* spent = s.vehicle(field);
+    REQUIRE((spent == nullptr || spent->count == 0));   // its one mine went off
+    REQUIRE(steps.size() == 3);
+    CHECK(steps[0].kind == MovementStep::Kind::Move);
+    CHECK(steps[0].from == from);
+    CHECK(steps[0].to == beside);
+    CHECK(steps[1].kind == MovementStep::Kind::Move);
+    CHECK(steps[1].to == to);
+    CHECK(steps[2].kind == MovementStep::Kind::MinesStruck);
+    CHECK(steps[2].from == to);
+    CHECK(steps[2].to == to);
+    CHECK(steps[2].owner == ar.a);
+    CHECK(steps[2].members == std::vector<VehicleId>{ship});
+    CHECK(steps[2].day == 0);
+}
+
 TEST_CASE("turn-based tactical: a battle with human sides asks, and the state stays as it was") {
     TurnBasedDuel d;
     const std::vector<BattleAnswer> none;

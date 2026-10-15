@@ -1223,6 +1223,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
         // Q68, confirmed: binary).
         int64_t pool = 0;
         std::map<uint32_t, int> struck, lost;      // victim vehicle -> mines, units lost
+        bool groupStruck = false;
         for (VehicleId mid : fields) {
             int used = 0, kills = 0;
             while (s.vehicle(mid)->count > 0) {
@@ -1293,6 +1294,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                 ++used;
             }
             if (used > 0) {
+                groupStruck = true;
                 const Vehicle& m = *s.vehicle(mid);
                 ctx.log(m.owner, LogCategory::Combat, std::format("Mines detonated at {}", sectorName(s, where)),
                         std::format("{} of our mines struck {} enemy vehicles{}.", used, struck.size(),
@@ -1310,6 +1312,19 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                 ctx.mood(v.owner, "Any Ship Lost", {}, {}, unitsLost);
                 ctx.mood(v.owner, "Ship Lost in System", where.system, {}, unitsLost);
             }
+        }
+        // The strike in the stream of steps, for the client's small explosion
+        // over the square (MovementStep::Kind::MinesStruck, spec 06 §2.4).
+        if (groupStruck && ctx.movementStep) {
+            MovementStep st;
+            st.kind = MovementStep::Kind::MinesStruck;
+            st.day = ctx.dayUnderWay;
+            st.owner = victimOwner;
+            st.members = group;
+            st.lead = group.front();
+            st.from = st.to = where;
+            st.liveSteps = ctx.liveSteps.size();
+            ctx.movementStep(st);
         }
     }
 }

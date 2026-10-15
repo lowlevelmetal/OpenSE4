@@ -129,14 +129,19 @@ bool simultaneousBattlesShown(const Rules& r);
 // §2.4 "Moves as they are made"): one sector within a system, or a jump
 // through a warp point to another (TurnContext::movementStep). The members
 // move together, in the group's order; the original's movement log has one
-// entry per member and step, in that order (spec 06 §7 Q62). Not saved.
+// entry per member and step, in that order (spec 06 §7 Q62). The same stream
+// also says when mines strike a group (`kind`). Not saved.
 struct MovementStep {
     int day = 0;                     // simultaneous games: the movement day, 1..30; turn-based games: 0
     EmpireId owner;
     std::vector<VehicleId> members;  // the group's members still in the game, in the group's order
     // The group's first vehicle, whose mini stands for the group while it
-    // turns and slides (spec 06 §2.4): the acting vehicle (a fleet's first
-    // member in object order with orders, the first one tagged), or the first member.
+    // slides (spec 06 §2.4, confirmed: binary): a vehicle alone; for a fleet
+    // the member that comes first in its sector's list of objects, which our
+    // engine keeps as its system's list (Vehicle::arrival, then object
+    // order; inferred where the two would differ), not the member that acts
+    // for it; for tagged vehicles the first one tagged; for a drone group
+    // with companions the acting one.
     VehicleId lead;
     FleetId fleet;                   // the fleet whose group it is, if any
     Location from, to;               // `to` in another system: a warp jump
@@ -148,6 +153,14 @@ struct MovementStep {
     // were made before this step, so that the two lists can be read in the
     // order they were made.
     size_t liveSteps = 0;
+    // A move, or mines striking the group where it stands (`from` and `to`
+    // both that sector, `members` the group as the mines found it): right
+    // after the step into the sector, before any battle there, and for a
+    // Sweep Mines order where the group sweeps (spec 04 §10.6). The client
+    // shows a small explosion over the square for the human's own moves
+    // (spec 06 §2.4, confirmed: binary).
+    enum class Kind : uint8_t { Move, MinesStruck };
+    Kind kind = Kind::Move;
 };
 using MovementObserver = std::function<void(const MovementStep&)>;
 
@@ -230,6 +243,10 @@ struct TurnContext {
     // movement animation and its movement log replay, docs/spec/06 §2.4, §7
     // Q62). Observes only: the game comes out the same with or without it.
     MovementObserver movementStep;
+    // Simultaneous games: the movement day under way (1..30), for the steps
+    // reported outside movement itself (mines striking, MovementStep::kind);
+    // 0 otherwise.
+    int dayUnderWay = 0;
     // The script and external players of this engine call (players.hpp); null:
     // every empire is played by the built-in AI.
     Players* players = nullptr;
