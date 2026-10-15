@@ -15,9 +15,10 @@ int squaresBetween(game::Sector a, game::Sector b) { return std::max(std::abs(a.
 
 } // namespace
 
-void ShipGlides::enqueue(std::span<const game::MovementStep> steps, bool originals) {
+void ShipGlides::enqueue(std::span<const game::MovementStep> steps, bool originals, bool provisional) {
     for (const game::MovementStep& m : steps) {
         Step st;
+        st.provisional = provisional;
         st.members = m.members;
         st.lead = m.lead;
         st.from = m.from;
@@ -49,6 +50,7 @@ void ShipGlides::hold(const Step& st) {
             held = held_.emplace(id, Held{was->second.location, was->second.heading, lastSeen_.contains(id), 0}).first;
         }
         ++held->second.steps;
+        if (st.provisional) held->second.provisional = true;
         queuedTo_[id] = st.to;
     }
 }
@@ -61,20 +63,51 @@ void ShipGlides::complete(const Step& st) {
         // A step within a system turns the vehicle to its bearing; a warp keeps its heading.
         if (st.from.system == st.to.system && st.from.sector != st.to.sector) held->second.heading = st.heading;
         if (--held->second.steps <= 0) {
-            held_.erase(held);
             queuedTo_.erase(id);
+            // A step the game does not hold yet stays where it took the
+            // vehicle, if it was the player's to see (release()).
+            if (st.provisional && (!st.others || st.shown)) held->second.pinned = true;
+            else held_.erase(held);
         }
     }
 }
 
+void ShipGlides::release() {
+    for (auto it = held_.begin(); it != held_.end();) {
+        Held& h = it->second;
+        if (!h.pinned) {
+            ++it;
+            continue;
+        }
+        h.pinned = false;
+        h.provisional = false;
+        if (h.steps > 0) {   // its next steps take it on from there
+            ++it;
+            continue;
+        }
+        // Seen there last: the game's place for it now, so no move is found.
+        lastAll_[it->first] = Was{h.at, h.heading};
+        if (lastSeen_.contains(it->first)) {
+            lastSeen_[it->first] = h.at;
+            lastHeadings_[it->first] = h.heading;
+        }
+        it = held_.erase(it);
+    }
+}
+
 void ShipGlides::finish() {
-    for (const Step& st : pending_)
+    // Every step done in its order: the vehicles on their squares (those of
+    // steps the game does not hold yet pinned there, release()).
+    for (const Running& r : running_) complete(r.step);
+    for (const Step& st : pending_) {
         if (st.marker) reached_.push_back(*st.marker);
+        else complete(st);
+    }
     pending_.clear();
     running_.clear();
     glides_.clear();
     blasts_.clear();
-    held_.clear();
+    std::erase_if(held_, [](const auto& h) { return !h.second.pinned; });
     queuedTo_.clear();
     freeAt_.clear();
 }
@@ -90,6 +123,7 @@ void ShipGlides::begin(Step st, double start, const Look& look, const SeenMap& s
         // animation or without, for the moves the original shows.
         if (st.others || st.to.system != look.shown) return doneAtOnce();
         Running r;
+        st.shown = true;
         r.blast = Blast{st.to, st.lost, start, 0};
         r.end = start + MineBlast::duration();
         r.step = std::move(st);
@@ -130,6 +164,7 @@ void ShipGlides::begin(Step st, double start, const Look& look, const SeenMap& s
     g.frame = 0;
     Running r;
     r.end = start + look.pace.duration(g.turnFrames, g.slideFrames) + g.pause;
+    st.shown = true;
     r.step = std::move(st);
     r.glide = std::move(g);
     running_.push_back(std::move(r));
@@ -223,6 +258,8 @@ void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span
             if (!v.visible) continue;
             const auto was = lastSeen_.find(v.id);
             if (was == lastSeen_.end()) continue;   // first sight: nothing to animate
+            // Steps the game does not hold yet: it is still where it was (release()).
+            if (const auto h = held_.find(v.id); h != held_.end() && h->second.provisional) continue;
             const auto queued = queuedTo_.find(v.id);
             const game::Location expected = queued != queuedTo_.end() ? queued->second : was->second;
             if (expected == v.location) continue;

@@ -299,7 +299,10 @@ struct TurnResult {
     std::vector<EntryQuestion> questions;
     // The stop whose answer is missing (a battle to show or ask about, or a
     // ground fight to show). The call changed nothing; call it again with
-    // the answer.
+    // the answer. Of the rest only `messages` and `liveSteps` are filled
+    // then, with what the call made before the stop, which the call made
+    // again makes again first: the client shows the moves up to the battle
+    // before it (spec 06 §2.4 "Order").
     std::optional<BattleQuestion> battle;
     // The lines to append to human players' statistics, history and log
     // text files, one entry per end-of-turn processing in the call (spec 05

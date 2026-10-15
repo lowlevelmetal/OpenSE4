@@ -462,7 +462,7 @@ void runGroundCombat(TurnContext& ctx, EmpireId owner) {
                 q.state = std::move(before);
                 q.index = ask->next;
                 q.ground = std::move(record);
-                throw game::detail::BattleQuestionRaised{std::move(q)};
+                throw game::detail::BattleQuestionRaised{std::move(q), ctx.liveSteps, ctx.messages};
             }
             ++ask->next;   // shown: the answer says nothing more
         }

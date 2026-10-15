@@ -869,6 +869,53 @@ TEST_CASE("main window: a message the player's order raises comes in its place a
     for (auto it = box; it != moves.end(); ++it) CHECK_FALSE((it->step && it->step->kind == MovementStep::Kind::Move && it->step->members.front() == ship));
 }
 
+TEST_CASE("main window: a battle that stops the call comes after the moves that led to it; the call made again hands on the rest (spec 06 §2.4)") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);
+    start.options.simultaneous = false;
+    start.options.noTacticalCombat = false;
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod", "Test Laser"});
+    Vehicle& v = addTestVehicle(start, *rules, runner, home);
+    v.supply = 1000;
+    const VehicleId ship = v.id;
+    // Another empire's armed ship two squares along the row (the ship moves two a turn).
+    const int dx = home.sector.x > 6 ? -1 : 1;
+    const Location enemyAt{home.system, Sector{home.sector.x + 2 * dx, home.sector.y}};
+    const EmpireId other{1u};
+    const DesignId picket = addTestDesign(start, *rules, other, "Picket", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod", "Test Laser"});
+    addTestVehicle(start, *rules, picket, enemyAt).supply = 1000;
+    for (Empire& e : start.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    (void)session.takeMoves();
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, enemyAt}}, false}).ok);
+    std::vector<ClassicSession::ShownMove> moves = session.takeMoves();
+    // The Attack Sector question; the answer carries the ship in, and the battle stops the call.
+    if (!session.questions().empty()) {
+        session.answer(true);
+        for (ClassicSession::ShownMove& m : session.takeMoves()) moves.push_back(std::move(m));
+    }
+    REQUIRE(session.battleQuestion().has_value());
+    CHECK(session.state().vehicle(ship)->location != enemyAt);   // the game as before the call
+    // The steps before the stop, the step into the battle's sector last, are handed on already.
+    std::vector<MovementStep> steps;
+    for (const ClassicSession::ShownMove& m : moves)
+        if (m.step) steps.push_back(*m.step);
+    REQUIRE_FALSE(steps.empty());
+    CHECK(steps.back().to == enemyAt);
+    CHECK(std::any_of(moves.begin(), moves.end(), [](const ClassicSession::ShownMove& m) { return m.step && m.provisional && m.original; }));
+    // The battle fought by the strategies; the call made again hands on only what came after.
+    session.answerBattle(BattleAnswer{});
+    CHECK_FALSE(session.battleQuestion().has_value());
+    for (const ClassicSession::ShownMove& m : session.takeMoves()) {
+        CHECK_FALSE(m.provisional);
+        if (m.step && m.step->kind == MovementStep::Kind::Move) CHECK_FALSE((std::find(m.step->members.begin(), m.step->members.end(), ship) != m.step->members.end()));
+    }
+}
+
 TEST_CASE("main window: the movement log replay's keys") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

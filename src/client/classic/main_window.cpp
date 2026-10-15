@@ -2554,7 +2554,7 @@ void MainWindow::trackGlides(UiContext& ui) {
                 enqueueFollow(PendingFollow{{}, false, PendingFollow::Kind::Corner});
                 runStarts = false;
             }
-            glides_.enqueue(std::span<const game::MovementStep>(&*m.step, 1), m.original);
+            glides_.enqueue(std::span<const game::MovementStep>(&*m.step, 1), m.original, m.provisional);
         } else if (m.follow) {
             enqueueFollow(PendingFollow{*m.follow, m.turnStart});
             runStarts = !m.follow->jump;
@@ -2564,6 +2564,9 @@ void MainWindow::trackGlides(UiContext& ui) {
     }
     // After a tagged group's order, once its moves are shown.
     if (std::exchange(reselectAfterMoves_, false)) enqueueFollow(PendingFollow{{}, false, PendingFollow::Kind::Reselect});
+    // A call stopped at a battle is over: what its steps before the battle
+    // pinned is where the game has it now (ShipGlides::release).
+    if (!ui.session.callUnderWay()) glides_.release();
     // The player's own vehicles destroyed on their way, drawn until their steps are shown.
     for (game::Vehicle& v : ui.session.takeGone()) {
         gone_[v.id] = std::move(v);

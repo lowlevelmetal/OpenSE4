@@ -1947,12 +1947,21 @@ cells sit inside it after a margin:
        turn-based game, the others only with the option of 1), the moves grouped by where they
        start and end and shown one group after another in the game's vehicle order (all
        together with "all at once"), with the pause of each square (inferred).
-    4. A battle that stops an engine call is shown before the moves that led to it, which are
-       shown after the battle (§2.7).
-    5. A click or a key shows a turn's start's moves at once (**Skip**, below).
-    6. A window or question opened over the moves of an order given by an order button holds
+    4. A click or a key shows a turn's start's moves at once (**Skip**, below).
+    5. A window or question opened over the moves of an order given by an order button holds
        them, as the original's does, but End Turn's Yes first shows them at once and then ends
        the turn (the original faults there).
+
+    A battle that stops an engine call (§2.7, §1.10.5) comes, as the original's, after the
+    moves that led to it: the call stopped at the battle gives the steps, LiveSteps and
+    messages it made before the stop (`TurnResult::battle`, which leaves the game as before
+    the call), the session hands them on marked provisional (`ShownMove::provisional`), and
+    they are shown, the move into the battle's sector last, before the battle's question or
+    window opens; meanwhile their groups stay drawn where those steps took them
+    (`ShipGlides::release`, the game still holding them where they were). The call made again
+    with the answer makes the same steps again first, and the session hands on only the rest,
+    shown after the battle (since 2026-10-14; before, the battle came first and all the
+    call's moves after it).
 
     Whatever the call opens waits for these glides: the battles to watch, the endings, the
     questions and the Log of a turn's start (§2.7), and a question an order given during the
@@ -2452,9 +2461,10 @@ network or e-mail game's, after the turn, §1.10.5), the endings, the questions 
 picker, and the Log last, each waiting for the ones before it; since 2026-10-14 the message
 boxes come in their place among the moves, as the original's (§2.4 "Order"). Before, the Log
 opened at once, the ships gliding under it, and a question or the picker waited for the Log to
-be closed. A battle that stops the engine call is still shown before the moves that led to it,
-since the game waits at the state before the call (ClassicSession, "Battles shown as they
-happen"); the original animates those moves first.
+be closed. Since 2026-10-14 a battle that stops the engine call comes after the moves that
+led to it, as the original's: the moves the call made before the stop are shown first, the
+game still as before the call (ClassicSession, "Battles shown as they happen"; §2.4
+"Order"); before, the battle came first.
 
 **The view follows the player's own moves** (confirmed: binary; observed, spec 07
 session 6). The main window moves its system view by itself only while a human player's

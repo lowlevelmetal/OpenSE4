@@ -30,7 +30,9 @@
 // the game); when the window closes the session makes the same call again
 // with the answers so far, which fights the battle the same way on the real
 // game and carries on, so the reports, log entries and everything after the
-// battle come only then. A turn-based game also stops at the colony owner's
+// battle come only then. The moves the stopped call made before the battle
+// are handed on at once (takeMoves, marked provisional) and shown before it;
+// the call made again hands on only the rest. A turn-based game also stops at the colony owner's
 // end-of-turn ground combat when one of the two empires is human: the
 // question holds the fight, shown in the Ground Combat window after a notice.
 // Network and PBEM games never stop (their host fights every battle at once);
@@ -301,7 +303,14 @@ public:
         bool turnStart = false;
         bool original = false;
         std::optional<game::PlayerMessage> message;
+        // Made before a battle stopped the call, the game still as before it:
+        // shown up to the battle, which waits for them (spec 06 §2.4
+        // "Order"); the call made again with the answers hands on the rest.
+        bool provisional = false;
     };
+    // An engine call is under way: stopped at a battle, or a turn processed
+    // on its own thread.
+    bool callUnderWay() const { return call_ != Call::None; }
     std::vector<ShownMove> takeMoves() { return std::exchange(moves_, {}); }
     // The player's own vehicles those steps name that the call removed from
     // the game (destroyed on the way: mines, a battle), as they were before
@@ -506,8 +515,13 @@ private:
     std::vector<game::Vehicle> callBefore_, gone_;
     void keepOwnVehicles(const game::GameState& before);
     void noteGone(const std::vector<game::MovementStep>& steps);
-    // Adds the finished call's steps and the local player's own LiveSteps and messages to moves_, in order.
-    void queueMoves(const game::TurnResult& res, bool turnStart);
+    // Adds the finished call's steps and the local player's own LiveSteps and
+    // messages to moves_, in order; `provisional` for a call a battle
+    // stopped, whose part handed on is counted so that the call made again
+    // hands on only the rest.
+    void queueMoves(const game::TurnResult& res, bool turnStart, bool provisional = false);
+    size_t queuedSteps_ = 0, queuedLive_ = 0, queuedMessages_ = 0;
+    void forgetQueued() { queuedSteps_ = queuedLive_ = queuedMessages_ = 0; }
     std::string autosaveNote_;
     // Turn-based games: the game turn whose autosave was written (or whose
     // first human turn this session began in): one autosave per game turn.

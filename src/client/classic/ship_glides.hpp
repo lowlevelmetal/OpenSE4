@@ -143,8 +143,15 @@ public:
     // The steps an engine call made, in order: they play after those queued
     // before them, from the next track(). `originals`: moves the original
     // animates (the human player's own, in its turn of a turn-based game);
-    // others only with Animated::others.
-    void enqueue(std::span<const game::MovementStep> steps, bool originals = true);
+    // others only with Animated::others. `provisional`: steps of a call that
+    // a battle stopped, made before the battle while the game is still as
+    // before the call (ClassicSession::ShownMove::provisional): once shown,
+    // their vehicles stay drawn where they took them until release().
+    void enqueue(std::span<const game::MovementStep> steps, bool originals = true, bool provisional = false);
+    // The call that a battle stopped is over (made again with the answers):
+    // the vehicles its steps left pinned are drawn where the game has them,
+    // which is where they were pinned, or go on with the rest of its steps.
+    void release();
     // A marker after them: reached, in its turn, once the steps queued before
     // it are over (with "all at once", at the next track()).
     void enqueueMarker(uint64_t id);
@@ -212,6 +219,8 @@ private:
         int heading = 0;                    // within a system: the heading the members take
         bool straight = false;              // a move seen without its steps: one glide, the pause of each square it spans
         bool others = false;                // not a move the original animates (Animated::others)
+        bool provisional = false;           // made before a battle stopped its call (enqueue)
+        bool shown = false;                 // played as a glide or an explosion (begin)
         bool mines = false;                 // mines striking the group at `to` (MineBlast)
         bool lost = false;                  // and destroying a member
         std::optional<uint64_t> marker;     // a marker, not a step
@@ -229,6 +238,8 @@ private:
         int heading = 0;
         bool seenBefore = false;  // the player saw it before its moves
         int steps = 0;            // steps of it queued or under way
+        bool pinned = false;      // held where a provisional step left it, until release()
+        bool provisional = false; // a provisional step of it was queued: the game is not there yet (no move is found)
     };
     struct Was {
         game::Location location;

@@ -59,6 +59,9 @@ void keepStartTerritory(TurnContext& ctx, EmpireId e, std::optional<std::vector<
 // put the state back as it was before the call.
 struct BattleQuestionRaised {
     BattleQuestion question;
+    // What the call made before the stop (TurnResult::battle).
+    std::vector<LiveStep> liveSteps;
+    std::vector<PlayerMessage> messages;
 };
 
 // Runs a call that plays the game with the answers of its stops (turn.hpp,
@@ -84,6 +87,8 @@ TurnResult withBattles(GameState& s, const std::vector<BattleAnswer>* answers, B
         s.journal.replay = std::move(made);
         TurnResult out;
         out.battle = std::move(raised.question);
+        out.liveSteps = std::move(raised.liveSteps);
+        out.messages = std::move(raised.messages);
         return out;
     } catch (...) {
         s = std::move(before);

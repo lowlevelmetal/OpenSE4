@@ -1467,6 +1467,51 @@ TEST_CASE("client logic: mines striking the player's group show the small explos
     }
 }
 
+TEST_CASE("client logic: the steps before a battle stay where they took the group until the call made again is over") {
+    // A call a battle stopped leaves the game as before it; the steps it
+    // made before the stop are shown first (spec 06 §2.4 "Order") and keep
+    // the group where they took it while the battle is shown.
+    GlideQueue q;
+    q.after = q.before;   // the game as before the call
+    const MovementStep steps[] = {q.fleet1()};
+    q.g.enqueue(steps, true, true);
+    q.frame(1.0);
+    REQUIRE(q.g.find(q.a));
+    q.frame(1.3);
+    CHECK_FALSE(q.g.active());   // shown: the battle may come
+    CHECK(q.g.heldAt(q.a) == Location{q.sys, Sector{3, 2}});
+    CHECK(q.g.heldHeading(q.a) == 2);
+    q.frame(2.0);
+    CHECK(q.g.heldAt(q.mate) == Location{q.sys, Sector{3, 2}});   // still, frame after frame
+    // The call made again: the group is where the game has it; the rest of its steps go on from there.
+    q.after[0].location = q.after[1].location = {q.sys, Sector{4, 2}};
+    q.after[0].heading = q.after[1].heading = 2;
+    const MovementStep rest[] = {q.fleet2()};
+    q.g.enqueue(rest);
+    q.g.release();
+    q.frame(2.5);
+    REQUIRE(q.g.find(q.a));
+    CHECK(q.g.find(q.a)->from == Vec2{3.5f, 2.5f});
+    q.frame(3.0);
+    CHECK_FALSE(q.g.active());
+    CHECK_FALSE(q.g.moving(q.a));
+    q.frame(3.1);
+    CHECK_FALSE(q.g.active());   // and no straight glide found afterwards
+    SUBCASE("nothing more after the battle: released where it was pinned, no glide found") {
+        GlideQueue p;
+        p.after = p.before;
+        const MovementStep one[] = {p.fleet1()};
+        p.g.enqueue(one, true, true);
+        p.frame(1.0);
+        p.frame(1.3);
+        p.after[0].location = p.after[1].location = {p.sys, Sector{3, 2}};
+        p.g.release();
+        p.frame(1.4);
+        CHECK_FALSE(p.g.active());
+        CHECK_FALSE(p.g.moving(p.a));
+    }
+}
+
 TEST_CASE("client logic: what the main window takes while an order's moves are shown (spec 06 §2.4 \"Input\")") {
     using I = MainWindowInput;
     for (const I input : {I::MapClick, I::Key, I::Button, I::OrderButton, I::EndTurn}) {
