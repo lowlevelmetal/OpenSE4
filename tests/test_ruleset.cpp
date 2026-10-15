@@ -139,6 +139,50 @@ TEST_CASE("ruleset: problems are reported with file, line and record") {
     CHECK(result.diagnostics.unreadFields.contains("Components.txt: Speeed"));
 }
 
+TEST_CASE("ruleset: RacialTraits.txt is read as the game reads it (spec 02 §1.6, confirmed: binary)") {
+    namespace fs = std::filesystem;
+    const test::TempDir tmp("trait_rules_data");
+    const fs::path dir = tmp / "data";
+    fs::copy(kFixture, dir);
+    {
+        std::ofstream out(dir / "RacialTraits.txt", std::ios::trunc);
+        out << "*BEGIN*\n"
+               // Three values and four slots: only Value 1 and 2 and three slots are read.
+               "Name := Keen Eyes\nCost := 1\nTrait Type := Luck\nValue 1 := 5\nValue 2 := 6\nValue 3 := 7\n"
+               "Required Trait 1 := Sharp Ears\nRequired Trait 2 := None\nRequired Trait 3 := sharp ears\nRequired Trait 4 := Sharp Ears\n"
+               "Restricted Trait 1 := Dull Eyes\nRestricted Trait 2 := Nobody\n\n"
+               // A trait type the game does not know, and one spelled differently.
+               "Name := Sharp Ears\nCost := 1\nTrait Type := Hearing\n\n"
+               "Name := Dull Eyes\nCost := 1\nTrait Type := luck\n\n"
+               // A second trait of one name: the later one is meant.
+               "Name := Sharp Ears\nCost := 2\nTrait Type := Repair\nValue 1 := 1\n*END*\n";
+    }
+    const auto result = ruleset::loadRuleset(dir);
+    fs::remove_all(dir);
+    REQUIRE(result.ruleset);
+    const auto& errors = result.diagnostics.errors;
+    const auto& warnings = result.diagnostics.warnings;
+    std::string all;
+    for (const auto& e : errors) all += "error: " + e + "\n";
+    for (const auto& w : warnings) all += "warning: " + w + "\n";
+    INFO(all);
+    const ruleset::Ruleset& rs = *result.ruleset;
+    REQUIRE(rs.racialTraits.size() == 4);
+    const ruleset::RacialTrait& keen = rs.racialTraits[0];
+    CHECK(keen.values == std::vector<std::string>{"5", "6"});
+    CHECK(keen.requiredTraits == std::vector<std::string>{"Sharp Ears"});  // "sharp ears" matches none; slot 4 is not read
+    CHECK(keen.restrictedTraits == std::vector<std::string>{"Dull Eyes"});
+    CHECK(rs.racialTraitNamed("Sharp Ears") == std::optional<uint32_t>(3u));
+    CHECK_FALSE(rs.racialTraitNamed("sharp ears").has_value());
+    CHECK(mentions(errors, "RacialTraits.txt:15 [Sharp Ears]: 'Trait Type' must be one of the game's 33 trait types, spelled exactly, not 'Hearing'"));
+    CHECK(mentions(errors, "[Dull Eyes]: 'Trait Type' must be one of the game's 33 trait types, spelled exactly, not 'luck'"));
+    CHECK(errors.size() == 2);
+    CHECK(mentions(warnings, "RacialTraits.txt:2 [Keen Eyes]: required trait 'sharp ears' matches no trait spelled exactly so; the game drops it"));
+    CHECK(mentions(warnings, "[Keen Eyes]: restricted trait 'Nobody' matches no trait spelled exactly so; the game drops it"));
+    CHECK(result.diagnostics.unreadFields.contains("RacialTraits.txt: Value 3"));
+    CHECK(result.diagnostics.unreadFields.contains("RacialTraits.txt: Required Trait 4"));
+}
+
 TEST_CASE("ruleset: a player's installed classic data set (opt-in)") {
     // Set OPENSE4_CLASSIC_DATA to a Data directory, or "auto" to search Steam libraries.
     // The data belongs to the player and is never part of this repository.

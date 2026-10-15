@@ -410,11 +410,23 @@ private:
             r.error(std::format("'General Type' must be Advantage, Disadvantage or Neither, not '{}'", t.generalType));
         t.cost = r.int32("Cost");
         t.traitType = r.str("Trait Type");
-        for (int n = 1; r.has(RecordReader::key("Value {}", n)); ++n) t.values.push_back(r.str(RecordReader::key("Value {}", n)));
-        for (int n = 1; r.has(RecordReader::key("Required Trait {}", n)); ++n)
-            if (auto v = r.str(RecordReader::key("Required Trait {}", n)); !isNone(v)) t.requiredTraits.push_back(v);
-        for (int n = 1; r.has(RecordReader::key("Restricted Trait {}", n)); ++n)
-            if (auto v = r.str(RecordReader::key("Restricted Trait {}", n)); !isNone(v)) t.restrictedTraits.push_back(v);
+        // One of the 33 type names, spelled exactly (spec 02 §1.6, confirmed: binary).
+        if (r.has("Trait Type") &&
+            std::find(kRacialTraitTypes.begin(), kRacialTraitTypes.end(), std::string_view(t.traitType)) == kRacialTraitTypes.end())
+            r.error(std::format("'Trait Type' must be one of the game's 33 trait types, spelled exactly, not '{}'", t.traitType));
+        // The game reads `Value 1` and `Value 2` and three slots of each list,
+        // nothing more; further fields are left unread (datacheck lists them).
+        if (r.has("Value 1") || r.has("Value 2")) {
+            t.values.push_back(r.str("Value 1", Need::Optional));
+            if (r.has("Value 2")) t.values.push_back(r.str("Value 2", Need::Optional));
+        }
+        for (int n = 1; n <= 3; ++n) {
+            if (const std::string key = RecordReader::key("Required Trait {}", n); r.has(key))
+                if (auto v = r.str(key); !isNone(v)) t.requiredTraits.push_back(v);
+            if (const std::string key = RecordReader::key("Restricted Trait {}", n); r.has(key))
+                if (auto v = r.str(key); !isNone(v)) t.restrictedTraits.push_back(v);
+        }
+        traitContexts_.push_back(r.context());
         rs_.racialTraits.push_back(std::move(t));
     }
 
@@ -664,15 +676,21 @@ private:
             check(s.warpPointStellarAbilityType);
             for (const auto& o : s.objects) check(o.stellarAbilityType);
         }
-        for (const RacialTrait& t : rs_.racialTraits) {
-            auto exists = [&](const std::string& name) {
-                return std::any_of(rs_.racialTraits.begin(), rs_.racialTraits.end(),
-                                   [&](const RacialTrait& o) { return datafile::keysEqual(o.name, name); });
+        // A Required or Restricted name that matches no trait, spelled exactly,
+        // is dropped without a word by the game (spec 02 §1.6, confirmed:
+        // binary): dropped here too, with a warning.
+        for (size_t i = 0; i < rs_.racialTraits.size(); ++i) {
+            RacialTrait& t = rs_.racialTraits[i];
+            const std::string where = i < traitContexts_.size() ? traitContexts_[i] : std::format("RacialTraits.txt [{}]", t.name);
+            auto resolve = [&](std::vector<std::string>& names, std::string_view what) {
+                std::erase_if(names, [&](const std::string& n) {
+                    if (rs_.racialTraitNamed(n)) return false;
+                    diag_.warnings.push_back(std::format("{}: {} trait '{}' matches no trait spelled exactly so; the game drops it", where, what, n));
+                    return true;
+                });
             };
-            for (const auto& n : t.requiredTraits)
-                if (!exists(n)) diag_.errors.push_back(std::format("RacialTraits.txt [{}]: unknown required trait '{}'", t.name, n));
-            for (const auto& n : t.restrictedTraits)
-                if (!exists(n)) diag_.errors.push_back(std::format("RacialTraits.txt [{}]: unknown restricted trait '{}'", t.name, n));
+            resolve(t.requiredTraits, "required");
+            resolve(t.restrictedTraits, "restricted");
         }
         for (const TechArea& t : rs_.techAreas)
             for (const auto& req : t.requirements)
@@ -693,6 +711,7 @@ private:
     Ruleset rs_;
     Diagnostics diag_;
     std::vector<PendingSystemType> pendingQuadrantTypes_;
+    std::vector<std::string> traitContexts_;   // each RacialTraits.txt record's file, line and name
 };
 
 } // namespace

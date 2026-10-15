@@ -68,15 +68,7 @@ constexpr std::array<std::string_view, 32> kDamageTypes{
     "Disrupt Reload Time",  "Crew Conversion",       "Skips All Shields",      "Only Master Computers",  "Double Damage To Shields",
     "Half Damage To Shields", "Quarter Damage To Shields",
 };
-constexpr std::array<std::string_view, 33> kTraitTypes{
-    "Reproduction",       "Mineral Production",  "Organics Production",  "Radioactives Production", "Research Production",
-    "Intelligence Production", "SY Rate",        "Maintenance Cost",     "Supply Cost",          "No Plagues",
-    "Luck",               "No Spaceports",       "Population Happiness", "Vehicle Speed",        "Galaxy Seen",
-    "Planet Storage Space", "Planetary SY Rate", "Troops Bonus",         "Fighter Bonus",        "Ship Bonus",
-    "Mineral Storage",    "Organics Storage",    "Radioactives Storage", "Production",           "Trade",
-    "Space Combat",       "Ground Combat",       "Repair",               "Tech Area",            "Tollerance",
-    "Ship Attack",        "Ship Defense",        "Population Emotionless",
-};
+// Appendix B: ruleset::kRacialTraitTypes.
 
 const std::string& value(const datafile::Record& r, std::string_view key) {
     static const std::string kEmpty;
@@ -152,7 +144,7 @@ int64_t damages(std::string_view raw) {
 
 int64_t weaponTypeCode(std::string_view name) { return codeOf(name, kWeaponTypes, 0); }
 int64_t damageTypeCode(std::string_view name) { return codeOf(name, kDamageTypes); }
-int64_t traitTypeCode(std::string_view name) { return codeOf(name, kTraitTypes); }
+int64_t traitTypeCode(std::string_view name) { return codeOf(name, ruleset::kRacialTraitTypes); }
 
 int32_t component(const datafile::Record& r, size_t position, const datafile::DataFile& techAreas) {
     int64_t sum = static_cast<int64_t>(position) + num(r, "Pic Num") + 3 * num(r, "Tonnage Space Taken") + 5 * num(r, "Tonnage Structure") +

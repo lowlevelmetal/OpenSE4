@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -173,6 +174,19 @@ struct PlanetSize {
 };
 
 // ---- RacialTraits.txt ---------------------------------------------------------------
+
+// The `Trait Type` names the game knows, spelled exactly, in the order of
+// their codes (spec 02 §1.6, spec 08 Appendix B, confirmed: binary).
+inline constexpr std::array<std::string_view, 33> kRacialTraitTypes{
+    "Reproduction",       "Mineral Production",  "Organics Production",  "Radioactives Production", "Research Production",
+    "Intelligence Production", "SY Rate",        "Maintenance Cost",     "Supply Cost",          "No Plagues",
+    "Luck",               "No Spaceports",       "Population Happiness", "Vehicle Speed",        "Galaxy Seen",
+    "Planet Storage Space", "Planetary SY Rate", "Troops Bonus",         "Fighter Bonus",        "Ship Bonus",
+    "Mineral Storage",    "Organics Storage",    "Radioactives Storage", "Production",           "Trade",
+    "Space Combat",       "Ground Combat",       "Repair",               "Tech Area",            "Tollerance",
+    "Ship Attack",        "Ship Defense",        "Population Emotionless",
+};
+
 struct RacialTrait {
     std::string name;
     std::string description;
@@ -180,7 +194,9 @@ struct RacialTrait {
     std::string generalType;
     int cost = 0;
     std::string traitType;
-    std::vector<std::string> values;
+    std::vector<std::string> values;            // `Value 1` and `Value 2` only
+    // `Required/Restricted Trait 1..3`: the names that match a trait exactly
+    // (the loader drops the others, as the game does; Ruleset::racialTraitNamed).
     std::vector<std::string> requiredTraits;
     std::vector<std::string> restrictedTraits;
 };
@@ -393,6 +409,9 @@ struct Ruleset {
     Settings settings;
     NameLists names;
 
+    // The trait a Required or Restricted Trait names: exact spelling, the last
+    // of several traits of that name (spec 02 §1.6, confirmed: binary).
+    std::optional<uint32_t> racialTraitNamed(std::string_view name) const;
     std::optional<TechAreaId> findTechArea(std::string_view name) const;
     std::optional<SystemTypeId> findSystemType(std::string_view name) const;
     std::optional<StellarAbilityTypeId> findStellarAbilityType(std::string_view name) const;

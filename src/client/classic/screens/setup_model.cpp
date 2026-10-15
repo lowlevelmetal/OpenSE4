@@ -185,10 +185,13 @@ std::optional<uint32_t> findTrait(const game::Rules& r, std::string_view name) {
     return std::nullopt;
 }
 
-bool hasTraitNamed(const game::Rules& r, const game::Race& race, std::string_view name) {
-    for (uint32_t t : race.traits)
-        if (t < r.data().racialTraits.size() && keysEqual(r.data().racialTraits[t].name, name)) return true;
-    return false;
+// A Required or Restricted Trait names the last trait of exactly that name
+// (spec 02 §1.6, confirmed: binary); a name that matches none counts for
+// nothing (the loader drops it).
+std::optional<bool> hasTraitNamed(const game::Rules& r, const game::Race& race, std::string_view name) {
+    const std::optional<uint32_t> trait = r.data().racialTraitNamed(name);
+    if (!trait) return std::nullopt;
+    return std::find(race.traits.begin(), race.traits.end(), *trait) != race.traits.end();
 }
 
 template <class T>
@@ -681,13 +684,13 @@ TraitCheck canAddTrait(const game::Rules& r, const game::Race& race, uint32_t tr
     if (hasTrait(race, trait)) return {};
     const ruleset::RacialTrait& t = traits[trait];
     for (const auto& need : t.requiredTraits)
-        if (!isNone(need) && !hasTraitNamed(r, race, need)) return {false, std::format("Requires {}", need)};
+        if (hasTraitNamed(r, race, need) == std::optional<bool>(false)) return {false, std::format("Requires {}", need)};
     for (const auto& no : t.restrictedTraits)
-        if (!isNone(no) && hasTraitNamed(r, race, no)) return {false, std::format("Cannot be combined with {}", no)};
+        if (hasTraitNamed(r, race, no) == std::optional<bool>(true)) return {false, std::format("Cannot be combined with {}", no)};
     for (uint32_t other : race.traits) {
         if (other >= traits.size()) continue;
         for (const auto& no : traits[other].restrictedTraits)
-            if (!isNone(no) && keysEqual(no, t.name)) return {false, std::format("Cannot be combined with {}", traits[other].name)};
+            if (r.data().racialTraitNamed(no) == std::optional<uint32_t>(trait)) return {false, std::format("Cannot be combined with {}", traits[other].name)};
     }
     return {};
 }
@@ -709,7 +712,7 @@ void removeTrait(const game::Rules& r, game::Race& race, uint32_t trait) {
             const uint32_t t = race.traits[i];
             if (t >= traits.size()) continue;
             const bool missing = std::any_of(traits[t].requiredTraits.begin(), traits[t].requiredTraits.end(),
-                                             [&](const std::string& need) { return !isNone(need) && !hasTraitNamed(r, race, need); });
+                                             [&](const std::string& need) { return hasTraitNamed(r, race, need) == std::optional<bool>(false); });
             if (missing) {
                 race.traits.erase(race.traits.begin() + static_cast<std::ptrdiff_t>(i));
                 changed = true;

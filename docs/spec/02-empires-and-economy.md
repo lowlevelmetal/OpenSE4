@@ -232,6 +232,22 @@ Combat, sensor and shield facility abilities are covered in other specs.
 - `Required Trait 1..3` and `Restricted Trait 1..3`: trait names or `None`. These are
   prerequisites and exclusions.
 
+**What the game reads** (confirmed: binary; added 2026-10-14, complete listing):
+- A `Trait Type` outside the 33 names below, spelled exactly, is a data-file error.
+- Only `Value 1` and `Value 2` and the three Required and three Restricted slots are read;
+  further values and slots are ignored.
+- A Required or Restricted name is resolved to a trait when the file is loaded, by exact
+  spelling; "None" means an empty slot. A name that matches no trait is silently dropped,
+  and of two traits of one name the later one is meant.
+
+Since 2026-10-14 ours follows (`ruleset/load.cpp` `loadRacialTrait`, `crossCheck`,
+`Ruleset::racialTraitNamed`, and Empire Setup's trait rules in `setup_model.cpp`). Our loader
+still says what the game passes over: the unknown or misspelled type as an error with file,
+line and record, a dropped name as a warning, and the further values and slots among
+`opense4-datacheck`'s unread fields. Before, it accepted any type, read any number of values
+and slots, matched names without regard to case and spacing, and reported an unknown name as
+an error.
+
 **`Trait Type` values** (confirmed: binary). The engine accepts 33 type names; stock data
 uses only some of them. The meaning of Val1 follows each type.
 - Flags: `No Plagues` (§3), `No Spaceports` (§5.5), `Galaxy Seen`, `Population
