@@ -4906,4 +4906,6 @@ started (confirmed: binary).
     switch counts among the positional arguments. Since 2026-10-14 ours follows (a), (b),
     (c), (e) and, as far as the engine can, (d) (`client/classic/command_line.cpp`,
     `client/app.cpp`, `classic_mode.cpp`, `ui.hpp` `noDialogs`); the differences left are in
-    §9.2 "Our client differs".
+    §9.2 "Our client differs". Still open: what the simultaneous host processing does to a
+    turn-based game's file hosted from the command line (only that the turn style is not
+    checked is confirmed).
