@@ -734,7 +734,7 @@ private:
     template <class LogIt>
     void tell(EmpireId owner, std::string title, std::string text, LogIt&& logIt) {
         if (live_ && live_->ask && owner == live_->empire) {
-            ctx_.messages.push_back(PlayerMessage{owner, std::move(title), std::move(text)});
+            ctx_.messages.push_back(PlayerMessage{owner, std::move(title), std::move(text), ctx_.liveSteps.size()});
             return;
         }
         logIt();
@@ -1130,6 +1130,7 @@ private:
         if (!via.valid() && st.from.system == next.system) st.heading = headingFor(st.from.sector, next.sector);
         else if (const Vehicle* lead = s_.vehicle(g.lead)) st.heading = lead->heading % 8;
         st.liveSteps = ctx_.liveSteps.size();
+        st.messages = ctx_.messages.size();
         for (VehicleId id : g.members)
             if (const Vehicle* v = s_.vehicle(id); v && alive(*v)) st.members.push_back(id);
         if (!st.members.empty()) ctx_.movementStep(st);
@@ -1644,7 +1645,7 @@ private:
     // picture OrdersNotCompleted (spec 06 §4.1).
     Exec colonizeFailed(const Group& g, std::string_view why) {
         if (live_) {
-            if (live_->ask) ctx_.messages.push_back(PlayerMessage{g.owner, "Colonize", std::string(why)});
+            if (live_->ask) ctx_.messages.push_back(PlayerMessage{g.owner, "Colonize", std::string(why), ctx_.liveSteps.size()});
         } else {
             const Location here = where(g);
             ctx_.log(g.owner, LogCategory::Misc, "Unable to Colonize",

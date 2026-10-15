@@ -31,6 +31,8 @@ click tag:order:move-to
 wait-step 8
 click sector:empty nth=150
 wait-step 9
+# The main window takes no key until the moves of a map click's order are over (spec 06 §2.4).
+wait-gone sector:gliding
 key Ctrl+L
 wait-step 10
 click item:Next in=lesson

@@ -28,10 +28,12 @@ namespace opense4::game {
 // The moves a State carries (net::OwnMoves, protocol 10).
 template <class Ar>
 void io(Ar& ar, MovementStep& m) {
+    // `messages` stays with the host: a network player reads its messages as notices.
     uint32_t live = static_cast<uint32_t>(m.liveSteps);
     serial::fields(ar, m.day, m.owner, m.members, m.lead, m.fleet, m.from, m.to, m.warp, m.heading, live, m.kind, m.destroyed);
     if constexpr (Ar::kReading) {
         m.liveSteps = live;
+        m.messages = 0;
         if (m.kind != MovementStep::Kind::Move && m.kind != MovementStep::Kind::MinesStruck) ar.fail("unknown kind of step");
     }
 }

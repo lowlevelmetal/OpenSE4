@@ -17,6 +17,14 @@ options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 -
 wait-lesson moves
 wait 5
 click tag:lesson:hide
+# The slowest speed, so that each move lasts long enough to be caught in the middle.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+drag item:"Ship movement speed"@50%,50% in=options to item:"Ship movement speed"@1,50% in=options
+key Escape
+wait-closed options
 # Waypoints 1 and 2, three and six squares north of home.
 key Escape
 wait 3

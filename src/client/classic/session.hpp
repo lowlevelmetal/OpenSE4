@@ -270,10 +270,6 @@ public:
 
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }
-    // Turn-based games: messages the player's own orders raised as they were
-    // carried out here (a failed Colonize, shown in a message box titled
-    // "Colonize", spec 03 §8), oldest first; taking them forgets them.
-    std::vector<game::PlayerMessage> takeMessages() { return std::exchange(messages_, {}); }
     // Called after a new turn begins (for the Log window auto-open etc.).
     std::function<void()> onNewTurn;
 
@@ -295,11 +291,16 @@ public:
     // commands' and its turn start's; other players' moves, a simultaneous
     // turn's and an e-mail game's new states come without them. Taking them
     // forgets them.
+    // Also, in their place among the moves, the messages the player's own
+    // orders raised as they were carried out here (`message`: a failed
+    // Colonize in a box titled "Colonize", a minefield's "Minefield", spec 03
+    // §8, spec 06 §2.4), shown as the moves reach them.
     struct ShownMove {
         std::optional<game::MovementStep> step;
         std::optional<game::LiveStep> follow;
         bool turnStart = false;
         bool original = false;
+        std::optional<game::PlayerMessage> message;
     };
     std::vector<ShownMove> takeMoves() { return std::exchange(moves_, {}); }
     // The player's own vehicles those steps name that the call removed from
@@ -497,7 +498,6 @@ private:
     bool waiting_ = false;
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
-    std::vector<game::PlayerMessage> messages_;
     // The steps of the engine call under way (runCall), and what takeMoves() gives.
     std::vector<game::MovementStep> callSteps_;
     std::vector<ShownMove> moves_;
@@ -506,9 +506,7 @@ private:
     std::vector<game::Vehicle> callBefore_, gone_;
     void keepOwnVehicles(const game::GameState& before);
     void noteGone(const std::vector<game::MovementStep>& steps);
-    // Takes a turn-based call's messages for the local player.
-    void takeLive(game::TurnResult& res);
-    // Adds the finished call's steps and the local player's own LiveSteps to moves_, in order.
+    // Adds the finished call's steps and the local player's own LiveSteps and messages to moves_, in order.
     void queueMoves(const game::TurnResult& res, bool turnStart);
     std::string autosaveNote_;
     // Turn-based games: the game turn whose autosave was written (or whose

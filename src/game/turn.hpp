@@ -150,9 +150,10 @@ struct MovementStep {
     // `to` (0..7, spec 06 §2.4); a jump keeps each member's own heading.
     int heading = 0;
     // Turn-based games: how many of the call's LiveSteps (TurnResult::liveSteps)
-    // were made before this step, so that the two lists can be read in the
-    // order they were made.
+    // and PlayerMessages (TurnResult::messages) were made before this step, so
+    // that the lists can be read in the order they were made.
     size_t liveSteps = 0;
+    size_t messages = 0;
     // A move, or mines striking the group where it stands (`from` and `to`
     // both that sector, `members` the group as the mines found it): once
     // every minefield there has acted, right after the step into the sector
@@ -172,6 +173,10 @@ struct PlayerMessage {
     EmpireId empire;
     std::string title;
     std::string text;
+    // How many of the call's LiveSteps (TurnResult::liveSteps) came before
+    // it, so that the client shows it where it came among the moves
+    // (MovementStep::messages).
+    size_t liveSteps = 0;
     bool operator==(const PlayerMessage&) const = default;
 };
 

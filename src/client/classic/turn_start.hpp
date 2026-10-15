@@ -34,6 +34,7 @@ struct TurnStartGate {
     bool endings = false;     // the endings due may open
     bool questions = false;   // the questions, the picker and the message boxes may be shown
     bool log = false;         // the Log may open (with new entries and the Empire Option on)
+    bool movesShowing = false;   // TurnStartFacts::movesShowing, as it was
 };
 
 TurnStartGate turnStartGate(const TurnStartFacts& f);

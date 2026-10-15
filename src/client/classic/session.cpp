@@ -460,31 +460,37 @@ void ClassicSession::takeResult(const game::TurnResult& result) {
         if (empire == player_) notices_.push_back(text);
 }
 
-void ClassicSession::takeLive(game::TurnResult& res) {
-    // Only the local player's own, while its turn is in progress (spec 03 §8).
-    if (!myTurn()) return;
-    for (game::PlayerMessage& m : res.messages)
-        if (m.empire == player_) messages_.push_back(std::move(m));
-}
-
 void ClassicSession::queueMoves(const game::TurnResult& res, bool turnStart) {
     // The view follows only the local player's own groups, while its turn is
     // in progress (spec 06 §2.7), and those groups' steps are the only ones
-    // the original animates (§2.4); each LiveStep goes before the steps made
-    // after it (MovementStep::liveSteps).
+    // the original animates (§2.4); the messages its own orders raise come
+    // in their place (spec 03 §8). Each LiveStep and message goes before the
+    // steps made after it (MovementStep::liveSteps, messages), and a message
+    // before the LiveSteps made after it (PlayerMessage::liveSteps).
     const bool follows = turnBased() && myTurn();
-    size_t live = 0;
-    auto followUpTo = [&](size_t upTo) {
-        for (; live < upTo && live < res.liveSteps.size(); ++live)
-            if (const game::LiveStep& st = res.liveSteps[live]; follows && st.empire == player_)
-                moves_.push_back(ShownMove{std::nullopt, st, turnStart, true});
+    size_t live = 0, said = 0;
+    auto upTo = [&](size_t lives, size_t messages) {
+        for (;;) {
+            const bool nextLive = live < lives && live < res.liveSteps.size();
+            const bool nextMessage = said < messages && said < res.messages.size();
+            if (!nextLive && !nextMessage) return;
+            if (nextMessage && (!nextLive || res.messages[said].liveSteps <= live)) {
+                if (const game::PlayerMessage& m = res.messages[said]; follows && m.empire == player_)
+                    moves_.push_back(ShownMove{std::nullopt, std::nullopt, false, false, m});
+                ++said;
+            } else {
+                if (const game::LiveStep& st = res.liveSteps[live]; follows && st.empire == player_)
+                    moves_.push_back(ShownMove{std::nullopt, st, turnStart, true, std::nullopt});
+                ++live;
+            }
+        }
     };
     for (game::MovementStep& st : callSteps_) {
-        followUpTo(st.liveSteps);
+        upTo(st.liveSteps, st.messages);
         const bool own = follows && st.owner == player_;
-        moves_.push_back(ShownMove{std::move(st), std::nullopt, false, own});
+        moves_.push_back(ShownMove{std::move(st), std::nullopt, false, own, std::nullopt});
     }
-    followUpTo(res.liveSteps.size());
+    upTo(res.liveSteps.size(), res.messages.size());
     callSteps_.clear();
     // Nobody takes them in a session without a main window (tests, automation): only the newest are kept.
     constexpr size_t kKept = 30'000;
@@ -790,7 +796,6 @@ void ClassicSession::finishCall(game::TurnResult res) {
     };
     switch (call) {
         case Call::Issue: {
-            takeLive(res);
             // Attack Sector questions stay in the game (GameState::playerTurn.questions).
             // PBEM: the host replays every command given, refused ones too (a
             // refused answer still settles its question), so all are kept.
@@ -807,7 +812,6 @@ void ClassicSession::finishCall(game::TurnResult res) {
         case Call::EndTurn:
             nextHuman();
             takeResult(res);
-            takeLive(res);
             clearOrders();
             waiting_ = false;
             if (onNewTurn) onNewTurn();
@@ -815,7 +819,6 @@ void ClassicSession::finishCall(game::TurnResult res) {
         case Call::Resume:
             nextHuman();
             takeResult(res);
-            takeLive(res);
             break;
         case Call::Process:
             // A simultaneous turn: the new turn begins for the first human.

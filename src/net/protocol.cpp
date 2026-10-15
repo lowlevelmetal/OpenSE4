@@ -94,6 +94,7 @@ OwnMoves ownMovesOf(game::EmpireId e, std::span<const game::MovementStep> steps,
         if (st.owner != e) continue;
         game::MovementStep mine = st;
         mine.liveSteps = ownBefore[std::min(st.liveSteps, liveSteps.size())];
+        mine.messages = 0;   // a network player reads its messages as notices
         out.steps.push_back(std::move(mine));
     }
     return out;

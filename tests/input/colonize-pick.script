@@ -35,6 +35,8 @@ click sector:9,3
 wait-for item:"Eurul IV"
 click item:"Eurul IV"
 assert { order = "colonize" }
+# End Turn once the ship's moves (a map click's order) are over (spec 06 §2.4 "Input").
+wait-gone sector:gliding
 key F12
 click item:Yes optional
 wait-for item:"window:Colonize###messagebox"
@@ -63,6 +65,7 @@ click sector:9,3
 wait-for item:"Eurul IV B"
 click item:"Eurul IV B"
 assert { order = "colonize" }
+wait-gone sector:gliding
 key F12
 click item:Yes optional
 # At the turn's start the colony is founded and its type asked; the Log opens once it is

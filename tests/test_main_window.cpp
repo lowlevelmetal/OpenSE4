@@ -831,6 +831,44 @@ TEST_CASE("main window: the session hands on each call's steps in order, with wh
     }
 }
 
+TEST_CASE("main window: a message the player's order raises comes in its place among the moves: a minefield's after the strike (spec 06 §2.4)") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);
+    start.options.simultaneous = false;
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod"});
+    Vehicle& v = addTestVehicle(start, *rules, runner, home);
+    v.supply = 1000;
+    const VehicleId ship = v.id;
+    // Another empire's minefield two squares along the row.
+    const int dx = home.sector.x > 6 ? -1 : 1;
+    const Location mined{home.system, Sector{home.sector.x + 2 * dx, home.sector.y}};
+    const EmpireId other{1u};
+    const DesignId mine = addTestDesign(start, *rules, other, "Mine", "Test Mine Hull", {"Test Warhead"});
+    addTestVehicle(start, *rules, mine, mined).count = 3;
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    (void)session.takeMoves();
+    // Into it: a route goes round a minefield it knows of unless it is the destination.
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, mined}}, false}).ok);
+    std::vector<ClassicSession::ShownMove> moves = session.takeMoves();
+    // A minefield the ship sees may ask first; the answer carries it in.
+    if (!session.questions().empty()) {
+        session.answer(true);
+        for (ClassicSession::ShownMove& m : session.takeMoves()) moves.push_back(std::move(m));
+    }
+    const auto struck = std::find_if(moves.begin(), moves.end(),
+                                     [](const ClassicSession::ShownMove& m) { return m.step && m.step->kind == MovementStep::Kind::MinesStruck; });
+    REQUIRE(struck != moves.end());
+    CHECK(struck->original);
+    CHECK(struck->step->to == mined);
+    const auto box = std::find_if(moves.begin(), moves.end(), [](const ClassicSession::ShownMove& m) { return m.message.has_value(); });
+    REQUIRE(box != moves.end());
+    CHECK(box->message->title == "Minefield");
+    CHECK(box > struck);   // after the explosion
+    for (auto it = box; it != moves.end(); ++it) CHECK_FALSE((it->step && it->step->kind == MovementStep::Kind::Move && it->step->members.front() == ship));
+}
+
 TEST_CASE("main window: the movement log replay's keys") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

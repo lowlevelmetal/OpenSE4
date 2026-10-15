@@ -14,7 +14,9 @@ repeat 2 until { order = "explore" }
   click tag:order:explore
 end
 wait-step 3
-# 3 A second explorer: the next ship, Explore.
+# 3 A second explorer: the next ship, Explore, once the first one's moves are over (no second
+# order button meanwhile, spec 06 §2.4).
+wait-gone sector:gliding
 click item:next in=tag:cycle:ship
 click tag:order:explore
 wait-step 4

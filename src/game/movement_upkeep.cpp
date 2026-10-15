@@ -429,7 +429,7 @@ namespace {
 void colonizationFailed(TurnContext& ctx, EmpireId owner, const std::string& name, Location where, const std::string& why) {
     GameState& s = ctx.state;
     if (!s.options.simultaneous) {
-        if (s.empire(owner).kind == PlayerKind::Human) ctx.messages.push_back(PlayerMessage{owner, "Colonize", why});
+        if (s.empire(owner).kind == PlayerKind::Human) ctx.messages.push_back(PlayerMessage{owner, "Colonize", why, ctx.liveSteps.size()});
         return;
     }
     ctx.log(owner, LogCategory::Misc, "Unable to Colonize",

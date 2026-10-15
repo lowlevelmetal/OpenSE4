@@ -1324,6 +1324,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
             st.lead = group.front();
             st.from = st.to = where;
             st.liveSteps = ctx.liveSteps.size();
+            st.messages = ctx.messages.size();
             for (VehicleId id : group)
                 if (const Vehicle* v = s.vehicle(id); !v || v->count <= 0) ++st.destroyed;
             ctx.movementStep(st);

@@ -52,6 +52,11 @@ public:
     // A window or question opened over the main window while an order's
     // moves are shown holds them where they are until it closes (observed).
     void holdMoves(bool hold) { holdMoves_ = hold; }
+    // The messages the player's own orders raised (ClassicSession::ShownMove::
+    // message) that the moves shown have reached, in order: each is shown
+    // then, as the original shows it where it comes among the moves (a
+    // minefield's after its explosion, spec 06 §2.4). Taking them forgets them.
+    std::vector<game::PlayerMessage> takeMessages() { return std::exchange(reachedMessages_, {}); }
     // The ending windows due at this start of a turn, in the order they are
     // shown (finale.hpp); nothing until the next start of a turn. The caller
     // opens them when the turn's start lets it (turn_start.hpp).
@@ -72,8 +77,8 @@ public:
     // Input scripts (docs/BUILDING.md "Input scripts"): the sectors of the
     // shown system that a query names, as frame rectangles in row order
     // ("3,4", or words joined by + and negated by !: empty, home, colony,
-    // planet, colonizable, star, warp-point, ship, enemy, selected, gliding,
-    // line, line-start, any),
+    // planet, colonizable, star, warp-point, ship, enemy, selected, marked,
+    // gliding, waiting, line, line-start, any),
     // and the sector at a frame point; the galaxy panel's systems a query
     // names ("12", home, shown, explored, any, joined and negated the same
     // way), as frame points, in the order of their ids.
@@ -279,16 +284,18 @@ private:
     // order the current square is selected again once its moves are shown
     // (`reselect`, §7 Q52, observed).
     struct PendingFollow {
-        enum class Kind { Follow, Corner, Reselect };
+        enum class Kind { Follow, Corner, Reselect, Message };
         game::LiveStep step;
         bool turnStart = false;
         Kind kind = Kind::Follow;
+        std::optional<game::PlayerMessage> message;
     };
     void followMove(UiContext& ui, uint64_t id);
     std::map<uint64_t, PendingFollow> follows_;
     uint64_t nextFollow_ = 1;
     void enqueueFollow(PendingFollow f);
     bool reselectAfterMoves_ = false;   // a tagged group's order was given (orderDone)
+    std::vector<game::PlayerMessage> reachedMessages_;
     // How the order whose moves are shown was given (orderGiven()), and
     // whether a window over the main window holds them; their clock, which
     // stands still while they are held.

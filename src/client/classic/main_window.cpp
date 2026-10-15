@@ -2558,6 +2558,8 @@ void MainWindow::trackGlides(UiContext& ui) {
         } else if (m.follow) {
             enqueueFollow(PendingFollow{*m.follow, m.turnStart});
             runStarts = !m.follow->jump;
+        } else if (m.message) {
+            enqueueFollow(PendingFollow{{}, false, PendingFollow::Kind::Message, std::move(m.message)});
         }
     }
     // After a tagged group's order, once its moves are shown.
@@ -2711,6 +2713,10 @@ void MainWindow::followMove(UiContext& ui, uint64_t id) {
     if (it == follows_.end()) return;
     const PendingFollow f = it->second;
     follows_.erase(it);
+    if (f.kind == PendingFollow::Kind::Message) {
+        if (f.message) reachedMessages_.push_back(*f.message);
+        return;
+    }
     if (!ui.session.turnBased() || replay_.active()) return;
     if (f.kind == PendingFollow::Kind::Corner) {
         // The run moves: the top-left square becomes current, and nothing is
