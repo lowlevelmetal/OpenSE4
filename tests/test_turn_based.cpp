@@ -111,6 +111,55 @@ TEST_CASE("turn-based: the first player's turn starts, and orders execute at onc
     CHECK(d.w.v(d.runner).movement == 0);
 }
 
+TEST_CASE("turn-based: each step is reported as it is made, by an order given and at a turn's start, and changes nothing") {
+    // The client's movement animation (spec 06 §2.4 "Moves as they are made"):
+    // every group step, in order, from where the members stand, with the
+    // heading they take. The game comes out the same without the observer.
+    Duel watched, plain;
+    std::vector<MovementStep> steps;
+    const MovementObserver observe = [&](const MovementStep& st) {
+        for (const VehicleId id : st.members) CHECK(watched.w.v(id).location == st.from);
+        steps.push_back(st);
+    };
+    LiveOptions options;
+    options.movementStep = observe;
+    resumeTurnBased(watched.r(), watched.s(), options);
+    resumeTurnBased(plain.r(), plain.s());
+    CHECK(steps.empty());   // nothing has orders yet
+
+    applyLive(watched.r(), watched.s(), kA, ordersFor(watched.runner, {moveTo(watched.a, 12, 6)}), nullptr, observe);
+    applyLive(plain.r(), plain.s(), kA, ordersFor(plain.runner, {moveTo(plain.a, 12, 6)}));
+    REQUIRE(steps.size() == 3);
+    for (size_t i = 0; i < steps.size(); ++i) {
+        CHECK(steps[i].day == 0);
+        CHECK(steps[i].owner == kA);
+        CHECK(steps[i].members == std::vector<VehicleId>{watched.runner});
+        CHECK(steps[i].from == at(watched.a, int(i), 6));
+        CHECK(steps[i].to == at(watched.a, int(i) + 1, 6));
+        CHECK(steps[i].heading == 2);   // east
+        CHECK_FALSE(steps[i].warp.valid());
+        CHECK(steps[i].liveSteps == 1);  // after the run's start (TurnResult::liveSteps)
+        CHECK(steps[i].lead == watched.runner);
+    }
+    CHECK(stateChecksum(watched.s()) == stateChecksum(plain.s()));
+
+    // A turns north; at the start of A's next turn the ship carries its orders on.
+    applyLive(watched.r(), watched.s(), kA, ordersFor(watched.runner, {moveTo(watched.a, 3, 0)}), nullptr, observe);
+    applyLive(plain.r(), plain.s(), kA, ordersFor(plain.runner, {moveTo(plain.a, 3, 0)}));
+    steps.clear();
+    endPlayerTurn(watched.r(), watched.s(), kA, options);
+    endPlayerTurn(plain.r(), plain.s(), kA);
+    CHECK(steps.empty());   // B has nothing to move
+    endPlayerTurn(watched.r(), watched.s(), kB, options);
+    endPlayerTurn(plain.r(), plain.s(), kB);
+    REQUIRE(steps.size() == 3);
+    CHECK(steps[0].from == at(watched.a, 3, 6));
+    CHECK(steps[2].to == at(watched.a, 3, 3));
+    CHECK(steps[0].heading == 0);   // up
+    CHECK(stateChecksum(watched.s()) == stateChecksum(plain.s()));
+
+}
+
 TEST_CASE("turn-based: a human is asked before entering a sector with enemies; entering fights at once and the order fails") {
     for (bool enter : {true, false}) {
         CAPTURE(enter);

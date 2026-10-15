@@ -27,7 +27,10 @@ assert-enabled item:Close in=strategic-combat
 click item:Close in=strategic-combat
 wait-closed strategic-combat
 wait-turn 41
+# The Log opens once the turn's moves have been shown.
+wait-window log
 key Escape
+wait-closed log
 assert-absent item:"player-failure:*"
 key Ctrl+Shift+N
 wait-for item:"ai-note:*fighting, combat turn*"

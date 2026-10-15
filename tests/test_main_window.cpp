@@ -22,6 +22,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <map>
@@ -776,6 +777,56 @@ TEST_CASE("main window: the game as each call found it, for the movement line dr
     CHECK_FALSE(session.movesBefore().state);
 }
 
+TEST_CASE("main window: the session hands on each call's steps in order, with where the view follows its own groups (spec 06 §2.4, §2.7)") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);   // the others computer players
+    start.options.simultaneous = false;                 // orders carried out as they are given
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod"});
+    Vehicle& v = addTestVehicle(start, *rules, runner, home);
+    v.supply = 1000;
+    const VehicleId ship = v.id;
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    (void)session.takeMoves();
+    Location far = home;
+    far.sector.x = static_cast<decltype(far.sector.x)>(home.sector.x > 6 ? 0 : 12);
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, far}}, false}).ok);
+    // The order runs at once: first the view follows the ship's run, then its steps, one square each.
+    const std::vector<ClassicSession::ShownMove> moves = session.takeMoves();
+    REQUIRE(moves.size() > 1);
+    REQUIRE(moves.front().follow);
+    CHECK(moves.front().follow->vehicle == ship);
+    CHECK_FALSE(moves.front().turnStart);
+    Location at = home;
+    for (size_t i = 1; i < moves.size(); ++i) {
+        REQUIRE(moves[i].step);
+        const MovementStep& st = *moves[i].step;
+        CHECK(st.members == std::vector<VehicleId>{ship});
+        CHECK(st.lead == ship);
+        CHECK(st.from == at);
+        CHECK(std::max(std::abs(st.to.sector.x - st.from.sector.x), std::abs(st.to.sector.y - st.from.sector.y)) == 1);
+        at = st.to;
+    }
+    CHECK(at == session.state().vehicle(ship)->location);
+    CHECK(session.takeMoves().empty());   // taken
+
+    // End Turn: the computer players' turns, then the start of ours: the ship
+    // selected as its run starts, then its steps. The view follows only ours.
+    session.endTurn();
+    REQUIRE(session.myTurn());
+    const std::vector<ClassicSession::ShownMove> next = session.takeMoves();
+    const auto run = std::find_if(next.begin(), next.end(), [&](const ClassicSession::ShownMove& m) { return m.follow && m.follow->vehicle == ship; });
+    REQUIRE(run != next.end());
+    CHECK(run->turnStart);
+    REQUIRE(run + 1 != next.end());
+    REQUIRE((run + 1)->step);
+    CHECK((run + 1)->step->members.front() == ship);
+    CHECK((run + 1)->step->from == at);
+    for (const ClassicSession::ShownMove& m : next)
+        if (m.follow) CHECK(m.follow->empire == kMe);
+}
+
 TEST_CASE("main window: the movement log replay's keys") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
@@ -858,8 +909,8 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     // Day 1: both step one square east (one entry each, in the order movement made them).
     Location east = where;
     east.sector.x = static_cast<decltype(east.sector.x)>(east.sector.x + 1);
-    rec.step(MovementStep{1, ship, where, east});
-    rec.step(MovementStep{1, mate, where, east});
+    rec.step(MovementStep{.day = 1, .owner = kMe, .members = {ship}, .from = where, .to = east});
+    rec.step(MovementStep{.day = 1, .owner = kMe, .members = {mate}, .from = where, .to = east});
     GameState day = s;
     day.vehicle(ship)->location = east;
     day.vehicle(mate)->location = east;
@@ -918,11 +969,28 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     fast.update(quick);
     CHECK(fast.day() == 2);
 
+    // OpenSE4's "all at once": the day's two entries begin together and end together.
+    MovementReplay together;
+    together.setLog(std::make_shared<MovementLog>(log));
+    MovementReplay::Frame both = f;
+    both.allAtOnce = true;
+    both.now = 40.0;
+    together.play();
+    together.update(both);   // day 1 applied
+    together.update(both);   // both entries' first frame
+    REQUIRE(together.motion(ship));
+    REQUIRE(together.motion(mate));
+    CHECK(together.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
+    CHECK(together.motion(mate)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
+    both.now = 40.0505;
+    together.update(both);
+    CHECK(together.day() == 2);
+
     // A quarter turn first: 9 frames per 45°, the shorter way.
     GameState s2 = s;
     s2.vehicle(ship)->heading = 0;
     MovementRecorder rec2(s2);
-    rec2.step(MovementStep{1, ship, where, east});
+    rec2.step(MovementStep{.day = 1, .owner = kMe, .members = {ship}, .from = where, .to = east});
     MovementReplay turning;
     turning.setLog(std::make_shared<MovementLog>(rec2.take(3)));
     turning.play();

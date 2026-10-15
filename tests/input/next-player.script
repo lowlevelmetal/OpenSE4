@@ -12,6 +12,9 @@ key F2
 wait-window game-menu
 click item:Options in=game-menu
 wait-window options
+# The autosave rows come last in the list: scrolled into view.
+wheel item:"Sound On" in=options -10
+wait 2
 click item:"Every Turn" in=options
 key Escape
 wait-closed options

@@ -8,9 +8,9 @@
 // battles shown in windows, the endings (the destruction check), the
 // questions the player's own orders raise as they run (Attack Sector, the
 // colony-type picker, a failed Colonize's message box), and the Log last,
-// when the player gets the turn. Our client sees the moves only once the
-// engine call has made them all, and shows them afterwards (ShipGlides): until
-// the moves of the shown system have been shown, nothing of this opens and
+// when the player gets the turn. Our client shows the moves an engine call
+// made once it has returned, one group's steps after another as they were
+// made (ShipGlides): until they have been shown, nothing of this opens and
 // the main window waits as it does under a window. A click or a key shows them
 // at once (OpenSE4's convenience; the original's animation cannot be skipped).
 // Headless, tested in tests/test_client_logic.cpp; ClassicMode follows it.

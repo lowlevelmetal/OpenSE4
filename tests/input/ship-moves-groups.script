@@ -1,0 +1,100 @@
+# Moves as they are made, one group after another (spec 06 §2.4 "Moves as they are made", §1.9;
+# a player's report: "Ships still move all together, they should move individually (or as a group
+# if grouped/fleeted)"), on a training game of our own (tests/input/learn-moves): turn-based, two
+# attack ships at home (sector 4,6).
+# - Each ship is sent eight squares east, the first along its row, the second up to the top
+#   corner: six squares now, square by square, two at the next turn's start.
+# - At End Turn the turn's start moves the first ship's last two squares while the second waits on
+#   its square, then the second's (OpenSE4's "Ship movement: one group at a time", the default and
+#   the original's order). At 1/8x the pictures groups-1 to groups-6 show it frame by frame.
+# - With "Ship movement: all at once" the next turn's start moves both together.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
+
+wait-lesson moves
+wait 5
+click tag:lesson:hide
+# The first ship east along its row: six squares now, each a step of its own.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:12,6
+assert-present sector:gliding
+wait-gone sector:gliding
+# The second, still at home, to the top right corner.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:12,0
+assert-present sector:gliding
+wait-gone sector:gliding
+
+# The slowest speed; the ship movement lamps beside it, one group at a time lit.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+drag item:"Ship movement speed"@50%,50% in=options to item:"Ship movement speed"@1,50% in=options
+assert-present item:"Ship movement: one group at a time (the original's)" in=options
+assert-present item:"Ship movement: all at once" in=options
+screenshot options-ship-movement.png
+key Escape
+wait-closed options
+
+# End Turn: at the turn's start one ship moves while the other waits on its square ...
+key F12
+click item:Yes optional
+wait 2
+assert-present sector:gliding
+assert-present sector:waiting
+screenshot groups-1.png
+wait 15
+assert-present sector:waiting
+screenshot groups-2.png
+wait 15
+screenshot groups-3.png
+# ... then the other, alone.
+wait-gone sector:waiting
+assert-present sector:gliding
+screenshot groups-4.png
+wait 30
+screenshot groups-5.png
+wait-gone sector:gliding
+wait 5
+screenshot groups-6.png
+click tag:log:close optional
+wait 2
+
+# All at once: both sent back west, eight squares each; at the next turn's start both move together.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+click item:"Ship movement: all at once" in=options
+key Escape
+wait-closed options
+click sector:12,6
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:4,6
+wait-gone sector:gliding
+click sector:12,0
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:4,0
+wait-gone sector:gliding
+key F12
+click item:Yes optional
+wait 2
+assert-present sector:gliding
+assert-absent sector:waiting
+screenshot together.png
+wait-gone sector:gliding

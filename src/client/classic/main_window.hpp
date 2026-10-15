@@ -261,9 +261,15 @@ private:
     // The object whose movement line the panel shows is gliding (a fleet: one of its members).
     bool lineSubjectGliding(const UiContext& ui) const;
     // Turn-based games: the view follows the player's own objects whose
-    // orders ran during its turn (spec 06 §2.7), from the session's steps.
-    void followOwnMoves(UiContext& ui);
-    uint64_t followedCall_ = 0;
+    // orders ran during its turn (spec 06 §2.7), as their moves are shown:
+    // the session's LiveSteps, markers in the glides' queue.
+    struct PendingFollow {
+        game::LiveStep step;
+        bool turnStart = false;
+    };
+    void followMove(UiContext& ui, uint64_t id);
+    std::map<uint64_t, PendingFollow> follows_;
+    uint64_t nextFollow_ = 1;
     // Ctrl+P, Ctrl+I, Ctrl+O, Ctrl+U: builds this turn's log first if needed.
     void startReplay(UiContext& ui, OrderId id);
     // What each sector of the shown system draws this frame.

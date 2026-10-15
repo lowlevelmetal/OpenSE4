@@ -50,11 +50,15 @@ MovementRecorder::MovementRecorder(const game::GameState& start) {
 void MovementRecorder::step(const game::MovementStep& st) {
     if (st.day < 1) return;
     if (int(log_.days.size()) < st.day) log_.days.resize(size_t(st.day));
-    // A vehicle that appeared during the day is added by day(); its steps
-    // before that are not shown (inferred).
-    if (!where_.contains(st.vehicle)) return;
-    log_.days[size_t(st.day - 1)].moves.push_back({st.vehicle, st.from, st.to});
-    where_[st.vehicle] = st.to;
+    // One entry per member, in the group's order (§7 Q62). A vehicle that
+    // appeared during the day is added by day(); its steps before that are
+    // not shown (inferred).
+    for (const game::VehicleId id : st.members) {
+        const auto at = where_.find(id);
+        if (at == where_.end()) continue;
+        log_.days[size_t(st.day - 1)].moves.push_back({id, st.from, st.to});
+        at->second = st.to;
+    }
 }
 
 void MovementRecorder::day(int day, const game::GameState& s) {
@@ -152,8 +156,6 @@ void MovementReplay::reset() {
     if (log_)
         for (const auto& [id, v] : log_->vehicles) headings_[id] = v.heading % 8;
     anims_.clear();
-    animIndex_ = 0;
-    frame_ = 0;
     started_ = false;
     pending_ = 0;
     rebuildView();
@@ -195,8 +197,6 @@ void MovementReplay::playFollowing(std::vector<game::VehicleId> objects) {
 void MovementReplay::stop() {
     mode_ = Mode::Off;
     anims_.clear();
-    animIndex_ = 0;
-    frame_ = 0;
     started_ = false;
     view_.clear();
     follow_.clear();
@@ -210,28 +210,32 @@ std::optional<game::VehicleId> MovementReplay::following() const {
 
 void MovementReplay::update(const Frame& f) {
     if (mode_ == Mode::Off) return;
-    // The day's entries, each animated in full before the next, by the time
-    // elapsed: an entry is over when the wait after its last frame is, and
-    // the next begins then (several in one call when they come faster than
-    // the display's frames).
+    // The day's entries by the time elapsed: each animated in full before the
+    // next, as the original (an entry is over when the wait after its last
+    // frame is, and the next begins then, several in one call when they come
+    // faster than the display's frames); with "all at once" every vehicle's
+    // first entry begins with the day, and its next when that one is over.
+    now_ = f.now;
     if (animating()) {
         if (!started_) {
             started_ = true;
-            animStart_ = f.now;
-        }
-        while (animating()) {
-            const Animation& a = anims_[animIndex_];
-            const double end = animStart_ + animPace_.duration(a.turnFrames, a.slideFrames);
-            if (f.now < end) {
-                frame_ = animPace_.framesDrawn(a.turnFrames, a.slideFrames, f.now - animStart_);
-                return;
+            std::map<game::VehicleId, double> free;
+            double previous = f.now;
+            dayEnd_ = f.now;
+            for (Animation& a : anims_) {
+                a.start = previous;
+                if (animAllAtOnce_) {
+                    const auto it = free.find(a.id);
+                    a.start = it != free.end() ? it->second : f.now;
+                }
+                a.end = a.start + animPace_.duration(a.turnFrames, a.slideFrames);
+                previous = a.end;
+                free[a.id] = a.end;
+                dayEnd_ = std::max(dayEnd_, a.end);
             }
-            ++animIndex_;
-            animStart_ = end;
         }
+        if (f.now < dayEnd_) return;
         anims_.clear();
-        animIndex_ = 0;
-        frame_ = 0;
         started_ = false;
     }
     if (mode_ == Mode::Stepping) {
@@ -293,10 +297,9 @@ void MovementReplay::applyDay(const Frame& f) {
     for (const game::VehicleId id : d.removed) where_.erase(id);
     for (const auto& [planet, owner] : d.colonies) colonies_[planet] = owner;
     for (const game::ObjectId planet : d.coloniesRemoved) colonies_.erase(planet);
-    animIndex_ = 0;
-    frame_ = 0;
     started_ = false;
     animPace_ = f.pace;
+    animAllAtOnce_ = f.allAtOnce;
     rebuildView();
 }
 
@@ -313,16 +316,16 @@ void MovementReplay::rebuildView() {
 }
 
 std::optional<MovementReplay::Motion> MovementReplay::motion(game::VehicleId v) const {
-    for (size_t i = animIndex_; i < anims_.size(); ++i) {
-        const Animation& a = anims_[i];
-        if (a.id != v) continue;
+    for (const Animation& a : anims_) {
+        if (a.id != v || (started_ && now_ >= a.end)) continue;   // another's, or over
         // Still to come this day: where the entry starts.
-        if (i > animIndex_ || !started_ || frame_ < 1) return Motion{cellCenter(a.from.sector), a.angle0};
-        if (frame_ <= a.turnFrames) {
+        if (!started_ || now_ < a.start) return Motion{cellCenter(a.from.sector), a.angle0};
+        const int frame = animPace_.framesDrawn(a.turnFrames, a.slideFrames, now_ - a.start);
+        if (frame <= a.turnFrames) {
             const double step = a.angle1 >= a.angle0 ? kDegreesPerTurnFrame : -kDegreesPerTurnFrame;
-            return Motion{cellCenter(a.from.sector), frame_ == a.turnFrames ? a.angle1 : a.angle0 + step * frame_};
+            return Motion{cellCenter(a.from.sector), frame == a.turnFrames ? a.angle1 : a.angle0 + step * frame};
         }
-        const int slid = frame_ - a.turnFrames;
+        const int slid = frame - a.turnFrames;
         const float t = std::clamp(float(slid) / float(a.slideFrames), 0.0f, 1.0f);
         return Motion{lerp(cellCenter(a.from.sector), cellCenter(a.to.sector), t), a.angle1};
     }

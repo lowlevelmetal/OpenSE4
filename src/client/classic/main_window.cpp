@@ -1279,7 +1279,6 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
-    followOwnMoves(ui);
     prepareSectors(ui);
     // Selections can vanish when a turn is processed.
     if (vehicle_ && !ui.state().vehicle(*vehicle_)) clearSelection();
@@ -2499,17 +2498,42 @@ void MainWindow::trackGlides(UiContext& ui) {
     noteNewTurn(ui);
     glidesAt_ = ui.time;
     glidesRevision_ = ui.session.revision();
+    // What the engine calls made since did, in the order they did it: each
+    // group's steps, which play after those still under way, and the view
+    // following the player's own groups, a marker in the queue (followMove).
+    for (ClassicSession::ShownMove& m : ui.session.takeMoves()) {
+        if (m.step) {
+            glides_.enqueue(std::span<const game::MovementStep>(&*m.step, 1));
+        } else if (m.follow) {
+            const uint64_t id = nextFollow_++;
+            follows_.emplace(id, PendingFollow{*m.follow, m.turnStart});
+            glides_.enqueueMarker(id);
+        }
+    }
     const game::GameState& s = ui.state();
-    std::vector<ShipGlides::Seen> visible;
+    const game::EmpireId me = ui.session.player();
+    std::vector<ShipGlides::Seen> vehicles;
+    vehicles.reserve(s.vehicles.size());
     for (const game::Vehicle& v : s.vehicles)
-        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location, v.heading, turnsToHeading(ui.rules(), s, v)});
+        if (v.count > 0) vehicles.push_back({v.id, v.location, v.heading, turnsToHeading(ui.rules(), s, v), knownVehicle(ui, v), v.owner == me});
     // The pause after each step: Settings.txt `System Ship Movement Delay
     // Milliseconds`, read as seconds as the original does (spec 06 §1.9,
     // §2.4); the movement log replay never pauses (spec 06 §7 Q62). The
-    // frames at the player's speed (Options, OpenSE4).
+    // frames at the player's speed, the groups one after another or all at
+    // once (Options, OpenSE4).
     const double pause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
-    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, geo.cell, pause,
-                  MovementPace{settings().systemMovementSpeed});
+    const bool enabled = settings().animateSystemMovement && !replay_.active();
+    const MovementPace pace{settings().systemMovementSpeed};
+    const ShipGlides::Order order = settings().shipsMoveAllAtOnce ? ShipGlides::Order::AllAtOnce : ShipGlides::Order::OneGroupAtATime;
+    // The queue stops at each marker: the view follows, and the steps after
+    // it are shown in the system it shows then.
+    const size_t rounds = follows_.size() + 1;
+    for (size_t round = 0; round < rounds; ++round) {
+        glides_.track(ui.time, shown_, enabled, vehicles, geo.cell, pause, pace, order);
+        const std::vector<uint64_t> reached = glides_.takeReached();
+        if (reached.empty()) break;
+        for (const uint64_t id : reached) followMove(ui, id);
+    }
 }
 
 void MainWindow::trackReplay(UiContext& ui) {
@@ -2521,6 +2545,7 @@ void MainWindow::trackReplay(UiContext& ui) {
     f.animate = settings().animateSystemMovement;
     f.cellPixels = geo.cell;
     f.pace = MovementPace{settings().systemMovementSpeed};
+    f.allAtOnce = settings().shipsMoveAllAtOnce;
     f.seen = [this](game::VehicleId id) { return replaySeen_.contains(id); };
     f.turns = [&](game::VehicleId id) {
         const MovementLog* log = replay_.log();
@@ -2555,52 +2580,49 @@ bool MainWindow::lineSubjectGliding(const UiContext& ui) const {
     if (!tagged_.empty()) return false;
     if (fleet_) {
         const game::Fleet* f = ui.state().fleet(*fleet_);
-        return f && std::any_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return glides_.find(m) != nullptr; });
+        return f && std::any_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return glides_.moving(m); });
     }
-    return vehicle_ && glides_.find(*vehicle_) != nullptr;
+    return vehicle_ && glides_.moving(*vehicle_);
 }
 
-void MainWindow::followOwnMoves(UiContext& ui) {
+void MainWindow::followMove(UiContext& ui, uint64_t id) {
     // The view moves by itself only while a human player's own orders are
     // carried out during its turn in a turn-based game (spec 06 §2.7,
-    // confirmed: binary): before an object's orders run outside the system
+    // confirmed: binary), as the moves are shown (the queue's markers,
+    // ship_glides.hpp): before an object's orders run outside the system
     // shown, its system is shown with its sector current; after each warp
     // jump the arrival system is shown with the exit warp point's sector
     // current, the report of the ship staying open. At the start of the
     // turn each object with orders left is selected in turn as it acts, so
     // the turn opens on the last one. Never in simultaneous games, nor for
     // other empires' moves, and no option.
-    const uint64_t call = ui.session.liveStepsCall();
-    if (call == followedCall_) return;
-    followedCall_ = call;
+    const auto it = follows_.find(id);
+    if (it == follows_.end()) return;
+    const PendingFollow f = it->second;
+    follows_.erase(it);
     if (!ui.session.turnBased() || replay_.active()) return;
-    const std::vector<game::LiveStep>& steps = ui.session.liveSteps();
+    const game::LiveStep& st = f.step;
     const game::GameState& s = ui.state();
-    const bool turnStart = ui.session.liveStepsAtTurnStart();
+    if (!st.at.system.valid() || st.at.system.index() >= s.galaxy.systems.size()) return;
     const uint64_t made = selections_;   // the game's selections are none the player made
-    for (const game::LiveStep& st : steps) {
-        if (!st.at.system.valid() || st.at.system.index() >= s.galaxy.systems.size()) continue;
-        if (st.jump) {
-            shown_ = st.at.system;
-            sector_ = st.at.sector;
-            continue;
+    if (st.jump) {
+        shown_ = st.at.system;
+        sector_ = st.at.sector;
+    } else if (f.turnStart) {
+        // Selected in turn: its system shown, its sector current, its report opened.
+        clearSelection();
+        tagged_.clear();
+        shown_ = st.at.system;
+        sector_ = st.at.sector;
+        if (st.planet.valid()) {
+            object_ = st.planet;
+        } else if (const game::Vehicle* v = s.vehicle(st.vehicle)) {
+            vehicle_ = v->id;
+            if (v->fleet.valid() && v->owner == ui.session.player()) fleet_ = v->fleet;
         }
-        if (turnStart) {
-            // Selected in turn: its system shown, its sector current, its report opened.
-            clearSelection();
-            tagged_.clear();
-            shown_ = st.at.system;
-            sector_ = st.at.sector;
-            if (st.planet.valid()) {
-                object_ = st.planet;
-            } else if (const game::Vehicle* v = s.vehicle(st.vehicle)) {
-                vehicle_ = v->id;
-                if (v->fleet.valid() && v->owner == ui.session.player()) fleet_ = v->fleet;
-            }
-        } else if (st.at.system != shown_) {
-            shown_ = st.at.system;
-            sector_ = st.at.sector;
-        }
+    } else if (st.at.system != shown_) {
+        shown_ = st.at.system;
+        sector_ = st.at.sector;
     }
     selections_ = made;
 }
@@ -2687,8 +2709,12 @@ void MainWindow::prepareSectors(UiContext& ui) {
             if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id))
                 bySector[v.location.sector].second.push_back(&v);
     } else {
-        for (const game::Vehicle& v : s.vehicles)
-            if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id)) bySector[v.location.sector].second.push_back(&v);
+        // A vehicle waiting for its steps stands where they start (ship_glides.hpp).
+        for (const game::Vehicle& v : s.vehicles) {
+            if (!knownVehicle(ui, v) || glides_.find(v.id)) continue;
+            const game::Location at = glides_.heldAt(v.id).value_or(v.location);
+            if (at.system == shown_) bySector[at.sector].second.push_back(&v);
+        }
     }
     for (auto& [sector, contents] : bySector) {
         ShownSector out;
@@ -2737,7 +2763,9 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         if (!turnsToHeading(rules, s, v)) return 0;
         // The engine keeps each vehicle's heading (saved with the game); the
         // replay its own from the start of the turn (§2.4, §7 Q62).
-        return replay_.active() ? replay_.heading(v.id) : int(v.heading % 8);
+        if (replay_.active()) return replay_.heading(v.id);
+        // One waiting for its steps keeps the heading it had before them.
+        return glides_.heldHeading(v.id).value_or(int(v.heading % 8)) % 8;
     };
     auto miniOf = [&](const game::Vehicle& v, int heading) {
         const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
@@ -2794,6 +2822,16 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         }
     }
 
+    // A cloaked vehicle's 1 px dotted circle, inscribed in its 36x36 square.
+    auto cloakCircle = [&](Vec2 centre, game::EmpireId owner) {
+        const Color c = owner.valid() ? empireCol(s, owner) : rgb(map_style::kCloakNoColor);
+        constexpr int kDots = 56;
+        for (int d = 0; d < kDots; ++d) {
+            const float a = float(d) * 2.0f * std::numbers::pi_v<float> / float(kDots);
+            const Vec2 p = centre + Vec2{std::cos(a), std::sin(a)} * (kSpriteSize * 0.5f - 0.5f);
+            r.rect(Rect::fromPosSize({std::floor(p.x), std::floor(p.y)}, {1, 1}), c);
+        }
+    };
     // Vehicles (§2.4 "Sector contents"): one owner without a stellar object
     // shows its largest vehicle (or the fleet's icon), otherwise the owners'
     // small flags stacked down the left edge; counts are drawn by overlayText.
@@ -2816,25 +2854,11 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         const Sprite sprite = view.fleetIcon ? ui.art.groupMini(style, "Fleet", true) : miniOf(v, headingOf(v));
         if (!spriteAt(sprite, square)) placeholder(square + Vec2{18, 18}, v.owner);
         // A cloaked vehicle shown this way: a 1 px dotted circle inscribed in its square.
-        if (view.cloakRing) {
-            const Color c = v.owner.valid() ? empireCol(s, v.owner) : rgb(map_style::kCloakNoColor);
-            const Vec2 centre = square + Vec2{kSpriteSize * 0.5f, kSpriteSize * 0.5f};
-            constexpr int kDots = 56;
-            for (int d = 0; d < kDots; ++d) {
-                const float a = float(d) * 2.0f * std::numbers::pi_v<float> / float(kDots);
-                const Vec2 p = centre + Vec2{std::cos(a), std::sin(a)} * (kSpriteSize * 0.5f - 0.5f);
-                r.rect(Rect::fromPosSize({std::floor(p.x), std::floor(p.y)}, {1, 1}), c);
-            }
-        }
+        if (view.cloakRing) cloakCircle(square + Vec2{kSpriteSize * 0.5f, kSpriteSize * 0.5f}, v.owner);
     }
 
     // Ships on their way: gliding to their new square, or moved by the replay
     // (turning in 5° steps, then sliding).
-    auto largestFirst = [&](std::vector<const game::Vehicle*>& list) {
-        std::stable_sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
-            return rules.hull(s.design(a->design).hull).tonnage > rules.hull(s.design(b->design).hull).tonnage;
-        });
-    };
     // A mini at any angle (while turning): the quad turned about its centre, sampled like the art.
     auto turnedMini = [&](const game::Vehicle& v, Vec2 c, double angle) {
         const Sprite sp = miniOf(v, 0);
@@ -2854,16 +2878,14 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             if (const auto m = replay_.motion(v.id)) turnedMini(v, gridPoint(m->at), turnsToHeading(rules, s, v) ? m->angle : 0.0);
         }
     } else {
-        std::map<std::tuple<float, float, float, float, double>, std::vector<const game::Vehicle*>> gliding;
-        for (const game::Vehicle& v : s.vehicles) {
-            if (v.location.system != shown_ || !knownVehicle(ui, v)) continue;
-            if (const ShipGlides::Glide* g = glides_.find(v.id)) gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
-        }
-        for (auto& [key, list] : gliding) {
-            largestFirst(list);
-            const ShipGlides::Glide& g = *glides_.find(list.front()->id);
-            turnedMini(*list.front(), gridPoint(ShipGlides::position(g)), turnsToHeading(rules, s, *list.front()) ? ShipGlides::angle(g) : 0.0);
-        }
+        // Each group's step as one sprite, its first vehicle's mini (not the
+        // fleet's icon), with the dotted circle when it is cloaked (§2.4).
+        for (const ShipGlides::Glide& g : glides_.all())
+            if (const game::Vehicle* lead = s.vehicle(g.lead)) {
+                const Vec2 at = gridPoint(ShipGlides::position(g));
+                turnedMini(*lead, at, turnsToHeading(rules, s, *lead) ? ShipGlides::angle(g) : 0.0);
+                if (lead->status == game::VehicleStatus::Cloaked) cloakCircle(at, lead->owner);
+            }
     }
 
     // The selected location: four small yellow corner marks; the pick hover in green.
@@ -3046,9 +3068,13 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
                 else if (word == "enemy") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner != me; });
                 else if (word == "selected") holds = sector_ && *sector_ == sec;
                 else if (word == "gliding")   // a mini gliding to its new square is drawn in it now
-                    holds = std::any_of(glides_.all().begin(), glides_.all().end(), [&](const auto& g) {
-                        const Vec2 at = ShipGlides::position(g.second);
+                    holds = std::any_of(glides_.all().begin(), glides_.all().end(), [&](const ShipGlides::Glide& g) {
+                        const Vec2 at = ShipGlides::position(g);
                         return int(std::floor(at.x)) == x && int(std::floor(at.y)) == y;
+                    });
+                else if (word == "waiting")   // a vehicle waiting there for its steps to be shown (ship_glides.hpp)
+                    holds = std::any_of(s.vehicles.begin(), s.vehicles.end(), [&](const game::Vehicle& v) {
+                        return knownVehicle(ui, v) && !glides_.find(v.id) && glides_.heldAt(v.id) == game::Location{shown_, sec};
                     });
                 else if (word == "line") holds = std::find(lineDrawn_.begin(), lineDrawn_.end(), sec) != lineDrawn_.end();   // the movement line marks it
                 else if (word == "line-start") holds = lineStartDrawn_ && *lineStartDrawn_ == sec;   // the drawn route starts in it
@@ -3056,7 +3082,7 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
                     holds = std::any_of(notes_.begin(), notes_.end(), [&](const ShownNote& n) { return n.system == shown_ && n.sector == sec; });
                 else {
                     error = std::format("unknown sector word '{}' (empty, home, colony, planet, colonizable, star, warp-point, ship, enemy, "
-                                        "selected, noted, gliding, line, line-start, any; joined with +, negated with !)",
+                                        "selected, noted, gliding, waiting, line, line-start, any; joined with +, negated with !)",
                                         word);
                     return {};
                 }

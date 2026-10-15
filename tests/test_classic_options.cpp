@@ -217,6 +217,15 @@ TEST_CASE("classic options: the per-computer settings keep the Options window's 
     CHECK(settingsFromToml("[options]\nsystem_movement_speed = 2\n").systemMovementSpeed == 2.0);
     CHECK(settingsFromToml("[options]\nsystem_movement_speed = 0.3\n").systemMovementSpeed == 0.25);
     CHECK(settingsFromToml("[options]\nsystem_movement_speed = -1.0\n").systemMovementSpeed == 1.0);
+    // OpenSE4's ship movement: one group at a time by default, kept.
+    CHECK_FALSE(s.shipsMoveAllAtOnce);
+    CHECK_FALSE(odd.shipsMoveAllAtOnce);
+    s.shipsMoveAllAtOnce = true;
+    CHECK(settingsToToml(s).find("all-at-once") != std::string::npos);
+    CHECK(settingsFromToml(settingsToToml(s)).shipsMoveAllAtOnce);
+    s.shipsMoveAllAtOnce = false;
+    CHECK_FALSE(settingsFromToml(settingsToToml(s)).shipsMoveAllAtOnce);
+    CHECK_FALSE(settingsFromToml("[options]\nship_movement = \"sideways\"\n").shipsMoveAllAtOnce);
     // New empires start with the Empire Options defaults of spec 06 §1.9.
     const InterfaceOptions o;
     CHECK(o.confirmEndTurn);
