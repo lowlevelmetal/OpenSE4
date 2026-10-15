@@ -1102,6 +1102,27 @@ TEST_CASE("events: a rebel empire keeps its former owner's ministers' state, ang
     CHECK((again.empire(second).race.style == "Hermit" || again.empire(second).race.style == "Drifter"));
 }
 
+TEST_CASE("events: a rebel empire takes a copy of its former owner's waiting happiness events (spec 05 Q82, confirmed: binary)") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    const ObjectId planet = secondColony(s, kA, 50);
+    const SystemId sys = s.galaxy.object(planet).system;
+    TurnContext ctx = context(r, s);
+    ctx.mood(kA, "Facility Constructed", sys, planet);
+    ctx.mood(kA, "Any Ship Constructed");
+    ctx.mood(kB, "Any Ship Lost");
+    const EmpireId id = effects::breakAway(ctx, planet);
+    REQUIRE(id.valid());
+    auto count = [&](EmpireId e) { return std::count_if(ctx.moodEvents.begin(), ctx.moodEvents.end(), [&](const MoodEvent& m) { return m.empire == e; }); };
+    CHECK(count(kA) == 2);   // the former owner keeps its own
+    CHECK(count(id) == 2);   // the rebels get a copy
+    CHECK(count(kB) == 1);
+    CHECK(hasMood(ctx, id, "Facility Constructed"));
+    CHECK(hasMood(ctx, id, "Any Ship Constructed"));
+    CHECK_FALSE(hasMood(ctx, id, "Any Ship Lost"));
+    CHECK_FALSE(hasMood(ctx, kA, "Any Planet Lost"));  // nothing is logged for the colony that broke away
+}
+
 TEST_CASE("events: points and projects") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();

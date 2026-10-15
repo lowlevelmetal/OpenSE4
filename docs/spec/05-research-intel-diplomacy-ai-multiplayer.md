@@ -324,8 +324,9 @@ message at all.
     construction queues, options, experience, and its ministers' state: the minister
     style, the anger toward each empire, the turns since war with each, the AI state and
     turns in it, and the AI's target, staging, secured and defended systems and its
-    attack timer. It gets no designs, and the lists of accepted demands start empty.
-    Whether it also takes the owner's waiting happiness events is question 82. Then:
+    attack timer. It gets no designs, and the lists of accepted demands start empty. The
+    copy also takes the owner's list of happiness events waiting for its next update,
+    while the owner keeps its own (question 82, confirmed: binary). Then:
     - its name is the system's name. When that is empty or any other empire (destroyed
       ones included) has the name, a random line of the empire-names file is drawn, again
       until the name is unique. It gets a new leader name and the pictures of a random
@@ -4846,6 +4847,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     owner keep its own? Our engine gives the rebels no waiting events: each waiting event
     names its empire (`GameState::pendingMood`, `MoodEvent::empire`), so the former owner's
     stay with it (`events.cpp` `breakAway`, inferred).
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): yes. The new empire is
+    made as a copy of the former owner, and the copy includes the list of happiness events
+    waiting for the next update; the former owner keeps its own list unchanged. The
+    rebellion comes in the event step, after every empire's update (or in a spying empire's
+    end-of-turn processing), so the rebels' first update counts what the former owner
+    logged since its own update: its construction events, for example, as far as they lie in
+    the rebels' sector or system, and the empire-wide ones in full. The colony that broke
+    away is not among them: no happiness event is logged for it (spec 02 §2). It counts only
+    in a game not saved and loaded between the rebellion and the next update, since the list
+    is never saved (spec 02 §4). Since 2026-10-14 ours follows: `breakAway` copies the
+    former owner's waiting events (`TurnContext::moodEvents`) to the new empire.
 83. **The demand lists across a save** (raised 2026-10-14 by the recheck of the negative
     claims on the complete listing, seen in passing and not checked; §7.4 "Demand lists").
     The computer player's war, break and peace lists, its promises and the systems it

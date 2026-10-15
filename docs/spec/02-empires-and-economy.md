@@ -709,7 +709,8 @@ loaded game starts every list empty. An event logged after the empire's update i
 end-of-turn processing (§12) waits for the next turn's update: the `Ship Constructed` and
 `Facility Constructed` events of its construction step (§6), and the events of anything
 later in the turn (spec 05 §8, ground combat included). It counts only when the game is not
-saved and loaded before that update. A game hosted turn by turn (every game on different
+saved and loaded before that update. A rebel empire starts with a copy of its former owner's
+list, the owner keeping its own (spec 05 §2.3, question 82, confirmed: binary). A game hosted turn by turn (every game on different
 machines and every play-by-email game, which the host saves after each turn and loads for
 the next) therefore never counts a construction event; a game played on one machine
 without reloading does. Observed under a debugger (2026-10-02): in two hosted 100-turn games

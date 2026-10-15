@@ -644,12 +644,12 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     const int difficulty = ai::rebelDifficulty(s);
     Rng rng = s.rng.fork();
 
-    // A copy of the former owner (spec 05 §2.3, open question 41, confirmed:
-    // binary): race, traits, characteristics, culture, research, the
-    // intelligence and construction queues, options, experience, and the
+    // A copy of the former owner (spec 05 §2.3, open questions 41 and 82,
+    // confirmed: binary): race, traits, characteristics, culture, research, the
+    // intelligence and construction queues, options, experience, the
     // ministers' state (style, anger toward each empire, turns since war with
     // each, AI state and turns in it, target, staging, secured and defended
-    // systems, attack timer).
+    // systems, attack timer) and the happiness events waiting for its update.
     const EmpireId id{s.empires.size()};
     Empire e = s.empire(former);
     e.id = id;
@@ -740,6 +740,16 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.knowledge.notes.assign(s.galaxy.systems.size(), {});
     s.empires.push_back(std::move(e));
     for (Empire& x : s.empires) x.relations.resize(s.empires.size());
+    // The copy includes the happiness events waiting for the former owner's
+    // next update; the former owner keeps its own (spec 05 question 82, spec 02
+    // §4, confirmed: binary). They are not saved, like every waiting event.
+    const size_t waiting = ctx.moodEvents.size();
+    for (size_t i = 0; i < waiting; ++i)
+        if (ctx.moodEvents[i].empire == former) {
+            MoodEvent copy = ctx.moodEvents[i];
+            copy.empire = id;
+            ctx.moodEvents.push_back(std::move(copy));
+        }
 
     // The former owner logs no happiness event for it (spec 02 §2, confirmed: binary).
     diplomacy::transferColony(s, planet, id);
