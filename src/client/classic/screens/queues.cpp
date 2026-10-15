@@ -1223,8 +1223,11 @@ private:
     }
 
     // A left-click on an available item. Units first ask how many (the
-    // "Amount" list); ships and the rest are added one at a time.
+    // "Amount" list); ships and the rest are added one at a time. A design
+    // drawn grey, beyond our technology, ignores the click, here and in
+    // Multi-Add (spec 06 §1.8.3, confirmed: binary).
     void add(UiContext& ui, const Buildable& b) {
+        if (b.beyondTech) return;
         if (tab_ == BuildTab::Units && b.item.kind == game::QueueItem::Kind::Vehicle) {
             std::vector<shipui::ListPicker::Item> choices;
             amountChoices_.clear();
