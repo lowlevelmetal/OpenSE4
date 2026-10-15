@@ -1488,6 +1488,66 @@ standard errors in brackets; a dash: below 0.05, or no change):
   50 and 100, the soft cap, the time in each state and the first turns now lie within the
   original's spread. What a Scrap does to a fleet is still question 74.
 
+### Pace after the 2026-10-14 minister rules (OpenSE4, 2026-10-14)
+
+Measured once the engine followed the computer-player rules the complete listing settled on
+2026-10-14 (spec 05 §7.2, §7.5; questions 64, 81, 83, 87): the Fleets minister's pass (the
+orders after the Defend (Short Term) step, roles and sizes from the fleets in being, forming
+and disbanding after the orders, the Drop Troops strategy, the members at the fleet's
+position), the attack routine for ships and fleets, the ships of the Attack, Defense and
+Patrol ministers, the patrol target, the turn's one exploration list with the 3× refill,
+the satellite layers' fallback, the vehicle list's first blocked row and its unit-room test,
+no ship-limit test, the neutral empire's colony-ship test, the units file's order, the
+research and units files' errors, the ministers' sort and whole numbers, the colonization
+keys, the Medical Bay ships and the Retrofit minister. Set-up as in "Pace after the second
+debugger round": a Small quadrant, simultaneous turns, the Terran preset and four computer
+races drawn as random computer players draw them, five computer players, 100 `processTurn`
+calls, the waiting happiness events dropped after each turn; seeds 1–48, a scratch program
+(not tracked). Before: the engine at 88949ec (0.14.1); after: at 10200bb. Means per empire;
+battles count each battle once for each empire in it, per 25 turns of turns 51–100 (this
+program's count, not comparable with the earlier tables'); colonies founded or taken and
+lost per empire and 25 turns of turns 51–100; fleets and attack ships in fleets over turns
+41–100. Paired changes over the 48 seeds, standard errors in brackets.
+
+| | Original | Before | After | Change |
+|---|---|---|---|---|
+| Colonies at turns 25 / 50 / 75 / 100 | 5.3 / 12.2 / 16.6 / 17.0 | 5.9 / 11.0 / 14.2 / 15.3 | 5.9 / 10.7 / 14.0 / 15.1 | 0.0 / −0.3 (0.15) / −0.2 (0.2) / −0.3 (0.3) |
+| Ships at turns 25 / 50 / 75 / 100 | 3.5 / 8.6 / 14.1 / 17.4 | 3.9 / 8.8 / 13.8 / 16.9 | 3.8 / 8.2 / 12.7 / 15.5 | −0.1 / −0.6 (0.2) / −1.1 (0.4) / −1.5 (0.5) |
+| Bases at turns 50 / 100 | 0.5 / 0.6 | 0.25 / 0.46 | 0.33 / 0.47 | +0.07 (0.03) / 0.0 |
+| Battles per empire and 25 turns | | 17.9 | 24.7 | +6.8 (1.7) |
+| Colonies founded or taken; lost | 4.5; 1.7–3.1 | 4.1; 2.0 | 4.4; 2.2 | +0.3 (0.2); +0.3 (0.1) |
+| Defend (Short Term), turns 51–100 | 70 % | 67 % | 70 % | +2.7 points (1.4) |
+| Infrastructure, turns 51–100 | 11 % | 6.9 % | 8.3 % | +1.4 points (0.9) |
+| Exploration, turns 1–25 | 80 % | 77 % | 76 % | −0.7 points (0.3) |
+| Attack ships in fleets, turns 41–100 | 74–78 % | 78 % | 72 % | −5.4 points (0.9) |
+| Fleets per empire, turns 41–100 | | 3.0 | 2.8 | −0.26 (0.04) |
+
+By commit (the same seeds; each step adds the rules of one commit to the one before):
+
+| | Ships at 100 | Colonies at 50 | Battles | Founded | Defend, 51–100 | Infrastructure, 51–100 | Attack ships in fleets |
+|---|---|---|---|---|---|---|---|
+| The fleets, the attack routine, the patrol and the exploration list | −1.2 (0.5) | −0.5 (0.1) | +3.5 (1.8) | +0.4 (0.2) | +0.2 (1.6) | +2.8 (0.9) | −3.6 (0.9) |
+| The vehicle list and the tables | −0.6 (0.4) | — | +0.4 (1.2) | −0.1 (0.1) | −0.4 (0.9) | −0.5 (0.5) | −0.6 (0.5) |
+| The sort and the colonization keys | +0.4 (0.4) | +0.2 (0.1) | +2.7 (1.4) | −0.1 (0.1) | +2.7 (1.2) | −0.9 (0.9) | −1.3 (0.7) |
+| The Medical Bay, the loads and the Retrofit minister | — | — | +0.2 (0.1) | — | +0.2 (0.1) | — | +0.1 (0.1) |
+
+- **Nothing collapses.** No game stalled or failed in 48 simultaneous and four turn-based
+  games of 100 turns, and in twelve games of twelve computer players on 16 systems every
+  empire was alive at turn 40, before and after, with as many contacts (6.3 and 6.2 other
+  empires met) and a few more systems explored (7.0 and 7.4).
+- **Closer to the original**: the colonies founded, the time in Defend (Short Term) and in
+  Infrastructure, and the bases at turn 50. **Further**: the ships at turns 75 and 100 (a
+  ship and a half fewer, the original 14.1 and 17.4) and the share of attack ships in
+  fleets (72 % against 74–78 %). The battles rise by a third, mostly from the fleets' new
+  orders and the sort.
+- **The patrol, read literally** (spec 05 question 87 (d)): a later minister of the same pass
+  replacing the Seeks an earlier one gave, so the Patrol minister taking back the
+  explorers' orders. In 24 scratch games with the fleet rules alone that kept our computers
+  in Exploration in 92 % of turns 1–25 (the original 80 %, the rule as followed 81 %), gave
+  them 0.15 bases at turn 100 (the original 0.6, the rule as followed 0.56) and 4.4 % of
+  turns 51–100 in Infrastructure (the original 11 %, the rule as followed 10.9 %). Our
+  engine leaves the orders of the same pass alone.
+
 ## Session 5: more windows side by side, and generated galaxies (2026-10-03)
 
 Same harness as session 4 (a copy of the install, a Wine prefix of its own, the nested

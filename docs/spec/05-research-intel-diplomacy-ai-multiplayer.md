@@ -1337,9 +1337,10 @@ affected; the territory's one jump, Secure Holdings' neighbours and the Politics
 "within 2 jumps of X's territory" use the warp links directly and count real jumps.
 OpenSE4 follows this since 2026-10-03: `aiJumpCount` (`ai_planner.hpp`) gives the
 original's count from the real one, and the strength test (`ai_anger.cpp`), recruiting,
-the drones and the Attack minister in Prepare for Attack (`ai_military.cpp`) compare it as
-above; a ship outside fleets already in the staging system gets no order from that
-routine (inferred). The engine used to count real jumps throughout and test at most 4, 3
+the drones and the attack routine in Prepare for Attack (`ai_military.cpp`) compare it as
+above. A ship or fleet already in the staging system falls through to the routine's last
+case (§7.5 *Attack*; confirmed: binary, corrected 2026-10-14: this sentence said earlier,
+inferred, that it got no order). The engine used to count real jumps throughout and test at most 4, 3
 and the setting, and its Attack minister gave no orders in Prepare for Attack; with the
 three tests corrected, 48 scratch games showed no measurable change (Attack 2 → 1 % of
 turns 51–100, Defend (Short Term) 70 → 72 %).
@@ -1384,7 +1385,8 @@ High always notice.
   is no candidate: it is never a target, never makes a Prepare for Attack, and adds
   nothing to the anger's attack locations. Only a kept candidate also adds its owner's
   rating + 1 a second time to the strength of that system. They are ordered by fewest jumps
-  from our home, then highest anger toward the owner, then highest value. The value
+  from our home, then highest anger toward the owner, then highest value, the value compared
+  as a whole number (*The ministers' sort* below). The value
   (confirmed: binary) is the ratings (without the + 1) of every owned object in the
   planet's sector that is not ours, whoever owns it, plus the planet's defence: its
   colony's `Planet - Shield Generation` total / 5, plus its population in millions div 100,
@@ -1420,8 +1422,22 @@ High always notice.
      the Defense minister's own choice weakest first, or strongest first when the ship is
      in a fleet.
 
-  The defend list is the distinct systems of these entries in this order, at most `Maximum
-  Systems to Defend at a Time`.
+  The threats are compared as whole numbers, and key 3 is worked out as 10,100 − threat
+  (whole number) for a sector that holds a planet against 0 for the others, the higher
+  first: a planet-sector entry whose threat is 10,100 or more therefore loses its place
+  before the others (confirmed: binary; added 2026-10-14, complete listing). The defend
+  list is the distinct systems of these entries in this order, at most `Maximum Systems to
+  Defend at a Time`.
+- **The ministers' sort** (confirmed: binary; added 2026-10-14, complete listing). The
+  attack candidates, the defend list, the colonization targets and the attack routine's
+  candidates are sorted with a quicksort that is not stable, its pivot the middle entry, so
+  entries that tie on every key come out in an order that depends on how the list was built.
+  Threats and values are compared after cutting them to whole numbers, so 12.5 and 12.7
+  tie. The colonization targets are gathered in the game's object-slot order. OpenSE4
+  follows this since 2026-10-14 (`ministersSort`, `ai_planner.hpp`; `assess` and
+  `sortDefendEntries`, `ai.cpp`; the partition scheme is inferred, question 87). It used to
+  compare tenths, had no 10,100 cut-off, and broke ties by planet or object id or by the
+  scan order.
 
 **Whose lists the economy step reads** (confirmed: binary; observed 2026-10-02). There is
 one set of these lists for the whole game. An empire's start-of-turn step (§7.1 group 1)
@@ -1437,10 +1453,10 @@ of player 5 on every turn, and players 2–5 built their own. OpenSE4 follows th
 2026-10-02 (`TurnContext::aiColonyTargets`): the colonization targets of the lists built by
 an empire's start-of-turn ministers stay in place, and the next economy step whose ministers
 run plans with them and removes them. Whether the reading empire can settle each target is
-its own test, and the neutral empire's colony-ship test, which no rule of this spec
-describes, is not modelled (question 64). The set lives within one processing of the turn:
-a human's turn-based ministers, whose start and end of turn can come in different calls,
-build their own at the end.
+its own test (confirmed: binary, question 64), and the neutral empire's colony-ship test is
+the vehicle list's (§7.5 `AI_Construction_Vehicles` step 1), modelled since 2026-10-14. The
+set lives within one processing of the turn: a human's turn-based ministers, whose start
+and end of turn can come in different calls, build their own at the end.
 
 **Tests used by the transitions**
 
@@ -1906,8 +1922,11 @@ Team mates are always accepted, and team enemies always refused.
   start-of-turn step of every turn whose date (the one the ministers see, §7.5 "The
   date") is a multiple of 10, before the Politics minister acts. An entry therefore lasts
   until the next such date: from 1 turn (added on a date ending in 9) to 10 turns (added
-  on a date that is a multiple of 10) (confirmed: binary). Whether a save and load empties
-  them earlier is question 83.
+  on a date that is a multiple of 10) (confirmed: binary). None of the saving routines
+  writes them, and loading a game builds new empires whose lists start empty, so every
+  load empties them as well: a game hosted by loading its file each turn never keeps an
+  accepted demand past the load (confirmed: binary, question 83; added 2026-10-14, complete
+  listing). The rebel copy (§2.3) does not copy them either.
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
   newest political message from X in its answer window (above):
   - a treaty proposal or counter-proposal: Accept, Counter or Refuse Treaty; a trade:
@@ -1981,6 +2000,13 @@ binary).
   - *When*: new projects are chosen only if a research event (new level, new area, all
     projects done) was logged last turn, or fewer than 4 projects are queued. Never when
     the research pool (the points waiting to be spent) is 0, or with a full queue (12).
+  - *Loading errors* (confirmed: binary; added 2026-10-14, complete listing): the rows are
+    used only when the research file loaded without errors (the error box shows);
+    otherwise the minister goes straight to the random area of an empty queue below. The
+    other tables' errors are reported but do not stop their ministers, except the units
+    file's (*Units file* below). OpenSE4 follows this since 2026-10-14 (`planResearch`,
+    `AiProfile::researchErrors`; a loading error is a number field whose value is not a
+    whole number, inferred, question 87); it used to use whatever rows it could read.
   - *Mine sweeping*: every fifth turn, if the empire has ever run into a mine field and
     its research file has rows, it queues the area of the **first** tech requirement of
     the first component in the list with Mine Sweeping. This happens only if that area can
@@ -2129,7 +2155,21 @@ binary).
        - Under-supplied: count < `Must Have At Least`, or `Planet Per Item` > 0 and count
          < colonies × 10 / `Planet Per Item`, compared exactly (not rounded).
        - Over the hard cap, only "Open Warp Point" designs qualify. Over the soft cap, only
-         colony ships and "Open Warp Point" designs qualify.
+         colony ships and "Open Warp Point" designs qualify. In the same gate, a neutral
+         empire's colony-ship rows (the three colony types) qualify only while the
+         colonization-target list the economy step reads (§7.2) holds at least one entry,
+         settleable or not (confirmed: binary; added 2026-10-14, question 64).
+       - A row whose design is a unit (fighter, satellite, mine, troop, drone, weapon
+         platform) is under-supplied only if some queue owner of the empire has a working
+         space yard (an uncloaked colony with a Space Yard, or a yard ship) with free cargo
+         space of at least the design's tonnage; for satellites, troops, drones and weapon
+         platforms that owner must be a colony. Otherwise the row is passed over like one
+         that is not under-supplied. Placement then follows step 5, on any colony's queue
+         (confirmed: binary; added 2026-10-14, complete listing).
+       - OpenSE4 follows both since 2026-10-14 (`ShipBuilder::vehicles`, `yardRoomFor`,
+         `ai_economy.cpp`); it used to have neither test, so its computers kept ordering units
+         once their yard colonies' holds were full, and its neutral empires colony ships with
+         no target.
     2. **The design** (confirmed: binary): the AI first looks, for every entry, among its
        own designs that it can build for one made from the `AI_DesignCreation` template
        whose `Name` equals the entry's `Type` text, ignoring case. The newest by creation
@@ -2199,9 +2239,11 @@ binary).
          vehicle type.
        - Any other item goes to the queue with the smallest backlog in turns, then the
          highest rate. Ships need a space yard; the other units can use any colony's
-         queue. No ship or base is placed while the empire is at its ship limit (inferred,
-         question 81): the queues take such items (spec 02 §6.5), so the builder checks the
-         limit itself, as the engine's queues did before 2026-10-13.
+         queue. Neither the row choice nor the queue choice nor the queue's add looks at the
+         ship limit (confirmed: binary, question 81): at the limit the computer player keeps
+         queueing ships and bases, which then wait in the queues (spec 02 §6.5). OpenSE4
+         follows this since 2026-10-14 (`ShipBuilder::queueable`); it used to place none at
+         the limit.
        - A queue's **backlog** is the sum, over its items, of each item's turns: the
          largest, over the resources the queue has a positive rate for, of (what the item
          still costs ÷ that rate) rounded up. The first item counts only what is still
@@ -2214,7 +2256,16 @@ binary).
        capped at the queue's rate.
     7. After a placement the scan restarts from the top. After a failure (no queue under
        5 turns) it continues below that entry. It stops at the end of the list; there is
-       no wrap-around.
+       no wrap-around. The loop remembers the first row of the turn that failed and never
+       forgets it: when that same row fails again (after a placement has restarted the
+       scan), the whole list stops for the turn, so once a high row is blocked by a busy
+       queue at most one more item is placed after each pass down the list reaches it
+       (confirmed: binary; added 2026-10-14, complete listing). A placement adds its batch
+       to the count of its type and one to the queued colony ships the Colonizer rows of
+       step 4 count, which are taken with the other counts, before the clean-up. OpenSE4
+       follows this since 2026-10-14 (`ShipBuilder::vehicles`, `queuedColonyShips_`); it
+       used to skip a blocked row and keep scanning, and to count the queued colony ships
+       live, each item as many as it builds.
   - Difficulty does not affect construction. Nothing outside the table is ever built, so
     there are no extra scouts.
 - **Units file** (confirmed: binary): the game also looks for an `_AI_Construction_Units`
@@ -2225,9 +2276,15 @@ binary).
     65,000). There is no `AI State` key: the rows apply in every state.
   - *When*: after the vehicle list, every turn, the Ship Construction minister takes a
     fresh budget: a full turn of net income, with no reserve taken off and nothing of what
-    the vehicle list used. It goes through the empire's queues in order. A colony qualifies
-    when its queue is empty, it has no free facility slot, and all three resources of the
-    budget are above 0.
+    the vehicle list used. It goes through the empire's queues in the queue-list order
+    (system by system, then the system's object order, *Placement* above). A colony
+    qualifies when its queue is empty, it has no free facility slot, and all three
+    resources of the budget are above 0. A units file that reports any loading error is
+    not used for this step (the error box shows), although the reserve it set is kept
+    (confirmed: binary; added 2026-10-14, complete listing). OpenSE4 follows this since
+    2026-10-14 (`ShipBuilder::units`, `AiProfile::unitsErrors`; a loading error is a number
+    field whose value is not a whole number, inferred, question 87); it used to visit the
+    colonies in its own colony order and to use a faulty file's rows.
   - *Row*: the last record whose `Colony Type` text contains the colony's type name,
     ignoring case. A colony without a type gets nothing.
   - *What is built*: the first entry that names an AI design type exactly, whose units in
@@ -2362,8 +2419,21 @@ binary).
     2. warp jumps from home, fewest first;
     3. planets with ancient ruins first;
     4. breathable atmosphere first;
-    5. larger planets first;
-    6. higher planet value first.
+    5. larger planets first: the planet size's `Stellar Size`, so Ringworlds and
+       Sphereworlds, Huge in the stock data, tie with Huge planets;
+    6. higher planet value first. The value is the sum of the three resource values, each
+       times 1000 unless the game uses finite resources. For a target that is a
+       zero-population hostile colony it also adds 100 per population unit, 1,000,000 per
+       facility, 10,000 per cargo unit and 1,000,000,000 when a certain colony flag is set
+       (its meaning was not traced; OpenSE4 takes the capital mark of the trade values,
+       §7.4, inferred). The sum is taken in single precision, and compared as a whole number
+       (*The ministers' sort*, §7.2), so such colonies come before plain planets that tie
+       on the keys above.
+
+    (Keys 5 and 6 confirmed: binary; added 2026-10-14, complete listing.) OpenSE4 follows
+    this since 2026-10-14 (`sizeRank`, `colonyTargetValue`, `ai.cpp`; a size none of the five
+    names hold ranks below Tiny, inferred). It used to rank constructed planets above Huge,
+    to count an unknown size as Medium, and to take the three resource values alone.
   - *Ships*: idle colony ships are those with no orders, or whose orders are Move To then
     Colonize and whose target has become one of our colonies. A ship whose target turned
     into an asteroid field, was taken by another empire or is gone keeps flying; its
@@ -2418,14 +2488,36 @@ binary).
       arrival); in the same system, a move and then Load or Drop; in the same sector, Load
       or Drop at once. Only a Drop order reserves its destination against other
       transports. A transport left without orders gets the resupply orders below.
-    - Idle ships with a Medical Bay get no order: the routine picks a planet and then drops
-      it.
+    - *Medical aid* (confirmed: binary; corrected 2026-10-14, complete listing: this line
+      said earlier, from the truncated export, that such ships get no order). When any of
+      the empire's colonies has a plague (the highest plague level among them is 1 or
+      more), each idle own ship with a Medical Bay is handled first, whatever its design
+      type: it leaves its fleet, its orders are cleared, and it gets a Move To the last
+      plagued colony in the empire's planet list, then the "Render Medical Aid" order.
+      Without a plagued colony found it gets nothing that turn. When the empire has no
+      plague, such a ship is treated by its type, so a Population Transport with a Medical
+      Bay carries people as usual. OpenSE4 follows this since 2026-10-14 (`planTransports`,
+      `ai_military.cpp`), with the Move To alone: it has no Render Medical Aid order, and its
+      Medical Bay cures a plague in the sector by itself (spec 03 §3); what the original's
+      order does when carried out was not read (spec 03 §8, question 87). It used to skip
+      every Population Transport with a Medical Bay.
   - *Retrofit*: none while over the soft cap, in the Attack, Incursion or Defend (Short
     Term) states, or while 3 ships are already being retrofitted.
     - Eligible ships are idle, have empty cargo, are in a system without enemies, and have
       a design older than 20 turns.
     - Such a ship goes to a yard and retrofits to the newest valid design with the same
       hull and design type, up to 3 ships.
+    - *The orders* (confirmed: binary, medium confidence on the details; added 2026-10-14,
+      complete listing): the minister retrofits a ship at once where it stands, in either
+      turn style, when that is the yard it chose; otherwise it clears the ship's list and
+      gives a special "go there and retrofit" order, which moves the group and retrofits
+      every member on arrival. OpenSE4 follows this since 2026-10-14 (`planRetrofit`,
+      `ai_military.cpp`; `cmd::Retrofit` with `moveFirst`, `commands.cpp`): the yard is our
+      nearest colony with a working yard by jumps, as before; the order is a Move To and the
+      Retrofit order, which movement carries out on arrival with its own test (spec 03 §15).
+      It used to give the window's retrofit to a ship at any yard, which in a simultaneous
+      game became the ship's only order, and only a Move To to a ship elsewhere, which was
+      planned again once it stood at the yard.
   - *Scrap*: while over the soft cap, one ship per turn (confirmed: binary). The
     candidates are the empire's vehicles that are not of a colony-ship design type
     (Colony (Rock), (Ice) or (Gas)): every one that can move (maximum movement above 0, not
@@ -2541,9 +2633,10 @@ binary).
     - Fleet membership is not checked.
   - *Stellar Manipulation* (confirmed: binary): idle own ships of the matching design type
     that are not in a fleet. "Nearest" means nearest to our home system.
-    - Open Warp Point: while a free exploration frontier point is left (§7.2), the ship's
-      range counts as 0, so nothing is chosen and the ship gets the resupply orders
-      (confirmed: binary). Otherwise each explored system with fewer than 10 warp points
+    - Open Warp Point: while a free exploration frontier point is left (the turn's one free
+      list as the exploring fleets and the Exploration minister left it, §7.5
+      *Exploration*), the ship's range counts as 0, so nothing is chosen and the ship gets
+      the resupply orders (confirmed: binary). Otherwise each explored system with fewer than 10 warp points
       gets one random target: an unexplored system within the ship's range, with fewer
       than 10 warp points and not yet linked to it. The source with the fewest of our
       colonies (then the fewest jumps from home) is chosen. The ship moves to a random
@@ -2695,8 +2788,8 @@ binary).
     or less compares `Max Amount of Planets` with our planet count instead. With no match,
     n = 0.
   - n is also 0 until `Fleets Dont Use For Num Turns` turns after the game start.
-  - *Forming*: with fewer fleets than wanted, at most one new fleet is formed per turn. It
-    forms around the newest idle, fit ship not in a fleet, with `Fleets Default Formation`
+  - *Forming*: with fewer fleets than wanted, at most one new fleet is formed per turn,
+    after the orders (*The pass* below). It forms around the newest idle, fit ship not in a fleet, with `Fleets Default Formation`
     and `Fleets Default Strategy`. Only a ship that can move and that an attack fleet or a
     defence fleet could take may lead it, and never a troop transport or a boarding ship: an
     attack ship, a carrier or drone carrier with its units aboard, a kamikaze ship, or a
@@ -2712,13 +2805,46 @@ binary).
     carriers alone (fleet-turns of turns 51–100), against none and 1 % in one game of the
     original, and such fleets went to fight and draw (spec 07 "Battles, bases and the first
     turns under a debugger").
-  - *Disbanding*: fleets beyond n are disbanded, and so is a fleet whose leader is gone
-    or unfit.
-  - *Roles*: fleet i of n (counting from 1) is an attack fleet when i is odd and (i + 1) /
-    2 < n × (100 − `Percentage of Fleets to use for defense`) / 100. All others are
-    defence fleets.
-  - *Size*: a fleet recruits up to trunc(vehicle count × `Fleets Percentage of Ships For
-    Fleets` / 100 / n) members.
+  - *The fleet as the ministers see it* (confirmed: binary): its members are the empire's
+    objects that carry the fleet's number and stand at the fleet's own system and sector, in
+    the order of the objects there; its leader is the first of them, whoever the player
+    chose. A member standing elsewhere counts nowhere: not as leader, not in the fleet's
+    strength, size or supply totals and not in the troop test below. A fleet with nobody at
+    its position has no leader, so the minister disbands it, as a load does (spec 08 §5.3).
+    OpenSE4 follows this since 2026-10-14 (`ministersFleet`, `ministersLeader`, `ai.cpp`;
+    "the objects there" taken as the system's own list, `Vehicle::arrival`); its game keeps
+    the player's leader (`fleetLeader`, spec 03 §9) for the formation and everything else.
+    The Fleets minister used to take that leader, and the Resupply minister counted every
+    member wherever it stood.
+  - *The pass* (confirmed: binary; corrected 2026-10-14, complete listing). For each of the
+    empire's fleets in the order of its fleet list, by slot number i (the list keeps the
+    slots of removed fleets free, so it can have gaps):
+    1. its role: an attack fleet when i is odd and (i + 1) / 2 < (100 − `Percentage of
+       Fleets to use for defense`) / 100 × n, with n the number of fleets in being when the
+       minister starts, the product taken in single precision; all others are defence
+       fleets;
+    2. its leader: the fleet is disbanded when the leader is gone or unfit;
+    3. its recruits (*Size* below);
+    4. its combat strategy (*Strategy* below);
+    5. it goes on the idle list when its leader has no orders.
+
+    Then come the orders (below). Only after them is at most one new fleet formed (*Forming*
+    above), when fewer are in being than wanted, or the fleets in slots wanted + 1 up to the
+    number in being are disbanded; those are slot numbers, so with gaps in the list a
+    different set goes. A new fleet therefore recruits and gets orders only from the next
+    turn, and a surplus fleet recruits and gets its orders before it is disbanded. OpenSE4
+    follows this since 2026-10-14 (`planFleets`, `ai_military.cpp`). Our fleets keep no slot
+    numbers between turns: a fleet's slot is its place in the empire's fleet list at the start
+    of the pass, so a gap left by a fleet disbanded earlier in the same pass counts, one left
+    on an earlier turn does not (question 87). The engine used to disband and form first, to
+    take n as the wanted number for the roles and the sizes, and to number the fleets kept.
+  - *Size*: a fleet recruits up to trunc(`Fleets Percentage of Ships For Fleets` ÷ n ÷ 100 ×
+    vehicle count) members, worked out in that order, with n the number of fleets in being
+    at that moment, counted again just before each fleet recruits: it is lower when a fleet
+    with an unfit leader was disbanded earlier in the same pass (confirmed: binary). The
+    members away from its position do not count. While the empire is still forming its
+    fleets (one a turn), the original's fleets are therefore larger than the wanted number
+    would give.
     - Recruits are ships not in a fleet and without a Join Fleet order, within 1 jump of the
       fleet (the original's count below 4, which is the jumps plus two, §7.2 *Jumps*), that
       pass the attack fleets' or the defence fleets' test; nothing asks that they be idle.
@@ -2748,7 +2874,17 @@ binary).
     - it lacks a component it needs to operate;
     - it is an armed type with zero strength;
     - its role is not combat.
-  - *Orders* go to idle fleets only:
+  - *Strategy* (confirmed: binary; added 2026-10-14, complete listing): every turn, for each
+    fleet it handles, the minister sets the combat strategy. When any member carries troop
+    units, it is the last strategy in the empire's strategy list whose primary movement is
+    "Drop Troops (if carrying)" (the stock AI strategies table has one); otherwise it is the
+    `Fleets Default Strategy`. Nothing changes when no such strategy exists. OpenSE4
+    follows this since 2026-10-14 (`setFleetStrategy`, `ai_military.cpp`); it used to set the
+    strategy only when it formed the fleet.
+  - *Orders* go to the fleets of the idle list (confirmed: binary; corrected 2026-10-14,
+    complete listing: this list said earlier that the minister gives no other fleet orders
+    after the Defend (Short Term) step; the old export took that step's closing finally block
+    for the end of the routine, which goes on in every state):
     - In Defend (Short Term), each enemy in territory, in turn, gets the nearest idle
       defence fleet. In simultaneous-movement games the fleet pursues the enemy ship
       rather than moving to its spot. In detail (confirmed: binary): when the empire is in
@@ -2761,37 +2897,52 @@ binary).
       threat applies, and each fleet takes one entry. The order is the stored Attack when
       the fleet already stands in the entry's sector, otherwise a Seek to that sector
       (turn-based) or after the entry's latest object (simultaneous); the entry's assigned
-      strength grows by the fleet's. Then the Fleets minister gives no other fleet orders
-      that turn: no state goal, no patrol, no exploration, and the attack fleets and the
-      remaining defence fleets stay idle. (A step meant to cancel the orders of fleets
-      bound for a warp point looks only at idle fleets and so never acts.) Observed under a
-      debugger (2026-10-03, game 10): in such turns 13 % of the fleets had no orders after
-      the start-of-turn ministers. OpenSE4 follows this since 2026-10-03 (`planFleets`,
-      `ai_military.cpp`). It used to take the raw enemy-in-territory objects, in their own
-      order and whatever their system, each with the nearest idle non-attack fleet, and then
-      give every fleet left over, attack fleets included, the next defend-list entry from the
-      top, a patrol or an exploration; 2 % of its fleets were idle in such turns. In 120
-      scratch games with the original's rule, our computers won 4.1 decided battles away
-      from colonies per empire and 25 turns of turns 51–100 instead of 5.0 (the original
-      2.1–3.4), lost 5.9 ships in battles instead of 7.8 and 1.8 colonies instead of 1.2 (the
-      original 1.8–3.6), and spent 67 % of turns 51–100 in Defend (Short Term) instead of
-      72 % (70 %) (questions 68, 69; spec 07 "Pace after the second debugger round").
-    - Otherwise fleets head for the state's goal: the staging system in Prepare for
-      Attack, the target with the most candidates in Attack, and the secured system in
-      Secure Holdings. In other states they go to the top attack candidate if its owner
-      is at War with us.
-    - Leftover fleets defend, then patrol (fleets led by a defence ship) or explore. An
-      exploring fleet gets the player's Move To toward the free frontier point and the Warp
-      through it, not a Seek (confirmed: binary): the Move To lasts until it arrives, so the
-      fleet is not idle and is not planned again until it has warped. Of the attack ships of
-      game 10 in turns 26–50, 42 % were in fleets whose first order after the start-of-turn
-      ministers was such a Move To, and 27 % carried the same Move To as the turn before
-      (observed, spec 07 "The computer players' second round under a debugger"). OpenSE4
-      follows this since 2026-10-03 (`planFleets`, `ai_military.cpp`). It used to give a Seek
-      and the Warp (question 64), so the Warp waited behind the Seek and was left as the
-      first order after the movement phase (24 % of our attack ships at the start of turns
-      26–50 against 1 % in the original). In 120 scratch games with the Move To, battles,
-      losses and colonies did not change measurably.
+      strength grows by the fleet's. (A step meant to cancel the orders of fleets bound for
+      a warp point looks only at idle fleets and so never acts.) Observed under a debugger
+      (2026-10-03, game 10): in such turns 13 % of the fleets had no orders after the
+      start-of-turn ministers; with the steps below that would be the fleets for which none
+      of them found anything (inferred).
+    - *Goal*: then, in every state, when the state gives a goal system, every fleet on the
+      idle list, defence fleets as well as attack fleets, whose leader has no orders gets the
+      attack routine (§7.5 *Attack*) for its leader, which adds the whole fleet's strength to
+      the candidate it takes. The goal system is the secured system in Secure Holdings, the
+      staging system in Prepare for Attack, in Attack the target holding the most attack
+      candidates (counting every candidate whatever its owner), and otherwise, Defend (Short
+      Term) included, the top attack candidate's system when its owner is at War with us.
+    - *Leftover fleets*, each with an idle leader, in the order of the idle list:
+      - a non-attack fleet led by a Defense Ship gets the defence routine (§7.5 *Defence*),
+        which acts only in Defend (Short Term) and Defend (Long Term), with its per-entry
+        limit, the "strongest first when in a fleet" order, and the leader ship's own rating
+        added to the entry, not the fleet's strength. When still idle, it gets the patrol
+        target (§7.5 *Patrol*); one already there gets no order;
+      - every other fleet gets, in turn: the defence routine (non-attack fleets only), then
+        the attack routine, then exploration. An exploring fleet takes the free frontier
+        point nearest its leader by travel distance, which leaves the turn's one free list
+        (§7.5 *Exploration*), and gets the player's Move To toward it and the Warp through
+        it, not a Seek (confirmed: binary): the Move To lasts until it arrives, so the fleet
+        is not idle and is not planned again until it has warped. Of the attack ships of
+        game 10 in turns 26–50, 42 % were in fleets whose first order after the
+        start-of-turn ministers was such a Move To, and 27 % carried the same Move To as the
+        turn before (observed, spec 07 "The computer players' second round under a
+        debugger").
+
+    OpenSE4 follows this since 2026-10-14 (`planFleets`, `defenceRoutine`, `attackDispatch`,
+    `exploreWithFleet`, `ai_military.cpp`; the fleet's strength is the rating + 1 of each
+    member at its position, question 87). Before, it gave no fleet orders after the Defend
+    (Short Term) step (since 2026-10-03; earlier still it took the raw enemy-in-territory
+    objects, each with the nearest idle non-attack fleet, and gave every fleet left over the
+    next defend-list entry from the top, a patrol or an exploration). In other states it gave
+    the goal to attack fleets only, as a Seek to our most populous colony or the centre of
+    the goal system, or straight to its first hostile candidate, with no rolls and no
+    strength test; its leftover fleets took the defend-list entries from the top in any
+    state with no strength limit, the defence-led ones patrolled to the colony with the
+    fewest of our ships, and the exploring ones all took the first free point without using
+    it up. With the Defend (Short Term) rule of 2026-10-03, 120 scratch games won 4.1 decided
+    battles away from colonies per empire and 25 turns of turns 51–100 instead of 5.0 (the
+    original 2.1–3.4), lost 5.9 ships in battles instead of 7.8 and 1.8 colonies instead of
+    1.2 (the original 1.8–3.6) (questions 68, 69; spec 07 "Pace after the second debugger
+    round"); the pace with the rules of 2026-10-14 is in spec 07 "Pace after the 2026-10-14
+    minister rules".
   - Ships outside fleets get individual attack and defence orders only while the empire
     has no active fleet.
 - **How long the ministers' movement orders last** (confirmed: binary). Wherever this
@@ -2828,34 +2979,85 @@ binary).
   for it and raise them again after the day's battles. Retrofit, the layers, sweepers,
   carriers, troop transports and drones keep their own orders (§7.5 above).
 - **Attack and defence** (Attack and Defense ministers; confirmed: binary).
-  - *Defence* (confirmed: binary): only in Defend (Short Term). Each defender in turn goes
-    to the first entry, in the defend-list systems and the Defense minister's order
-    (§7.2), whose assigned strength is at most round(its threat × 1.3) at Low difficulty,
-    or round(its threat × 1.5) at Medium and High. The order is Attack when the defender
-    is already in that sector, otherwise a move there, or in a simultaneous game a pursuit
-    of the entry's latest object. The entry's assigned strength then grows by the
-    defender's rating, without the + 1.
-  - *Attack*: attackers go to the first candidate in the target system whose assigned
-    strength is at most round(its value × k). k = 1.5 when our score exceeds 1.5 × the
-    owner's score, else 1.
-    - Each candidate is skipped with a 25 % chance. If none qualifies, the first
-      candidate that passes a 75 % roll is taken.
-    - The order is Attack when the ship is already in that sector, otherwise a move there.
+  - *Their ships* (confirmed: binary; added 2026-10-14, complete listing): our own, outside
+    fleets, and idle or with a Seek as their first order. The Attack minister takes Attack
+    Ships, Attack Bases, Kamikaze Attack Ships, Carriers carrying fighters and Drone
+    Carriers carrying drones; the Defense minister the same and Defense Ships. A base
+    cannot move, but it still takes an entry or a candidate and adds its strength to it.
+    OpenSE4 follows this since 2026-10-14 (`takesDuty`, `freeForMinisters`,
+    `ai_military.cpp`); a ship that an earlier minister of the same pass gave orders keeps
+    them, and a mothballed one is left out (inferred, question 87). It used to send Attack
+    Ships alone to attack and Attack and Defense ships that could move to defend.
+  - *Defence* (confirmed: binary): only in Defend (Short Term) (and Defend (Long Term),
+    which is never reached), and for the Defense minister only while the empire has no
+    active fleet. Each defender in turn goes to the first entry, in the defend-list systems
+    and the Defense minister's order (§7.2), whose assigned strength is at most round(its
+    threat × 1.3) at Low difficulty, or round(its threat × 1.5) at Medium and High. The
+    order is Attack when the defender is already in that sector, otherwise a move there, or
+    in a simultaneous game a pursuit of the entry's latest object. The entry's assigned
+    strength then grows by the defender's rating, without the + 1. The Fleets minister
+    sends its leftover non-attack fleets through the same routine (§7.5 `AI_Fleets`): it
+    treats the leader like a single defender, strongest threat first, and adds the leader
+    ship's own rating, not the fleet's strength (confirmed: binary). The entries' assigned
+    strengths are shared by the Fleets and Defense ministers within the turn (OpenSE4:
+    `Planner::defendAssigned`).
+  - *Attack* (confirmed: binary; corrected 2026-10-14, complete listing). One routine
+    serves the Attack minister's ships and the fleets' leaders (§7.5 `AI_Fleets`). The
+    Attack minister acts only while there are attack candidates and the empire has no
+    active fleet. By the state:
+    - Secure Holdings: a Seek to a warp point of the secured system, drawn uniformly at
+      random. No candidate is attacked there.
+    - Prepare for Attack, the ship not in the staging system: a Seek into the staging
+      system. The sector is the one of our colony there with the highest planet defence
+      (the defence term of the attack candidates' value, §7.2), when that is above 0;
+      otherwise the warp point there that leads to the first target; failing that, sector
+      36 (x 10, y 2). A ship or fleet already in the staging system falls through to the last
+      case below; it is not left without orders. (The routine's test that the ship is more
+      than one jump from the first target always passes, §7.2 *Jumps*.)
+    - Attack: the target system with the most candidates (any owner; the first on a tie).
+      With none, the last case.
+    - Otherwise, and in the fall-throughs: the top attack candidate's system, when its
+      owner is at War with us; else no order.
+    - In the chosen system the hostile-owned candidates (owner below Non-Aggression) are
+      sorted again when there are two or more: fewest jumps, our colonies' maximum
+      population in the candidate's sector (the higher first, inferred from the defend list,
+      question 87), then the weakest value first, the values compared as whole numbers.
+      Each candidate is then skipped with a 25 % chance, and otherwise taken when its
+      assigned strength is at most round(its value × k), k = 1.5 when our score exceeds 1.5
+      × the owner's score, else 1. If none qualifies, the first candidate that passes a 75 %
+      roll is taken.
+    - The order is Attack when the ship is already in that sector, otherwise a Seek there.
+      A ship adds its rating to the candidate's assigned strength; a fleet leader adds its
+      whole fleet's strength.
+
+    OpenSE4 follows this since 2026-10-14 (`attackDispatch`, `attackIn`, `stagingSpot`,
+    `ai_military.cpp`; the assigned strengths are `Planner::candidateAssigned`). It used to
+    take the candidate list in its own order (the strongest value first), to use the first
+    target in Attack, to attack the candidates of the secured system in Secure Holdings, to
+    give a ship already in the staging system nothing, and to send fleets straight to the
+    first hostile candidate with no rolls and no strength test; a ship added its rating +
+    1. The original spreads its attackers over the weakest colonies first (questions 69,
+    77).
 - **Exploration** (confirmed: binary). There is no scout design type.
   - *Explorers*, taken in the game's object order: the empire's ships of design type
     Attack Ship or Attack Base (a base cannot move, so its orders do nothing), Carriers
     that carry fighters and whose cargo is more than half full, and Drone Carriers that
     carry drones and whose cargo is more than half full. Each must be in normal status,
     have fewer than 4 destroyed parts and supply above 0, be outside fleets, and have no
-    orders or a first order that is a Seek (spec 03 §8). Nothing is done while no free
-    frontier point is left (§7.2).
-  - *The point list* starts as the free frontier points in list order (system by system,
-    then the system's warp points in order). With A = the number of the empire's Attack
-    Ships (all of them, not only the explorers): when no point is free and A exceeds 3 ×
-    the number of all frontier points, every frontier point is put in the list. Then,
-    when A exceeds 5 × the list's length, each point of the list (as it was) is entered
-    once more if A still exceeds 5 × the current length, and once more again if A exceeds
-    8 × the current length; the length grows as entries are added.
+    orders or a first order that is a Seek (spec 03 §8).
+  - *The point list* is the free frontier points in list order (system by system, then the
+    system's warp points in order), one list for the turn (confirmed: binary; corrected
+    2026-10-14, complete listing): the exploring fleets (§7.5 `AI_Fleets`) and the
+    explorers each take the nearest point by travel distance and remove it, and the Open
+    Warp Point ship, planned last of the start-of-turn ministers, tests the list as they
+    left it. With A = the number of the empire's Attack Ships (all of them, not only the
+    explorers): when no point is free and A exceeds 3 × the number of all frontier points,
+    every frontier point is put back on the list; otherwise nothing is done while no free
+    point is left. Then, when A exceeds 5 × the list's length, each point of the list (as it
+    was) is entered once more if A still exceeds 5 × the current length, and once more again
+    if A exceeds 8 × the current length; the length grows as entries are added. So once the
+    fleets and explorers have taken every free point the Open Warp Point ship may open a
+    point the same turn; when the copies or the 3× refill are left over, it may not.
   - Each explorer takes the point of the list with the smallest travel distance from it
     (movement points over the route; the earlier point on a tie). If that distance is 0,
     the ship is on the warp point and gets no order this turn. Otherwise it gets a Seek
@@ -2867,16 +3069,37 @@ binary).
     of its point.
   - OpenSE4 follows this since 2026-10-02 (`planExploration`, `ai_explore.cpp`; the
     travel distance is the route's length in movement points, `findPathToNearest`, and a
-    point no route reaches is never taken). Its choices where the text leaves room are in
-    question 64: the minister stops at once while no point is free, so the 3× rule never
-    applies; an explorer on its point keeps the point in the list; a turn-based explorer
-    compares the movement of this turn's run. The fleets that explore (§7.5 `AI_Fleets`,
-    leftover fleets) get the Move To toward the first free point and the Warp.
-    The engine used to plan only idle ships, without the supply and half-full cargo tests,
-    to count the explorers for the 3×, 5× and 8× tests, to pick by jumps and then sector
-    distance, and to give a Move To and a Warp that lasted until done.
-- **Patrol** (confirmed: binary): idle warships not in fleets move to our colony with the
-  fewest of our ships present, the smallest population breaking ties.
+    point no route reaches is never taken), and since 2026-10-14 the 3× refill and the one
+    list of the turn (`Situation::freeFrontier`, which the fleets, the explorers and the Open
+    Warp Point ship share; the refill and the copies are made before the explorers are
+    planned, inferred). Its choices where the text leaves room are in question 64: a
+    turn-based explorer compares the movement of this turn's run. An explorer on its point
+    keeps the point in the list, as the original does (question 64, settled). Until
+    2026-10-14 the minister stopped at once while no point was free, so the 3× rule never
+    applied, each step worked on its own copy of the start-of-turn list, the exploring fleets
+    took the first free point without using it up, and the Open Warp Point test used the
+    start-of-turn list. The engine used to plan only idle ships, without the supply and
+    half-full cargo tests, to count the explorers for the 3×, 5× and 8× tests, to pick by
+    jumps and then sector distance, and to give a Move To and a Warp that lasted until
+    done.
+- **Patrol** (confirmed: binary; corrected 2026-10-14, complete listing). The Patrol
+  minister's ships are our own Attack Ships, Defense Ships, Attack Bases, Carriers carrying
+  fighters and Drone Carriers carrying drones (no Kamikaze), outside fleets and idle or with
+  a Seek first; the patrolling fleets (§7.5 `AI_Fleets`) go to the same target. The target
+  is meant to be our colony with the fewest of our ships present, the smallest population
+  breaking ties, but the helper that counts our ships there counts only when a switch is on,
+  and the patrol passes it off: every count is 0. So the target is our colony with the
+  smallest population, the first in the planet list on a tie. It is worked out once per
+  turn, so every patroller and every patrolling fleet heads for the same colony with a
+  Seek; one that is already there gets no order. On turns when the mine layers'
+  star-destroyer flag is set (*Layer fallback* below) the target is instead the centre
+  sector of the system where our colonies' minerals output plus their output of the fourth
+  kind (research, inferred from the output routine's numbering) is highest, divided by our
+  ships present plus one, which is again always 0 + 1. OpenSE4 follows this since
+  2026-10-14 (`patrolTarget`, `planPatrol`, `ai_military.cpp`; the first system in system
+  order on a tie, inferred). It used to count our ships at each colony live, less the
+  patroller itself, so its patrollers spread out, to have no flag variant, and to send the
+  defence-led fleets to the colony with the fewest of our ships, whatever its population.
 - **Mines, satellites and drones** (confirmed: binary).
   - Sweepers sweep. Mine and satellite layers, both launches below and the orders to idle
     drones work only while the empire has fewer placed units than the game's unit limit.
@@ -2892,9 +3115,13 @@ binary).
   - *Layer fallback* (confirmed: binary): a satellite layer with no candidate, and a mine
     layer with no candidate or on a turn with the star-destroyer flag set (it then ignores
     the candidates), first draws one random quiet colony system: one of our colony systems
-    where no other empire has any object. With none, no order. With the flag set, half the
-    time it takes a random star of that system (no star: no order this turn); otherwise
-    it takes a random warp-point sector of that system (none: no order). The flag is
+    where no other empire has any object. With none, no order. Only the mine layer reads the
+    flag: with it set, half the time it takes a random star of that system (no star: no
+    order this turn); otherwise, and always for a satellite layer, which makes no roll, it
+    takes a random warp-point sector of that system (none: no order) (confirmed: binary;
+    corrected 2026-10-14, complete listing). OpenSE4 follows this since 2026-10-14
+    (`layingSite`, `ai_military.cpp`); it used to send a satellite layer to a star half the
+    time on flag turns too. The flag is
     evaluated only on turns whose date is a multiple of 20 (it is off on all others): it
     is set when some design, our own included, whose seen date for us is at most 20 turns
     old has `Destroy Star`, `Create Nebulae` or `Create Black Hole`. Our own designs get
@@ -4589,6 +4816,28 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     explorer compares with its distance; whose settle test the borrowed colonization targets
     get, and what the neutral empire's colony-ship test is; and where a planet made during
     play goes on its system's list.
+
+    **Answer in part** (confirmed: binary, 2026-10-14, complete listing):
+    - The Exploration minister stops only while no free point is left and the empire has
+      at most 3 × as many Attack Ships as frontier points; above that ratio every frontier
+      point is put back on the list first (§7.5 *Exploration*). The list is one for the
+      turn: the exploring fleets and the explorers take the nearest point and remove it, and
+      the Open Warp Point ship tests what they left. OpenSE4 follows this since 2026-10-14
+      (`planExploration`, `exploreWithFleet`); its earlier choice is gone.
+    - An explorer whose nearest free point is where it stands gets no order and does not
+      take the point off the list: OpenSE4 already did so.
+    - An exploring fleet takes the free point nearest its leader by travel distance, with the
+      player's Move To and the Warp (§7.5 `AI_Fleets`).
+    - The borrowed colonization targets: a Colonizer row tests the reading empire's own
+      settling ability on each target, as OpenSE4 does.
+    - The neutral empire's colony-ship test: in the maintenance-cap gate of the vehicle list,
+      a neutral empire's colony-ship rows qualify only while the colonization targets the
+      economy step reads hold at least one entry, settleable or not (§7.5
+      `AI_Construction_Vehicles`, followed since 2026-10-14).
+
+    Still open: when a turn-based Seek leaves the list, which movement points a turn-based
+    explorer compares (OpenSE4: this turn's run, inferred), and where a planet made during
+    play goes on its system's list.
 65. **The computer players' first 25 turns** (spec 07 "Resources, ships and colony losses
     under a debugger", question 61). The original's computers spend 85 % of turns 1–25 in
     Exploration, 12 % in Defend (Short Term) and 2 % in Infrastructure; ours 75, 15 and 7 %.
@@ -4713,7 +4962,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       sends one idle defence fleet to each defend-list entry in the systems to defend,
       nearest first, and gives no other fleet orders that turn; ours send every fleet,
       attack fleets included, to an entry, a patrol or an exploration (§7.5 `AI_Fleets`
-      *Orders*). In such turns 14 % of the original's fleets had no orders after the
+      *Orders*). (Corrected 2026-10-14, complete listing: the routine does go on after that
+      step, in every state, with the state's goal and the leftover fleets' defence, attack,
+      patrol and exploration; the old export took the step's closing finally block for the
+      end of the routine. §7.5 `AI_Fleets` has the rule, followed since 2026-10-14.) In such turns 14 % of the original's fleets had no orders after the
       start-of-turn ministers against our 2 %, and in turns 51–100 37 % of its attack ships
       had none against our 12 %. With the original's rule, our computers won 4.1 decided
       battles away from colonies per empire and 25 turns instead of 5.0 and lost 5.9 ships
@@ -4948,7 +5200,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     rules of the second round (OpenSE4 since 2026-10-03; 240 seeds, spec 07 "Pace after the
     second debugger round"), ours found or take 4.1 colonies and lose 1.9 per empire and 25
     turns, fight 2.6 battles at an enemy colony, 1.8 of them ending with the colony gone, and
-    hold 15.7 colonies at turn 100 (before them 3.8, 1.2, 2.2, 1.1 and 16.6).
+    hold 15.7 colonies at turn 100 (before them 3.8, 1.2, 2.2, 1.1 and 16.6). With the
+    minister rules of 2026-10-14 (spec 07 "Pace after the 2026-10-14 minister rules"; a
+    different program, so the figures are its own): colonies founded or taken 4.1 → 4.4 and
+    lost 2.0 → 2.2 per empire and 25 turns, 15.3 → 15.1 colonies at turn 100.
 77. **Enemy colonies inside the territories** (question 76). The original's defend lists
     held 1.2–3.3 enemy colony entries per empire-turn of turns 51–100 (four games), ours 2.4
     and with the Defend (Short Term) fleet rule 1.2 (more of them go); the original founds
@@ -5017,6 +5272,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     enforce for them. To verify in the executable: does the computer player's vehicle list
     look at the ship limit before it places an item, and if not, does it fill its queues
     with ships that wait there?
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): neither the row choice
+    nor the queue choice nor the queue's add looks at the ship limit; at the limit the
+    computer player keeps queueing ships and bases, which wait in the queues as spec 02
+    §6.5 describes. Since 2026-10-14 ours follows (`ShipBuilder::queueable`,
+    `ai_economy.cpp`).
 82. **A rebel's waiting happiness events** (raised 2026-10-14 by the recheck of the negative
     claims on the complete listing, seen in passing and not checked; §2.3 "The new empire").
     A rebel empire starts as a copy of its former owner, and that copy seems to take the
@@ -5049,6 +5309,29 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     (`Relation::queuedWar`, `queuedBreak`, `queuedPeace`, `promises`, `AiMemory::avoid`,
     `attackSystems`), so a loaded game keeps them to the 10-turn clear; a game imported from
     the original's save starts with them empty (spec 08 §7.6).
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): the war, break and peace
+    lists, the promises and the systems to avoid and to attack are written by none of the
+    saving routines (ministers, politics, empire). Loading a game discards the empires and
+    builds new ones whose lists start empty, so every load empties them, and a game hosted
+    by loading its file each turn never keeps an accepted demand past the load. The rebel
+    copy (question 82) does not copy them either. Since 2026-10-14 ours follows
+    (`ai::forgetUnsavedLists`, `ai.cpp`). Its saves still hold the fields (no format
+    change); every reading of a game file empties them:
+    - `game::loadGame` (`serialize.cpp`), which serves Load Game in the client (and the
+      command line's game file), a network host started from a saved game (the client's
+      or `opense4-server --load`), the play-by-e-mail host's reading of the game to process
+      each turn (`net/pbem.cpp`), `opense4-server`'s other game-file commands and
+      `opense4-convert`'s OpenSE4 games;
+    - the client's stand-in for the original's reading of the game file before a local or
+      hotseat simultaneous turn and between hotseat players (`ClassicSession::reloadGame`,
+      as for the waiting happiness events, spec 02 §4);
+    - an imported saved game of the original starts with them empty, the original's file
+      having no place for them.
+
+    Not emptied: a turn-based game on one machine, which stays in memory; the network host,
+    which keeps its game in memory from turn to turn as the original's TCP/IP host does,
+    and the state it sends its clients, resyncs and checksums; and a play-by-e-mail
+    player's view of a turn file, which plays no turn and must match the host's checksum.
 84. **The command line's details** (§9.2 "The command line", raised 2026-10-14 when the
     complete listing showed that the original reads its first three arguments). Settled
     (confirmed: binary): the arguments, hosting with the host password, signing in as
@@ -5085,3 +5368,36 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     draw take? Our engine counts the queues of colonies with a space yard facility and of
     ships and bases carrying a space yard, and draws five different areas, one number each
     from the game's random numbers (`events.cpp`, inferred).
+87. **Details the 2026-10-14 minister rules leave open** (§7.5 `AI_Fleets`, *Attack and
+    defence*, *Patrol*, *Exploration*, the ministers' sort; raised 2026-10-14 when OpenSE4
+    took over the rules the complete listing settled). OpenSE4's choices (inferred):
+    (a) *Fleet slots.* The original's fleet list keeps the slots of removed fleets free, so
+    the roles and the surplus to disband go by slot numbers with gaps. Ours keeps no slots
+    between turns: a fleet's slot is its place in the empire's fleet list at the start of
+    the pass (`planFleets`), so a gap left earlier in the same pass counts and one left on
+    an earlier turn does not. Which slot does a new fleet take, the first free one or the
+    end of the list, and do the slots survive a save and load?
+    (b) *A fleet's strength*, which the attack routine and the Defend (Short Term) fleets add
+    to their target: ours is the rating + 1 of each member at the fleet's position (the
+    strength of §7.2). Is it that, or the members' ratings alone?
+    (c) *The attack routine's sort*: our colonies' maximum population in the candidate's
+    sector, the higher first, as in the defend list. Which way does it go?
+    (d) *Free for the ministers*: the Attack, Defense and Patrol ministers take ships with no
+    orders or a Seek first. Read literally, a later minister of the same pass replaces the
+    Seek an earlier one gave, so the Patrol minister would take back every explorer's Seek;
+    in 24 of our scratch games that kept our computers in Exploration in 92 % of turns 1–25
+    (the original 80 %, our rule 81 %) and gave them a third of the bases (0.15 at turn 100,
+    the original 0.6, our rule 0.56). Ours leaves a ship that an earlier minister of the same
+    pass gave orders alone, and leaves mothballed ships out. Does the original's test
+    accept a Seek given in the same pass, and only some kinds of Seek?
+    (e) *The ministers' sort* is a quicksort that is not stable with the middle entry as its
+    pivot; ours partitions from both ends toward the pivot's value (`ministersSort`). The
+    Defense minister's order is sorted from the defend list's for each defender. Is the
+    partition the same, and does the routine sort the list it keeps or a fresh copy?
+    (f) *The patrol's flag variant*: the fourth output kind is taken for research, and the
+    first system in system order wins a tie.
+    (g) *Loading errors* of the research and units files (§7.5): ours counts as one a number
+    field whose value is not a whole number. Which faults does the original report?
+    (h) *Medical aid* (§7.5 *Transports*): ours gives the Move To to the plagued colony
+    without the original's Render Medical Aid order, which OpenSE4 does not have. What does
+    that order do when carried out (spec 03 §8)?

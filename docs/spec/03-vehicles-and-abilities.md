@@ -1952,9 +1952,10 @@ A button is lit only when every selected vehicle passes its test (the window is 
   `src/client/classic/screens/ships_logic.cpp`).
 
 OpenSE4's own choices, (inferred):
-- Computer players' and ministers' Retrofit goes through the same command, so in a
-  simultaneous game it too becomes the vehicle's only order. How the original's ministers
-  carry it out is open. Their Scrap is the minister's order of spec 05 §7.5.
+- The ministers' Scrap and Retrofit are their own (spec 05 §7.5, question 78): the Scrap
+  minister gives a Move To and the Scrap order, and the Retrofit minister retrofits a ship at
+  once at the yard it chose, or gives it a Move To there and the Retrofit (`cmd::Retrofit`
+  with `moveFirst`, followed since 2026-10-14).
 - Scrap and Self-Destruct count each living unit of a unit group in "Number Scrapped".
 - A self-destructed vehicle still gets its "destroyed" Misc entry, but raises no "ship lost"
   mood (it is not lost). A Self-Destruct order nobody in the group can carry out counts as
@@ -2675,6 +2676,16 @@ marked (inferred) in the code.
       commands, so in a simultaneous game they become the vehicle's only order and are
       carried out at its first action. Does the original's Scrap or Retrofit minister give
       them as orders, or carry them out at once?
+      **Answer** (confirmed: binary, medium confidence on the details; 2026-10-14, complete
+      listing): the Scrap minister gives a Move To (when needed) and then a Scrap order, as
+      OpenSE4 already did (spec 05 §7.5 *Scrap*). The Retrofit minister retrofits a ship at
+      once where it stands, in either turn style, when that is the yard it chose; otherwise
+      it clears the ship's list and gives a special "go there and retrofit" order, which
+      moves the group and retrofits every member on arrival. Since 2026-10-14 ours follows:
+      `cmd::Retrofit` with `moveFirst`, the yard (`commands.cpp`), retrofits at once there and
+      otherwise sets the list to a Move To and the Retrofit order, which movement carries out
+      on arrival with its test (`planRetrofit`, `ai_military.cpp`). The command's new field
+      is carried in orders files and messages from save format 11.
     - "Number Scrapped" counts each living unit of a scrapped or self-destructed unit group.
       Does the original count units, or one per group?
     - A self-destructing vehicle writes "<name> destroyed" in the Misc log and raises no

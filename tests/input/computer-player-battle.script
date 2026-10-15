@@ -1,13 +1,14 @@
 # A battle shown in a window with a computer player of a mod on one side (docs/sdk/ai-protocol.md
-# §8): with seed 6, ten systems and seven empires, after the computer has played every empire
-# for 40 turns (the computer empires by the fixture mod's Captain, which notes its first ship in
-# every combat turn), the player's first End Turn stops at a battle in a computer player's turn.
+# §8): with seed 7 (6 until the computer players' minister rules of 2026-10-14), ten systems
+# and seven empires, after the computer has played every empire for 40 turns (the computer
+# empires by the fixture mod's Captain, which notes its first ship in every combat turn), the
+# player's first End Turn stops at a battle in a computer player's turn.
 # Strategic fights it in the Strategic Combat window, where Captain gives its side's orders each
 # combat turn as in the engine's own battles; Close lets the turn go on with those answers (the
 # window's players let the script runtime go first: nothing fails), and the AI notes view lists
 # Captain's notes, its battle notes among them.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
-options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --ai=test.ai-fixture:Captain --quick-start --seed=6 --systems=10 --empires=7 --turns=40 --open=none --layout=1024x768 --size=1280x800
+options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --ai=test.ai-fixture:Captain --quick-start --seed=7 --systems=10 --empires=7 --turns=40 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game
 assert-turn 40

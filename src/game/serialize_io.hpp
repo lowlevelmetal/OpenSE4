@@ -673,7 +673,16 @@ template <class Ar> void io(Ar& ar, cmd::QueueMove& c) { fields(ar, c.target, c.
 template <class Ar> void io(Ar& ar, cmd::QueueSetCount& c) { fields(ar, c.target, c.index, c.count); }
 template <class Ar> void io(Ar& ar, cmd::QueueFlags& c) { fields(ar, c.target, c.onHold, c.repeat, c.emergency, c.autoWaypoint); }
 template <class Ar> void io(Ar& ar, cmd::QueueReplaceFacility& c) { fields(ar, c.target, c.index, c.facility); }
-template <class Ar> void io(Ar& ar, cmd::Retrofit& c) { fields(ar, c.vehicle, c.design); }
+template <class Ar>
+void io(Ar& ar, cmd::Retrofit& c) {
+    fields(ar, c.vehicle, c.design);
+    // The Retrofit minister's yard travels from format 11 on; until then a
+    // command read back is the window's retrofit. The ministers' commands
+    // are applied where they are planned, so only a copy sent elsewhere
+    // loses it.
+    if (formatVersion(ar) >= 11) fields(ar, c.moveFirst);
+    else unsaved(ar, c.moveFirst);
+}
 template <class Ar> void io(Ar& ar, cmd::SetColonyType& c) { fields(ar, c.planet, c.colonyType); }
 template <class Ar>
 void io(Ar& ar, cmd::AbandonPlanet& c) {

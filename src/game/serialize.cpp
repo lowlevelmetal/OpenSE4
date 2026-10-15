@@ -1,5 +1,6 @@
 #include "game/serialize.hpp"
 
+#include "game/ai.hpp"
 #include "game/classic_save.hpp"
 #include "game/rules.hpp"
 #include "game/serialize_io.hpp"
@@ -382,6 +383,9 @@ std::expected<std::pair<GameState, SaveInfo>, std::string> loadGame(const std::f
     if (!bytes) return std::unexpected(bytes.error());
     auto game = deserializeSave(*bytes);
     if (!game) return std::unexpected(std::format("{}: {}", file.string(), game.error()));
+    // The computer players' demand lists are written to no saved game in the
+    // original: every load empties them (spec 05 §7.4, question 83).
+    ai::forgetUnsavedLists(game->first);
     return game;
 }
 

@@ -90,10 +90,29 @@ void planColonization(Planner& p) {
 // Spec 05 §7.5 "Exploration" (confirmed: binary).
 void planExploration(Planner& p) {
     if (!p.on(Minister::Exploration) || p.neutral) return;
-    // Nothing is done while no free frontier point is left (§7.2). (So the
-    // rule that fills an empty list with every frontier point when the Attack
-    // Ships outnumber them three times over never applies; spec 05 Q64.)
-    if (p.sit.freeFrontier.empty()) return;
+    // The point list is the turn's one free list (Situation::freeFrontier),
+    // which the exploring fleets have already drawn on, and which the Open
+    // Warp Point ship tests as this minister leaves it. With A = the empire's
+    // Attack Ships (all of them, not only the explorers): when no point is
+    // free and A exceeds 3 × the number of all frontier points, every
+    // frontier point is put back on the list; otherwise nothing is done while
+    // no point is free. Then, when A exceeds 5 × the list's length, each
+    // point of the list as it was is entered once more while A still exceeds
+    // 5 × the current length, and once more again while A exceeds 8 × it.
+    int64_t attackShips = 0;
+    for (const Vehicle& v : p.st.vehicles) attackShips += v.owner == p.id && v.count > 0 && p.info(v.design).aiType == "Attack Ship";
+    std::vector<ObjectId>& list = p.sit.freeFrontier;
+    if (list.empty()) {
+        if (!(attackShips > 3 * static_cast<int64_t>(p.sit.frontier.size()))) return;
+        list = p.sit.frontier;
+    }
+    if (attackShips > 5 * static_cast<int64_t>(list.size())) {
+        const std::vector<ObjectId> was = list;
+        for (ObjectId wp : was) {
+            if (attackShips > 5 * static_cast<int64_t>(list.size())) list.push_back(wp);
+            if (attackShips > 8 * static_cast<int64_t>(list.size())) list.push_back(wp);
+        }
+    }
 
     // Explorers, in the game's object order: Attack Ships and Attack Bases (a
     // base cannot move, so its orders do nothing), and Carriers and Drone
@@ -118,23 +137,6 @@ void planExploration(Planner& p) {
         }
         if (!fits || damagedComponents(p.r, p.st, *v) >= 4) continue;
         explorers.push_back(id);
-    }
-    if (explorers.empty()) return;
-
-    // The point list: the free frontier points in list order. With A the
-    // empire's Attack Ships (all of them), when A exceeds 5 × the list's
-    // length each point of the list as it was is entered once more while A
-    // still exceeds 5 × the current length, and once more again while A
-    // exceeds 8 × it.
-    int64_t attackShips = 0;
-    for (const Vehicle& v : p.st.vehicles) attackShips += v.owner == p.id && v.count > 0 && p.info(v.design).aiType == "Attack Ship";
-    std::vector<ObjectId> list = p.sit.freeFrontier;
-    if (attackShips > 5 * static_cast<int64_t>(list.size())) {
-        const std::vector<ObjectId> was = list;
-        for (ObjectId wp : was) {
-            if (attackShips > 5 * static_cast<int64_t>(list.size())) list.push_back(wp);
-            if (attackShips > 8 * static_cast<int64_t>(list.size())) list.push_back(wp);
-        }
     }
 
     // Each explorer takes the point with the smallest travel distance (the

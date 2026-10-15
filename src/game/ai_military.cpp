@@ -4,6 +4,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
+#include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
@@ -69,15 +70,6 @@ bool lacksOperatingPart(const Planner& p, const Vehicle& v) {
            !hasAbility(working, AbilityKind::MasterComputer);
 }
 
-// The best known spot in a system: our most populous colony, else the centre.
-Location spotIn(const Planner& p, SystemId sys) {
-    const Colony* best = nullptr;
-    for (ObjectId o : p.st.galaxy.system(sys).objects)
-        if (const Colony* c = p.st.colony(o); c && c->owner == p.id && (!best || c->totalPopulation() > best->totalPopulation())) best = c;
-    if (best) return locationOf(p.st.galaxy, best->planet);
-    return {sys, Sector{kSystemCenter, kSystemCenter}};
-}
-
 // Spec 05 §7.5: a ship unfit for fleet duty.
 bool unfit(Planner& p, const Vehicle& v) {
     const DesignInfo& di = p.info(v.design);
@@ -118,52 +110,6 @@ bool canLeadFleet(Planner& p, const Vehicle& v) {
         case Role::DroneCarrier: return loaded(v);
         default: return false;
     }
-}
-
-// The goal of the attack fleets in the current state (spec 05 §7.5): a Seek
-// that lasts one movement phase, so the fleet heads for it again every turn.
-// In Prepare for Attack the routine's test that a fleet's leader is more than
-// one jump from the first target always passes (the AI's jump count is the
-// jumps plus two, spec 05 §7.2 *Jumps*), so every attack fleet is sent to the
-// staging system.
-std::vector<Order> stateGoal(Planner& p) {
-    const AiMemory& m = p.emp().aiMemory;
-    switch (p.state) {
-        case AiState::PrepareForAttack:
-            if (m.staging.valid()) return {seekOrder(spotIn(p, m.staging))};
-            return {};
-        case AiState::Attack: {
-            SystemId best;
-            int most = 0;
-            for (SystemId t : m.targets) {
-                int n = 0;
-                for (const Candidate& c : p.sit.candidates) n += c.system == t && hostileTo(p.emp(), c.owner);
-                if (n > most) {
-                    most = n;
-                    best = t;
-                }
-            }
-            for (const Candidate& c : p.sit.candidates)
-                if (c.system == best && hostileTo(p.emp(), c.owner)) return {seekOrder(locationOf(p.st.galaxy, c.planet))};
-            return {};
-        }
-        case AiState::SecureHoldings:
-            if (m.secured.valid()) return {seekOrder(spotIn(p, m.secured))};
-            return {};
-        default:
-            if (!p.sit.candidates.empty() && p.atWarWith(p.sit.candidates.front().owner))
-                return {seekOrder(locationOf(p.st.galaxy, p.sit.candidates.front().planet))};
-            return {};
-    }
-}
-
-// Orders that engage an enemy-in-territory entry (spec 05 §7.5 AI_Fleets): in
-// a simultaneous game a Seek after the ship, otherwise a Seek toward its spot.
-std::vector<Order> engage(const Planner& p, const Threat& t) {
-    if (t.vehicle.valid())
-        if (const Vehicle* v = p.st.vehicle(t.vehicle)) return {p.st.options.simultaneous ? seekAfter(*v) : seekOrder(v->location)};
-    if (t.planet.valid()) return {seekOrder(locationOf(p.st.galaxy, t.planet))};
-    return {};
 }
 
 bool anyFleet(const Planner& p) {
@@ -240,8 +186,388 @@ void reload(Planner& p, Minister m, std::initializer_list<Role> roles, auto&& un
 
 } // namespace
 
+// ---- What the Fleets, Defense, Attack and Patrol ministers share -------------------------------
+
+namespace {
+
+using ruleset::VehicleType;
+
+// Units of a kind in the vehicle's cargo.
+bool carriesUnits(const Planner& p, const Vehicle& v, VehicleType kind) {
+    return std::any_of(v.cargo.units.begin(), v.cargo.units.end(), [&](const UnitStack& u) {
+        return u.count > 0 && u.design.index() < p.st.designs.size() && p.r.hull(p.st.design(u.design).hull).type == kind;
+    });
+}
+
+// The ships the Attack, Defense and Patrol ministers take (spec 05 §7.5,
+// confirmed: binary): Attack Ships, Attack Bases, Carriers carrying fighters
+// and Drone Carriers carrying drones for all three; Kamikaze Attack Ships for
+// Attack and Defense; Defense Ships for Defense and Patrol. A base cannot
+// move, but it still takes an entry or a candidate and adds its strength.
+enum class Duty : uint8_t { Attack, Defense, Patrol };
+bool takesDuty(Planner& p, const Vehicle& v, Duty duty) {
+    const std::string& type = p.info(v.design).aiType;
+    if (type == "Attack Ship" || type == "Attack Base") return true;
+    if (type == "Carrier") return carriesUnits(p, v, VehicleType::Fighter);
+    if (type == "Drone Carrier") return carriesUnits(p, v, VehicleType::Drone);
+    if (type == "Kamikaze Attack Ship") return duty != Duty::Patrol;
+    if (type == "Defense Ship") return duty != Duty::Attack;
+    return false;
+}
+
+// Free for those ministers (spec 05 §7.5, confirmed: binary): our own, outside
+// fleets, with no orders or a Seek first. A ship that an earlier minister of
+// the same pass gave orders keeps them, and mothballed vehicles are left out
+// (both inferred, question 87: read literally, the Patrol minister would
+// replace the explorers' Seeks of the same pass).
+bool freeForMinisters(const Planner& p, const Vehicle& v) {
+    if (v.owner != p.id || v.count <= 0 || v.fleet.valid() || v.status == VehicleStatus::Mothballed || p.busy.contains(v.id)) return false;
+    return v.orders.empty() || v.orders.front().kind == OrderKind::Seek;
+}
+
+// A fleet's strength (spec 05 §7.5, the attack routine and the Defend (Short
+// Term) fleets): rating + 1 of every member at its position (spec 05 §7.2
+// "Strength"; which sum the original takes is question 87).
+int64_t fleetStrength(Planner& p, const Fleet& f) {
+    int64_t sum = 0;
+    for (const Vehicle* v : ministersFleet(p.st, f)) sum += p.strengthOf(*v);
+    return sum;
+}
+
+void ensureDefendAssigned(Planner& p) {
+    if (p.defendAssigned.size() != p.sit.defendEntries.size()) p.defendAssigned.assign(p.sit.defendEntries.size(), 0);
+}
+
+bool inSystemsToDefend(const Planner& p, SystemId sys) { return std::find(p.sit.defend.begin(), p.sit.defend.end(), sys) != p.sit.defend.end(); }
+
+// The order that sends a defender standing at `at` to a defend-list entry
+// (spec 05 §7.5 *Defence*, `AI_Fleets` *Orders*, confirmed: binary): the
+// stored Attack in the entry's sector; otherwise a Seek to that sector, or in
+// a simultaneous game after the entry's latest object.
+Order defendOrder(const Planner& p, Location at, const DefendEntry& d) {
+    if (at == d.where) return attackHere();
+    if (p.st.options.simultaneous) {
+        if (const Vehicle* target = d.latest.vehicle.valid() ? p.st.vehicle(d.latest.vehicle) : nullptr) return seekAfter(*target);
+        if (d.latest.planet.valid()) return seekPlanet(p.st, d.latest.planet);
+    }
+    return seekOrder(d.where);
+}
+
+// The defence routine (spec 05 §7.5 *Defence*, confirmed: binary) for one
+// defender standing at `at`: only in Defend (Short Term) and Defend (Long
+// Term). It takes the first entry of the systems to defend, in the Defense
+// minister's order (§7.2: the weaker threat first, the stronger first for a
+// fleet's leader), whose assigned strength is at most round(its threat × 1.3)
+// at Low difficulty or round(its threat × 1.5) at Medium and High, and adds
+// `credit` to it: a ship's rating without the + 1, and for a fleet its
+// leader's own rating (spec 05 §7.5 `AI_Fleets`, confirmed: binary). No
+// entry: no order.
+std::vector<Order> defenceRoutine(Planner& p, Location at, bool inFleet, int64_t credit) {
+    if (p.state != AiState::DefendShortTerm && p.state != AiState::DefendLongTerm) return {};
+    ensureDefendAssigned(p);
+    std::vector<DefendEntry> entries;
+    for (const DefendEntry& d : p.sit.defendEntries)
+        if (inSystemsToDefend(p, d.where.system)) entries.push_back(d);
+    if (entries.empty()) return {};
+    sortDefendEntries(entries, !inFleet);
+    const xmath::Ext factor = p.difficulty == kDifficultyLow ? kOnePoint3 : kOnePoint5;
+    for (const DefendEntry& d : entries) {
+        const int64_t limit = (factor * xmath::Ext(d.threat) / xmath::Ext(kStrengthScale)).round() * kStrengthScale;
+        if (p.defendAssigned[d.index] > limit) continue;
+        p.defendAssigned[d.index] += credit;
+        return {defendOrder(p, at, d)};
+    }
+    return {};
+}
+
+// Our colonies' maximum population in a sector (spec 05 §7.2), as the defend
+// list's key.
+int64_t ourMaxPopulationAt(const Planner& p, Location where) {
+    int64_t sum = 0;
+    for (ObjectId o : p.st.galaxy.system(where.system).objects) {
+        const SpaceObject& obj = p.st.galaxy.object(o);
+        if (obj.sector != where.sector || obj.kind != ObjectKind::Planet) continue;
+        if (const Colony* c = p.st.colony(o); c && c->owner == p.id) sum += maxPopulation(p.r, p.st, *c);
+    }
+    return sum;
+}
+
+// The target among the state's targets that holds the most attack candidates,
+// whatever their owner, the first on a tie; none when no target holds one.
+std::optional<SystemId> busiestTarget(const Planner& p) {
+    std::optional<SystemId> best;
+    int most = 0;
+    for (SystemId t : p.emp().aiMemory.targets) {
+        int n = 0;
+        for (const Candidate& c : p.sit.candidates) n += c.system == t;
+        if (n > most) {
+            most = n;
+            best = t;
+        }
+    }
+    return best;
+}
+
+// The top attack candidate's system when its owner is at War with us.
+std::optional<SystemId> topCandidateAtWar(const Planner& p) {
+    if (!p.sit.candidates.empty() && p.atWarWith(p.sit.candidates.front().owner)) return p.sit.candidates.front().system;
+    return std::nullopt;
+}
+
+// The goal system of the state for the Fleets minister (spec 05 §7.5
+// `AI_Fleets` *Orders*, confirmed: binary): the secured system in Secure
+// Holdings, the staging system in Prepare for Attack, in Attack the target
+// holding the most candidates; otherwise, and when those have none, the top
+// attack candidate's system when its owner is at War with us.
+std::optional<SystemId> goalSystem(const Planner& p) {
+    const AiMemory& m = p.emp().aiMemory;
+    if (p.state == AiState::SecureHoldings && m.secured.valid()) return m.secured;
+    if (p.state == AiState::PrepareForAttack && m.staging.valid()) return m.staging;
+    if (p.state == AiState::Attack)
+        if (auto t = busiestTarget(p)) return t;
+    return topCandidateAtWar(p);
+}
+
+// Where a ship bound for the staging system goes (spec 05 §7.5, the attack
+// routine, confirmed: binary): our colony there with the highest planet
+// defence (the term of the candidates' value), when that is above 0, the
+// first in the system's list on a tie; otherwise the warp point there that
+// leads to the first target; failing that, sector 36 (x 10, y 2).
+Location stagingSpot(const Planner& p) {
+    const AiMemory& m = p.emp().aiMemory;
+    const Colony* best = nullptr;
+    int64_t bestDefence = 0;
+    for (ObjectId o : p.st.galaxy.system(m.staging).objects)
+        if (const Colony* c = p.st.colony(o); c && c->owner == p.id)
+            if (const int64_t d = planetDefence(p.r, p.st, *c); d > bestDefence) {
+                best = c;
+                bestDefence = d;
+            }
+    if (best) return locationOf(p.st.galaxy, best->planet);
+    if (!m.targets.empty())
+        for (ObjectId wp : p.st.galaxy.warpPoints(m.staging)) {
+            const SpaceObject& obj = p.st.galaxy.object(wp);
+            if (obj.destination.valid() && p.st.galaxy.object(obj.destination).system == m.targets.front()) return locationOf(p.st.galaxy, wp);
+        }
+    return {m.staging, Sector{10, 2}};
+}
+
+// The attack on a system's candidates (spec 05 §7.5 *Attack*, confirmed:
+// binary): its hostile-owned candidates (below Non-Aggression), sorted again
+// when there are two or more by fewest jumps, our colonies' maximum population
+// in the candidate's sector (the higher first, inferred from the defend list,
+// question 87) and the weakest value first, the values compared as whole
+// numbers. Each is skipped with a 25 % chance, else taken when the strength
+// assigned to it is at most round(its value × k), k = 1.5 when our score
+// exceeds 1.5 × the owner's, else 1; with none taken, the first that passes a
+// 75 % roll. The stored Attack in its sector, else a Seek there; `credit` is
+// added to it.
+std::vector<Order> attackIn(Planner& p, SystemId sys, Location from, int64_t credit) {
+    std::vector<const Candidate*> list;
+    for (const Candidate& c : p.sit.candidates)
+        if (c.system == sys && hostileTo(p.emp(), c.owner)) list.push_back(&c);
+    if (list.empty()) return {};
+    if (list.size() >= 2) {
+        std::map<ObjectId, int64_t> population;
+        for (const Candidate* c : list) population[c->planet] = ourMaxPopulationAt(p, locationOf(p.st.galaxy, c->planet));
+        ministersSort(list, [&](const Candidate* a, const Candidate* b) {
+            if (const int k = threeWay(a->jumps, b->jumps)) return k;
+            if (const int k = threeWay(population[b->planet], population[a->planet])) return k;
+            return threeWay(a->value / kStrengthScale, b->value / kStrengthScale);
+        });
+    }
+    std::optional<size_t> pick;
+    for (size_t i = 0; i < list.size() && !pick; ++i) {
+        if (p.rng.percent(25)) continue;
+        const EmpireId owner = list[i]->owner;
+        const bool strong = p.scores[p.id.index()] * 2 > p.scores[owner.index()] * 3;
+        const xmath::Ext value = xmath::Ext(list[i]->value) / xmath::Ext(kStrengthScale);
+        const int64_t limit = (strong ? (kOnePoint5 * value).round() : value.round()) * kStrengthScale;
+        if (p.candidateAssigned[list[i]->planet] <= limit) pick = i;
+    }
+    for (size_t i = 0; i < list.size() && !pick; ++i)
+        if (p.rng.percent(75)) pick = i;
+    if (!pick) return {};
+    p.candidateAssigned[list[*pick]->planet] += credit;
+    const Location at = locationOf(p.st.galaxy, list[*pick]->planet);
+    return {from == at ? attackHere() : seekOrder(at)};
+}
+
+// The attack routine (spec 05 §7.5 *Attack*, confirmed: binary), one
+// dispatcher for the Attack minister's ships and the fleets' leaders; `credit`
+// is a ship's rating or the leader's whole fleet's strength:
+// - Secure Holdings: a Seek to a warp point of the secured system drawn at
+//   random; no candidate is attacked;
+// - Prepare for Attack, the actor outside the staging system: a Seek into it
+//   (stagingSpot). Its test that the actor is more than one jump from the
+//   first target always passes (the jump count is the jumps plus two, §7.2
+//   *Jumps*). An actor already there falls through;
+// - Attack: the target system with the most candidates; with none it falls
+//   through;
+// - otherwise: the top attack candidate's system when its owner is at War
+//   with us (attackIn).
+std::vector<Order> attackDispatch(Planner& p, Location from, int64_t credit) {
+    const AiMemory& m = p.emp().aiMemory;
+    if (p.state == AiState::SecureHoldings && m.secured.valid()) {
+        const std::vector<ObjectId> points = p.st.galaxy.warpPoints(m.secured);
+        if (points.empty()) return {};
+        return {seekOrder(locationOf(p.st.galaxy, points[static_cast<size_t>(p.rng.below(points.size()))]))};
+    }
+    if (p.state == AiState::PrepareForAttack && m.staging.valid() && from.system != m.staging) return {seekOrder(stagingSpot(p))};
+    std::optional<SystemId> sys;
+    if (p.state == AiState::Attack) sys = busiestTarget(p);
+    if (!sys) sys = topCandidateAtWar(p);
+    if (!sys) return {};
+    return attackIn(p, *sys, from, credit);
+}
+
+// The patrol target (spec 05 §7.5 *Patrol*, confirmed: binary), worked out
+// once per pass, so every patroller and patrolling fleet heads for it: our
+// colony with the smallest population, the first in the planet list on a tie.
+// The patrol's count of our ships at each colony counts nothing (its switch is
+// off), so the colony "with the fewest of our ships" is every colony. On a
+// turn with the mine layers' star-destroyer flag set (§7.5 *Layer fallback*)
+// it is instead the centre sector of the system where our colonies' minerals
+// output plus their research output (inferred: the fourth output kind,
+// question 87) is highest, the first such system on a tie; that total is
+// divided by our ships present plus one, again always 1.
+std::optional<Location> patrolTarget(Planner& p) {
+    if (p.patrolTargetOnce) return *p.patrolTargetOnce;
+    std::optional<Location> out;
+    if (starDestroyerFlag(p)) {
+        std::map<SystemId, int64_t> output;
+        for (const auto& c : p.st.colonies) {
+            if (!c || c->owner != p.id) continue;
+            const SystemId sys = p.st.galaxy.object(c->planet).system;
+            if (!p.mayEnter(sys)) continue;
+            const economy::ColonyOutput o = economy::colonyOutput(p.r, p.st, *c);
+            output[sys] += o.production[Resource::Minerals] + o.research;
+        }
+        std::optional<SystemId> best;
+        for (const auto& [sys, total] : output)
+            if (!best || total > output[*best]) best = sys;
+        if (best) out = Location{*best, Sector{kSystemCenter, kSystemCenter}};
+    } else {
+        const Colony* best = nullptr;
+        for (const auto& c : p.st.colonies) {
+            if (!c || c->owner != p.id || !p.mayEnter(p.st.galaxy.object(c->planet).system)) continue;
+            if (!best || c->totalPopulation() < best->totalPopulation()) best = &*c;
+        }
+        if (best) out = locationOf(p.st.galaxy, best->planet);
+    }
+    p.patrolTargetOnce = out;
+    return out;
+}
+
 // ---- Fleets --------------------------------------------------------------------------------------
 
+// Recruiting (spec 05 §7.5 `AI_Fleets` *Size*, confirmed: binary): up to
+// trunc(Fleets Percentage of Ships For Fleets ÷ n ÷ 100 × our vehicle count)
+// members, worked out in that order, n being the fleets in being now. The
+// recruits are ships outside fleets and without a Join Fleet order, fit, that
+// the fleet could take, whose AI jump count from the fleet is below 4, so
+// within 1 real jump (spec 05 §7.2 *Jumps*). Nothing asks that they be idle.
+// They join at once at the fleet's spot; otherwise their orders are cleared
+// and they get a Join Fleet order, which chases the fleet until it joins, and
+// count toward its size from then on. Members away from its position do not
+// count (ministersFleet).
+void recruit(Planner& p, FleetId fid, int vehicles, int inBeing) {
+    const Fleet* f = p.st.fleet(fid);
+    const Vehicle* leader = f ? ministersLeader(p.st, *f) : nullptr;
+    if (!leader || inBeing <= 0) return;
+    const int64_t members =
+        (xmath::Ext(int64_t{p.prof.fleets.percentInFleets}) / xmath::Ext(int64_t{inBeing}) / xmath::Ext(int64_t{100}) * xmath::Ext(int64_t{vehicles}))
+            .trunc();
+    const bool defenceLed = p.info(leader->design).role == Role::Defense;
+    const Location at = f->location;
+    const std::vector<int> jumps = p.jumpsFrom(at.system);
+    int64_t size = static_cast<int64_t>(ministersFleet(p.st, *f).size());
+    for (const Vehicle& v : p.st.vehicles)
+        size += v.owner == p.id && v.count > 0 && !v.fleet.valid() && !v.orders.empty() && v.orders.front().kind == OrderKind::JoinFleet &&
+                v.orders.front().amount == static_cast<int>(fid.value);
+    for (VehicleId id : p.ownVehicles(Minister::Fleets)) {
+        if (size >= members) break;
+        const Vehicle* v = p.st.vehicle(id);
+        if (!v || v->fleet.valid() || unfit(p, *v)) continue;
+        if (std::any_of(v->orders.begin(), v->orders.end(), [](const Order& o) { return o.kind == OrderKind::JoinFleet; })) continue;
+        if (defenceLed ? p.info(v->design).role != Role::Defense : !attackMaterial(p, *v)) continue;
+        if (!(aiJumpCount(jumps[v->location.system.index()]) < 4)) continue;
+        if (v->location == at) {
+            if (p.emit(cmd::JoinFleet{fid, id})) ++size;
+        } else if (p.setOrders(id, {joinFleetOrder(fid)})) {
+            ++size;
+        }
+    }
+}
+
+// The fleet's combat strategy, set every turn (spec 05 §7.5 `AI_Fleets`,
+// confirmed: binary): when a member carries troop units, the last strategy of
+// the empire's list whose primary movement is "Drop Troops (if carrying)";
+// otherwise the `Fleets Default Strategy`. Nothing changes when no such
+// strategy exists. The members are those at its position.
+void setFleetStrategy(Planner& p, FleetId fid) {
+    const Fleet* f = p.st.fleet(fid);
+    if (!f) return;
+    bool troops = false;
+    for (const Vehicle* v : ministersFleet(p.st, *f)) troops = troops || carriesUnits(p, *v, VehicleType::Troop);
+    const auto& list = p.emp().strategies;
+    std::optional<uint32_t> want;
+    if (troops) {
+        const std::string dropTroops = datafile::normalizeKey("Drop Troops");
+        for (size_t i = 0; i < list.size(); ++i)
+            for (const auto& [key, value] : list[i].settings)
+                if (keysEqual(key, "Primary Movement Strategy") && datafile::normalizeKey(value).starts_with(dropTroops)) want = static_cast<uint32_t>(i);
+    } else if (!p.prof.fleets.defaultStrategy.empty()) {
+        for (size_t i = 0; i < list.size() && !want; ++i)
+            if (keysEqual(list[i].name, p.prof.fleets.defaultStrategy)) want = static_cast<uint32_t>(i);
+    }
+    if (want && *want != f->strategy) p.emit(cmd::SetFleetOptions{fid, f->formation, *want});
+}
+
+// An exploring fleet (spec 05 §7.5 `AI_Fleets` *Orders*, Exploration,
+// confirmed: binary): the free frontier point nearest its leader by travel
+// distance, taken off the turn's one free list (Situation::freeFrontier), and
+// the player's Move To toward it with the Warp through it. The Move To lasts
+// until it arrives, so the fleet is not idle, and is not planned again, until
+// it has warped.
+bool exploreWithFleet(Planner& p, FleetId fid, Location from) {
+    std::vector<ObjectId>& list = p.sit.freeFrontier;
+    if (p.neutral || list.empty()) return false;
+    std::vector<Location> goals;
+    for (ObjectId wp : list) goals.push_back(locationOf(p.st.galaxy, wp));
+    const auto near = movement::findPathToNearest(p.r, p.st, p.id, from, goals);
+    if (!near) return false;
+    Order warp;
+    warp.kind = OrderKind::Warp;
+    warp.object = list[near->goal];
+    warp.location = goals[near->goal];
+    list.erase(list.begin() + static_cast<std::ptrdiff_t>(near->goal));
+    return p.setFleetOrders(fid, {moveOrder(warp.location), warp});
+}
+
+} // namespace
+
+// The Fleets minister (spec 05 §7.5 `AI_Fleets`, confirmed: binary).
+// - The wanted number of fleets from the divisions (0 before `Fleets Dont Use
+//   For Num Turns`).
+// - For each of the empire's fleets in slot order (our slots: their order in
+//   the list at the start of the pass; the original's list keeps gaps between
+//   turns, question 87): its role, from n = the fleets in being when the
+//   minister starts and its slot i: an attack fleet when i is odd and
+//   (i + 1) / 2 < (100 − `Percentage of Fleets to use for defense`) / 100 × n
+//   in single precision; then its leader (disbanded when gone or unfit), its
+//   recruits, its strategy, and it goes on the idle list when its leader has
+//   no orders.
+// - The orders, to the idle list: in Defend (Short Term) with enemies listed,
+//   one idle defence fleet for each entry of the systems to defend; then, in
+//   every state, the goal of the state through the attack routine, then each
+//   fleet left: the defence routine (non-attack fleets), the patrol (a
+//   non-attack fleet led by a Defense Ship) or the attack routine and
+//   exploration.
+// - Only then at most one new fleet is formed, when fewer are in being than
+//   wanted, or the fleets in slots wanted + 1 to the number in being are
+//   disbanded. A new fleet recruits and gets orders from the next turn; a
+//   surplus fleet has recruited and got its orders before it goes.
 void planFleets(Planner& p) {
     if (!p.on(Minister::Fleets)) return;
     const FleetsTable& t = p.prof.fleets;
@@ -258,319 +584,192 @@ void planFleets(Planner& p) {
     if (static_cast<int64_t>(p.date) < t.dontUseForTurns) wanted = 0;  // the date the ministers see
     wanted = std::max(0, wanted);
 
-    // Disband fleets beyond the wanted number, and those whose leader is gone or unfit.
-    std::vector<FleetId> fleets;
+    std::vector<FleetId> slots;
     for (const Fleet& f : p.st.fleets)
-        if (p.controlsFleet(f, Minister::Fleets)) fleets.push_back(f.id);
-    std::vector<FleetId> keep;
-    for (FleetId fid : fleets) {
-        const Fleet* f = p.st.fleet(fid);
-        const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
-        if (!f || static_cast<int>(keep.size()) >= wanted || !leader || unfit(p, *leader)) {
-            if (f) p.emit(cmd::DisbandFleet{fid});
+        if (p.controlsFleet(f, Minister::Fleets)) slots.push_back(f.id);
+    std::sort(slots.begin(), slots.end());
+    const int atStart = static_cast<int>(slots.size());
+    // (100 − P) / 100 × n, each step stored as a 32-bit float (confirmed: binary).
+    const xmath::Ext attackShare =
+        ((xmath::Ext(int64_t{100 - t.percentForDefense}) / xmath::Ext(int64_t{100})).roundedTo(xmath::kSingleBits) * xmath::Ext(int64_t{atStart}))
+            .roundedTo(xmath::kSingleBits);
+
+    struct IdleFleet {
+        FleetId id;
+        bool attack = false;
+        bool done = false;
+    };
+    std::vector<IdleFleet> idle;
+    std::vector<uint8_t> gone(slots.size(), 0);
+    int inBeing = atStart;
+    for (size_t k = 0; k < slots.size(); ++k) {
+        const int slot = static_cast<int>(k) + 1;
+        const bool attack = slot % 2 == 1 && xmath::Ext(int64_t{(slot + 1) / 2}) < attackShare;
+        const Fleet* f = p.st.fleet(slots[k]);
+        const Vehicle* leader = f ? ministersLeader(p.st, *f) : nullptr;
+        if (!leader || unfit(p, *leader)) {
+            if (f) p.emit(cmd::DisbandFleet{slots[k]});
+            gone[k] = 1;
+            --inBeing;
             continue;
         }
-        keep.push_back(fid);
-    }
-    // At most one new fleet per turn (confirmed: binary, spec 05 Q72): the
-    // search walks the empire's vehicle list backwards from its end (slot
-    // order, objectOrderKey), skips the vehicles already in a fleet, and takes
-    // the first fit one that may lead a fleet (canLeadFleet). Nothing asks
-    // that it be idle: forming the fleet clears its orders.
-    if (static_cast<int>(keep.size()) < wanted) {
-        std::vector<VehicleId> list = p.ownVehicles(Minister::Fleets);
-        std::sort(list.begin(), list.end(), [&](VehicleId a, VehicleId b) {
-            return std::pair(objectOrderKey(*p.st.vehicle(a)), a) > std::pair(objectOrderKey(*p.st.vehicle(b)), b);
-        });
-        std::optional<VehicleId> leader;
-        for (VehicleId id : list) {
-            const Vehicle* v = p.st.vehicle(id);
-            if (!v || v->fleet.valid() || unfit(p, *v) || !canLeadFleet(p, *v)) continue;
-            leader = id;
-            break;
-        }
-        if (leader && p.emit(cmd::CreateFleet{{}, {*leader}})) {
-            const FleetId fid = p.st.fleets.back().id;
-            keep.push_back(fid);
-            const uint32_t formation = formationIndex(p, t.defaultFormation);
-            const uint32_t strategy = strategyIndex(p, t.defaultStrategy);
-            if (formation != 0 || strategy != 0) p.emit(cmd::SetFleetOptions{fid, formation, strategy});
-        }
-    }
-    if (keep.empty()) return;
-    std::sort(keep.begin(), keep.end());
-
-    const int n = static_cast<int>(keep.size());
-    // trunc(vehicles x pct / 100 / n) members per fleet.
-    const int64_t members =
-        wanted > 0 ? (xmath::Ext(vehicles) * xmath::percent(t.percentInFleets) / xmath::Ext(wanted)).trunc() : 0;
-    // Fleet i of n attacks when i is odd and (i + 1) / 2 < n x (100 - defence %) / 100.
-    const xmath::Ext attackShare = xmath::Ext(wanted) * xmath::percent(100 - t.percentForDefense);
-    std::vector<uint8_t> attack(keep.size(), 0);
-    for (int i = 1; i <= n; ++i) attack[static_cast<size_t>(i - 1)] = (i % 2 == 1) && xmath::Ext((i + 1) / 2) < attackShare;
-
-    // Recruits (confirmed: binary): ships outside fleets and without a Join
-    // Fleet order, fit, that the fleet could take, whose AI jump count from
-    // the fleet is below 4, so within 1 real jump (spec 05 §7.2 *Jumps*).
-    // Nothing asks that they be idle. They join at once at the fleet's spot;
-    // otherwise their orders are cleared and they get a Join Fleet order,
-    // which chases the fleet until it joins, and count toward its size from
-    // then on.
-    for (size_t k = 0; k < keep.size(); ++k) {
-        const Fleet* f = p.st.fleet(keep[k]);
-        const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
-        if (!leader) continue;
-        const bool defenceLed = p.info(leader->design).role == Role::Defense;
-        const Location at = f->location;
-        const std::vector<int> jumps = p.jumpsFrom(at.system);
-        int64_t size = static_cast<int64_t>(f->members.size());
-        for (const Vehicle& v : p.st.vehicles)
-            size += v.owner == p.id && v.count > 0 && !v.fleet.valid() && !v.orders.empty() && v.orders.front().kind == OrderKind::JoinFleet &&
-                    v.orders.front().amount == static_cast<int>(keep[k].value);
-        for (VehicleId id : p.ownVehicles(Minister::Fleets)) {
-            if (size >= members) break;
-            const Vehicle* v = p.st.vehicle(id);
-            if (!v || v->fleet.valid() || unfit(p, *v)) continue;
-            if (std::any_of(v->orders.begin(), v->orders.end(), [](const Order& o) { return o.kind == OrderKind::JoinFleet; })) continue;
-            if (defenceLed ? p.info(v->design).role != Role::Defense : !attackMaterial(p, *v)) continue;
-            if (!(aiJumpCount(jumps[v->location.system.index()]) < 4)) continue;
-            if (v->location == at) {
-                if (p.emit(cmd::JoinFleet{keep[k], id})) ++size;
-            } else if (p.setOrders(id, {joinFleetOrder(keep[k])})) {
-                ++size;
-            }
-            f = p.st.fleet(keep[k]);
-        }
+        recruit(p, slots[k], vehicles, inBeing);
+        setFleetStrategy(p, slots[k]);
+        f = p.st.fleet(slots[k]);
+        leader = f ? ministersLeader(p.st, *f) : nullptr;
+        if (leader && leader->orders.empty()) idle.push_back({slots[k], attack, false});
+        else if (f) p.busyFleets.insert(slots[k]);
     }
 
-    // Orders go to idle fleets only.
-    std::vector<size_t> idleFleets;
-    for (size_t k = 0; k < keep.size(); ++k)
-        if (const Fleet* f = p.st.fleet(keep[k]); f && fleetOrders(p.st, *f).empty() && !f->members.empty()) idleFleets.push_back(k);
-        else if (f) p.busyFleets.insert(keep[k]);
-    std::vector<uint8_t> done(keep.size(), 0);
-    // The defend list's entries in the systems to defend, in the fleets'
-    // order (the defend list's: strongest threat first after the jump,
-    // population and planet keys, spec 05 §7.2).
-    std::vector<const DefendEntry*> toDefend;
-    for (const DefendEntry& d : p.sit.defendEntries)
-        if (std::find(p.sit.defend.begin(), p.sit.defend.end(), d.where.system) != p.sit.defend.end()) toDefend.push_back(&d);
+    ensureDefendAssigned(p);
+    auto idleLeader = [&](const IdleFleet& x) -> const Vehicle* {
+        const Fleet* f = p.st.fleet(x.id);
+        const Vehicle* leader = f ? ministersLeader(p.st, *f) : nullptr;
+        return leader && leader->orders.empty() ? leader : nullptr;
+    };
+    auto give = [&](IdleFleet& x, std::vector<Order> orders) {
+        if (!orders.empty() && p.setFleetOrders(x.id, std::move(orders))) x.done = true;
+        return x.done;
+    };
+
+    // Defend (Short Term) with enemies listed (confirmed: binary): the
+    // defend-list entries of the systems to defend, in the fleets' order (the
+    // defend list's: strongest threat first after the jump, population and
+    // planet keys, spec 05 §7.2), each with the nearest idle defence fleet
+    // (never an attack fleet) that has members at its location, by jumps from
+    // the fleet's system to the entry's, the earlier in the fleet list on a
+    // tie. Each fleet takes one entry and no limit by the entry's threat
+    // applies; the entry's assigned strength grows by the fleet's.
     if (p.state == AiState::DefendShortTerm && !p.sit.enemyInTerritory.empty()) {
-        // Defend (Short Term) with enemies listed (confirmed: binary): each
-        // entry gets the nearest idle defence fleet (never an attack fleet)
-        // with members at its location, by jumps from the fleet's system to
-        // the entry's, the earlier in the fleet list on a tie. Each fleet
-        // takes one entry and no limit by the entry's threat applies, so the
-        // entry's assigned strength plays no part. The order is the stored
-        // Attack when the fleet stands in the entry's sector, otherwise a
-        // Seek to that sector, or in a simultaneous game after the entry's
-        // latest object.
         std::map<SystemId, std::vector<int>> jumpsFromFleet;
-        for (const DefendEntry* d : toDefend) {
+        for (size_t e = 0; e < p.sit.defendEntries.size(); ++e) {
+            const DefendEntry& d = p.sit.defendEntries[e];
+            if (!inSystemsToDefend(p, d.where.system)) continue;
             std::optional<size_t> best;
             int bestJ = 0;
-            for (size_t k : idleFleets) {
-                if (done[k] || attack[k]) continue;
-                const Fleet& f = *p.st.fleet(keep[k]);
-                if (fleetMembersAt(p.st, f).empty()) continue;
+            for (size_t k = 0; k < idle.size(); ++k) {
+                if (idle[k].done || idle[k].attack) continue;
+                const Fleet& f = *p.st.fleet(idle[k].id);
+                if (ministersFleet(p.st, f).empty()) continue;
                 auto it = jumpsFromFleet.find(f.location.system);
                 if (it == jumpsFromFleet.end()) it = jumpsFromFleet.emplace(f.location.system, p.jumpsFrom(f.location.system)).first;
-                const int j = it->second[d->where.system.index()];
+                const int j = it->second[d.where.system.index()];
                 if (!best || j < bestJ) {
                     best = k;
                     bestJ = j;
                 }
             }
             if (!best) break;  // every defence fleet has an entry
-            const Fleet& f = *p.st.fleet(keep[*best]);
-            const Threat& latest = d->latest;
-            const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
-            const Order order = f.location == d->where                             ? attackHere()
-                                : p.st.options.simultaneous && target              ? seekAfter(*target)
-                                : p.st.options.simultaneous && latest.planet.valid() ? seekPlanet(p.st, latest.planet)
-                                                                                     : seekOrder(d->where);
-            if (p.setFleetOrders(keep[*best], {order})) done[*best] = 1;
+            const Fleet& f = *p.st.fleet(idle[*best].id);
+            const int64_t strength = fleetStrength(p, f);
+            if (give(idle[*best], {defendOrder(p, f.location, d)})) p.defendAssigned[e] += strength;
         }
-        // Then the minister gives no other fleet orders this turn: no state
-        // goal, patrol or exploration; the attack fleets and the defence
-        // fleets left over stay idle (confirmed: binary).
-        return;
     }
-    {
-        const std::vector<Order> goal = stateGoal(p);
-        if (!goal.empty())
-            for (size_t k : idleFleets)
-                if (attack[k] && !done[k] && p.setFleetOrders(keep[k], goal)) done[k] = 1;
-    }
-    // Leftover fleets defend (the defend list's entries, strongest threat
-    // first), then patrol (defence-led) or explore.
-    size_t defendAt = 0;
-    for (size_t k : idleFleets) {
-        if (done[k]) continue;
-        const Fleet* f = p.st.fleet(keep[k]);
-        const Vehicle* leader = fleetLeader(p.st, *f);
-        if (defendAt < toDefend.size()) {
-            if (auto orders = engage(p, toDefend[defendAt++]->latest); !orders.empty() && p.setFleetOrders(keep[k], std::move(orders))) done[k] = 1;
-            if (done[k]) continue;
+    // The state's goal (confirmed: binary): when the state gives a goal
+    // system, every fleet of the idle list, attack and defence fleets alike,
+    // whose leader still has no orders gets the attack routine for its leader.
+    if (goalSystem(p))
+        for (IdleFleet& x : idle)
+            if (const Vehicle* leader = !x.done ? idleLeader(x) : nullptr) give(x, attackDispatch(p, leader->location, fleetStrength(p, *p.st.fleet(x.id))));
+    // The fleets left, in the order of the idle list (confirmed: binary): a
+    // non-attack fleet led by a Defense Ship gets the defence routine and,
+    // still idle, the patrol target; every other fleet the defence routine
+    // (non-attack fleets only), then the attack routine, then exploration.
+    for (IdleFleet& x : idle) {
+        const Vehicle* leader = !x.done ? idleLeader(x) : nullptr;
+        if (!leader) continue;
+        const Location at = leader->location;
+        const bool defenceShipLed = p.info(leader->design).aiType == "Defense Ship";
+        if (!x.attack && give(x, defenceRoutine(p, at, true, vehicleRating(p.r, p.st, *leader)))) continue;
+        if (!x.attack && defenceShipLed) {
+            if (const auto target = patrolTarget(p); target && at != *target) give(x, {seekOrder(*target)});
+            continue;
         }
-        if (p.info(leader->design).role == Role::Defense) {
-            // Patrol: our colony with the fewest of our ships (inferred for fleets).
-            std::optional<ObjectId> best;
-            int fewest = 0;
-            for (const auto& c : p.st.colonies) {
-                if (!c || c->owner != p.id) continue;
-                int ships = 0;
-                const Location at = locationOf(p.st.galaxy, c->planet);
-                for (const Vehicle& v : p.st.vehicles) ships += v.owner == p.id && v.location == at;
-                if (!best || ships < fewest) {
-                    best = c->planet;
-                    fewest = ships;
-                }
+        if (give(x, attackDispatch(p, at, fleetStrength(p, *p.st.fleet(x.id))))) continue;
+        if (exploreWithFleet(p, x.id, at)) x.done = true;
+    }
+
+    // At most one new fleet, or the surplus disbanded by slot.
+    const int nowInBeing = static_cast<int>(std::count(gone.begin(), gone.end(), uint8_t{0}));
+    if (nowInBeing < wanted) {
+        // The leader (confirmed: binary, spec 05 Q72): the search walks the
+        // empire's vehicle list backwards from its end (slot order,
+        // objectOrderKey), skips the vehicles already in a fleet, and takes
+        // the first fit one that may lead a fleet (canLeadFleet). Nothing
+        // asks that it be idle: forming the fleet clears its orders.
+        std::vector<VehicleId> list = p.ownVehicles(Minister::Fleets);
+        std::sort(list.begin(), list.end(), [&](VehicleId a, VehicleId b) {
+            return std::pair(objectOrderKey(*p.st.vehicle(a)), a) > std::pair(objectOrderKey(*p.st.vehicle(b)), b);
+        });
+        for (VehicleId id : list) {
+            const Vehicle* v = p.st.vehicle(id);
+            if (!v || v->fleet.valid() || unfit(p, *v) || !canLeadFleet(p, *v)) continue;
+            if (p.emit(cmd::CreateFleet{{}, {id}})) {
+                const FleetId fid = p.st.fleets.back().id;
+                const uint32_t formation = formationIndex(p, t.defaultFormation);
+                const uint32_t strategy = strategyIndex(p, t.defaultStrategy);
+                if (formation != 0 || strategy != 0) p.emit(cmd::SetFleetOptions{fid, formation, strategy});
             }
-            if (best && leader->location != locationOf(p.st.galaxy, *best)) p.setFleetOrders(keep[k], {seekOrder(locationOf(p.st.galaxy, *best))});
-        } else if (!p.sit.freeFrontier.empty() && !p.neutral) {
-            // Explore: the player's Move To toward the first free frontier
-            // point and the Warp through it (confirmed: binary). The Move To
-            // lasts until it arrives, so the fleet is not idle, and is not
-            // planned again, until it has warped.
-            const ObjectId wp = p.sit.freeFrontier.front();
-            Order warp;
-            warp.kind = OrderKind::Warp;
-            warp.object = wp;
-            warp.location = locationOf(p.st.galaxy, wp);
-            p.setFleetOrders(keep[k], {moveOrder(warp.location), warp});
+            break;
+        }
+    } else {
+        for (size_t k = 0; k < slots.size(); ++k) {
+            const int slot = static_cast<int>(k) + 1;
+            if (!gone[k] && slot > wanted && slot <= nowInBeing && p.st.fleet(slots[k])) p.emit(cmd::DisbandFleet{slots[k]});
         }
     }
 }
 
 // ---- Defence and attack ------------------------------------------------------------------------
 
-// Spec 05 §7.5 "Defence" (confirmed: binary): only in Defend (Short Term).
-// Each defender in turn goes to the first entry, in the defend-list systems
-// and the Defense minister's order (§7.2: the weaker threat first), whose
-// assigned strength is at most round(its threat × 1.3) at Low difficulty or
-// round(its threat × 1.5) at Medium and High. The order is the stored Attack
-// when the defender is already in that sector, otherwise a Seek there, or in
-// a simultaneous game a Seek after the entry's latest object; a Seek lasts
-// one movement phase. The entry's assigned strength then grows by the
-// defender's rating, without the + 1.
+// The Defense minister (spec 05 §7.5 *Defence*, confirmed: binary): only in
+// Defend (Short Term) (and Defend (Long Term), never reached) while the
+// empire has no active fleet. Each of its ships (takesDuty: the attack ships
+// and Defense Ships) goes through the defence routine, the weakest threat
+// first, and adds its rating without the + 1 to the entry it takes.
 void planDefense(Planner& p) {
-    if (!p.on(Minister::Defense) || anyFleet(p) || p.state != AiState::DefendShortTerm || p.sit.defend.empty()) return;
-    const xmath::Ext factor = p.difficulty == kDifficultyLow ? kOnePoint3 : kOnePoint5;
-    std::vector<DefendEntry> entries;
-    for (const DefendEntry& d : p.sit.defendEntries)
-        if (std::find(p.sit.defend.begin(), p.sit.defend.end(), d.where.system) != p.sit.defend.end()) entries.push_back(d);
-    sortDefendEntries(entries, true);  // ships outside fleets: the weakest threat first
-    std::vector<int64_t> assigned(entries.size(), 0);  // tenths
+    if (!p.on(Minister::Defense) || anyFleet(p)) return;
+    if (p.state != AiState::DefendShortTerm && p.state != AiState::DefendLongTerm) return;
     for (VehicleId id : p.ownVehicles(Minister::Defense)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v)) continue;
-        const Role role = p.info(v->design).role;
-        if ((role != Role::Attack && role != Role::Defense) || p.info(v->design).stats.movement <= 0) continue;
-        for (size_t i = 0; i < entries.size(); ++i) {
-            const int64_t limit = (factor * xmath::Ext(entries[i].threat) / xmath::Ext(kStrengthScale)).round() * kStrengthScale;
-            if (assigned[i] > limit) continue;
-            // Attack there, else a Seek after the object (simultaneous) or to its sector.
-            const Threat& latest = entries[i].latest;
-            const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
-            const Order order = v->location == entries[i].where ? attackHere()
-                                : p.st.options.simultaneous   ? (target ? seekAfter(*target) : seekPlanet(p.st, latest.planet))
-                                                              : seekOrder(entries[i].where);
-            if (p.setOrders(id, {order})) assigned[i] += vehicleRating(p.r, p.st, *p.st.vehicle(id));
-            break;
-        }
+        if (!v || !freeForMinisters(p, *v) || !takesDuty(p, *v, Duty::Defense)) continue;
+        auto orders = defenceRoutine(p, v->location, false, vehicleRating(p.r, p.st, *v));
+        if (!orders.empty()) p.setOrders(id, std::move(orders));
     }
 }
 
+// The Attack minister (spec 05 §7.5 *Attack*, confirmed: binary): only while
+// there are attack candidates and the empire has no active fleet. Each of its
+// ships goes through the attack routine and adds its rating to the candidate
+// it takes.
 void planAttack(Planner& p) {
-    if (!p.on(Minister::Attack) || anyFleet(p)) return;
-    if (p.state == AiState::PrepareForAttack) {
-        // Prepare for Attack (spec 05 §7.2 *Jumps*, confirmed: binary): a ship
-        // outside the staging system goes there when its AI jump count from
-        // the first target is above 1, which always holds (the count is the
-        // jumps plus two). A ship already in the staging system gets no order
-        // from this routine (inferred: the spec names only those outside it).
-        const AiMemory& m = p.emp().aiMemory;
-        if (!m.staging.valid() || m.targets.empty()) return;
-        const std::vector<int> fromTarget = p.jumpsFrom(m.targets.front());
-        const Location goal = spotIn(p, m.staging);
-        for (VehicleId id : p.ownVehicles(Minister::Attack)) {
-            const Vehicle* v = p.st.vehicle(id);
-            if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).role != Role::Attack || p.info(v->design).stats.movement <= 0) continue;
-            if (v->location.system == m.staging) continue;
-            if (aiJumpCount(fromTarget[v->location.system.index()]) > 1) p.setOrders(id, {seekOrder(goal)});
-        }
-        return;
-    }
-    // The target system of the state (spec 05 §7.5), as for the fleets.
-    SystemId target;
-    const AiMemory& m = p.emp().aiMemory;
-    if (p.state == AiState::Attack && !m.targets.empty()) target = m.targets.front();
-    else if (p.state == AiState::SecureHoldings) target = m.secured;
-    else if (p.state != AiState::PrepareForAttack && !p.sit.candidates.empty() && p.atWarWith(p.sit.candidates.front().owner))
-        target = p.sit.candidates.front().system;
-    std::vector<const Candidate*> candidates;
-    for (const Candidate& c : p.sit.candidates)
-        if (c.system == target && hostileTo(p.emp(), c.owner)) candidates.push_back(&c);
-    if (candidates.empty()) return;
-    std::vector<int64_t> assigned(candidates.size(), 0);  // tenths
+    if (!p.on(Minister::Attack) || anyFleet(p) || p.sit.candidates.empty()) return;
     for (VehicleId id : p.ownVehicles(Minister::Attack)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).role != Role::Attack || p.info(v->design).stats.movement <= 0) continue;
-        std::optional<size_t> pick;
-        for (size_t i = 0; i < candidates.size() && !pick; ++i) {
-            if (p.rng.percent(25)) continue;
-            const EmpireId owner = candidates[i]->owner;
-            // At most round(value × k): k = 1.5 when our score exceeds 1.5 times the owner's.
-            const bool strong = p.scores[p.id.index()] * 2 > p.scores[owner.index()] * 3;
-            const xmath::Ext value = xmath::Ext(candidates[i]->value) / xmath::Ext(kStrengthScale);
-            const int64_t limit = (strong ? (kOnePoint5 * value).round() : value.round()) * kStrengthScale;
-            if (assigned[i] <= limit) pick = i;
-        }
-        for (size_t i = 0; i < candidates.size() && !pick; ++i)
-            if (p.rng.percent(75)) pick = i;
-        if (!pick) continue;
-        // The stored Attack when the ship is already in that sector, else a Seek there.
-        const Location at = locationOf(p.st.galaxy, candidates[*pick]->planet);
-        const Order order = v->location == at ? attackHere() : seekOrder(at);
-        if (p.setOrders(id, {order})) assigned[*pick] += p.strengthOf(*v);
+        if (!v || !freeForMinisters(p, *v) || !takesDuty(p, *v, Duty::Attack)) continue;
+        auto orders = attackDispatch(p, v->location, vehicleRating(p.r, p.st, *v));
+        if (!orders.empty()) p.setOrders(id, std::move(orders));
     }
 }
 
+// The Patrol minister (spec 05 §7.5 *Patrol*, confirmed: binary): each of its
+// ships outside fleets heads for the patrol target with a Seek; one already
+// there gets no order.
 void planPatrol(Planner& p) {
     if (!p.on(Minister::Patrol)) return;
-    std::map<Location, int> ships;
-    for (const Vehicle& v : p.st.vehicles)
-        if (v.owner == p.id) ++ships[v.location];
     for (VehicleId id : p.ownVehicles(Minister::Patrol)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).stats.movement <= 0) continue;
-        const Role role = p.info(v->design).role;
-        if (role != Role::Attack && role != Role::Defense) continue;
-        // Our colony with the fewest of our ships present, the smallest population breaking ties.
-        std::optional<ObjectId> best;
-        std::pair<int, int64_t> bestKey{};
-        for (const auto& c : p.st.colonies) {
-            if (!c || c->owner != p.id || !p.mayEnter(p.st.galaxy.object(c->planet).system)) continue;
-            const Location at = locationOf(p.st.galaxy, c->planet);
-            const std::pair<int, int64_t> key{ships[at] - (v->location == at ? 1 : 0), c->totalPopulation()};
-            if (!best || key < bestKey) {
-                best = c->planet;
-                bestKey = key;
-            }
-        }
-        if (!best) continue;
-        const Location at = locationOf(p.st.galaxy, *best);
-        if (v->location == at) {
+        if (!v || !freeForMinisters(p, *v) || !takesDuty(p, *v, Duty::Patrol)) continue;
+        const std::optional<Location> at = patrolTarget(p);
+        if (!at) return;
+        if (v->location == *at) {
             p.busy.insert(id);  // already on station
             continue;
         }
-        if (p.setOrders(id, {seekOrder(at)})) {
-            --ships[v->location];
-            ++ships[at];
-        }
+        p.setOrders(id, {seekOrder(*at)});
     }
 }
+
 
 // ---- Logistics --------------------------------------------------------------------------------------
 
@@ -655,11 +854,26 @@ void planTransports(Planner& p) {
         }
         return one;
     };
+    // Medical aid (spec 05 §7.5 *Transports*, confirmed: binary): when any of
+    // our colonies has a plague, each idle ship of ours with a Medical Bay,
+    // whatever its design type, is handled first: it leaves its fleet, its
+    // orders are cleared, and it gets a Move To the last plagued colony in the
+    // planet list (then, in the original, the Render Medical Aid order, which
+    // OpenSE4 does not have: its Medical Bay cures in the sector by itself,
+    // spec 03 §3, question 87). Without a plague such a ship goes by its type.
+    std::optional<Location> plagued;
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id && c->plagueLevel >= 1) plagued = locationOf(p.st.galaxy, c->planet);
     for (VehicleId id : p.ownVehicles(Minister::Transports)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).aiType != "Population Transport") continue;
-        // A ship with a Medical Bay gets no order: the routine picks a planet and then drops it.
-        if (hasAbility(vehicleAbilities(p.r, p.st, *v), AbilityKind::MedicalBay)) continue;
+        if (!v || !p.idle(*v)) continue;
+        if (plagued && hasAbility(vehicleAbilities(p.r, p.st, *v), AbilityKind::MedicalBay)) {
+            if (v->fleet.valid()) p.emit(cmd::LeaveFleet{id});
+            v = p.st.vehicle(id);
+            p.setOrders(id, v->location == *plagued ? std::vector<Order>{} : std::vector<Order>{moveOrder(*plagued)});
+            continue;
+        }
+        if (v->fleet.valid() || p.info(v->design).aiType != "Population Transport") continue;
         const int capacity = vehicleCargoCapacity(p.r, p.st, *v);
         if (capacity <= 0) continue;
         const Location here = v->location;
@@ -899,6 +1113,11 @@ void planStellarManipulation(Planner& p) {
         if (type == "Open Warp Point") {
             // While a free exploration frontier point is left the ship's range
             // counts as 0: nothing is chosen and it gets the resupply orders.
+            // The list is the turn's one free list as the exploring fleets
+            // and the Exploration minister left it (spec 05 §7.5, confirmed:
+            // binary): once they have taken every free point the ship may
+            // open a point this turn; the minister's copies or refill left
+            // over keep it from doing so.
             if (!p.sit.freeFrontier.empty()) {
                 p.setOrders(id, resupplyOrders(p, here));
                 continue;
@@ -1295,15 +1514,13 @@ void sendDrones(Planner& p) {
     }
 }
 
-// The warp-point sector a loaded mine or satellite layer lays at (spec 05
-// §7.5, confirmed: binary).
 // Where a loaded mine or satellite layer lays its units (spec 05 §7.5
 // "Layers", "Layer fallback", confirmed: binary): a weighted draw among the
 // candidates; a mine layer ignores them on a flag turn. Without one, the
 // fallback: one random quiet colony system (no other empire has any object
-// there; none: no order). With the flag set, half the time a random star of
-// it (none: no order this turn), otherwise a random warp-point sector of it
-// (none: no order).
+// there; none: no order). A mine layer with the flag set takes half the time
+// a random star of it (none: no order this turn); otherwise, and always for
+// a satellite layer, a random warp-point sector of it (none: no order).
 std::optional<Location> layingSite(Planner& p, bool mines) {
     const bool flag = starDestroyerFlag(p);
     if (!(mines && flag)) {
@@ -1332,7 +1549,9 @@ std::optional<Location> layingSite(Planner& p, bool mines) {
     if (quiet.empty()) return std::nullopt;
     const SystemId sys = quiet[static_cast<size_t>(p.rng.below(quiet.size()))];
     std::vector<Location> spots;
-    const bool star = flag && p.rng.percent(50);
+    // Only the mine layer reads the flag: a satellite layer always takes a
+    // warp-point sector, with no roll (confirmed: binary).
+    const bool star = mines && flag && p.rng.percent(50);
     for (ObjectId o : p.st.galaxy.system(sys).objects) {
         const ObjectKind k = p.st.galaxy.object(o).kind;
         if (star ? isStarKind(k) : k == ObjectKind::WarpPoint) spots.push_back(locationOf(p.st.galaxy, o));
@@ -1519,17 +1738,20 @@ void planResupply(Planner& p) {
     }
     // A fleet not on unlimited supply goes when its total supply ÷ its total
     // supply cost per move is below the distance where it is; it takes the
-    // orders its leader would get.
+    // orders its leader would get. The fleet is the ministers' view of it
+    // (ministersFleet): the members at its position, the first of them its
+    // leader; members elsewhere count nowhere (confirmed: binary).
     for (const Fleet& f : p.st.fleets) {
         if (!p.controlsFleet(f, Minister::Resupply) || f.members.empty()) continue;
-        const Vehicle* leader = fleetLeader(p.st, f);
-        if (!leader) continue;
+        const std::vector<const Vehicle*> members = ministersFleet(p.st, f);
+        if (members.empty()) continue;
+        const Vehicle* leader = members.front();
         // On unlimited supply when none of its ships lacks it; the totals
         // count only the members without unlimited supply (confirmed: binary).
         int64_t supply = 0, cost = 0;
         bool unlimited = true;
-        for (VehicleId m : f.members)
-            if (const Vehicle* v = p.st.vehicle(m); v && v->count > 0 && !vehicleHasUnlimitedSupply(p.r, p.st, *v)) {
+        for (const Vehicle* v : members)
+            if (!vehicleHasUnlimitedSupply(p.r, p.st, *v)) {
                 unlimited = false;
                 supply += v->supply;
                 cost += movement::moveSupplyCost(p.r, p.st, *v);
@@ -1661,15 +1883,17 @@ void planRetrofit(Planner& p) {
             if (!newer || std::pair(cand.createdTurn, d) > std::pair(p.st.design(*newer).createdTurn, *newer)) newer = d;
         }
         if (!newer) continue;
-        if (spaceYardAt(p.r, p.st, p.id, v->location)) {
-            if (p.emit(cmd::Retrofit{id, *newer})) {
-                p.busy.insert(id);
-                ++started;
-            }
-            continue;
-        }
+        // The yard (our nearest colony with a working yard, by jumps): standing
+        // there the ship is retrofitted at once, in either turn style;
+        // otherwise its list is cleared and it gets the "go there and
+        // retrofit" orders, which retrofit it on arrival (confirmed: binary,
+        // medium confidence on the details; cmd::Retrofit's moveFirst).
         const auto yard = nearestColony(p, v->location.system, [&](const Colony& c) { return colonyHasWorkingYard(p.r, c); });
-        if (yard && p.setOrders(id, {moveOrder(locationOf(p.st.galaxy, *yard))})) ++started;
+        if (!yard) continue;
+        if (p.emit(cmd::Retrofit{id, *newer, locationOf(p.st.galaxy, *yard)})) {
+            p.busy.insert(id);
+            ++started;
+        }
     }
 }
 

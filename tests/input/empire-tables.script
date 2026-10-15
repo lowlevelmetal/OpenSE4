@@ -5,8 +5,10 @@
 # scripts"). v0.9.0 squeezed the last columns of the grid and cut the scores' figures. Scores
 # shows only the empires whose score we may see (spec 06 §1.5), one page here; Victory
 # Conditions, which reads the Score Display option one step off, shows all twelve on two pages.
+# Seed 1: the player must have met at least ten others by turn 40 (seed 3 until the computer
+# players' minister rules of 2026-10-14).
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
-options --quick-start --empires=12 --systems=16 --seed=3 --turns=40 --open=none --layout=1024x768 --size=1280x800
+options --quick-start --empires=12 --systems=16 --seed=1 --turns=40 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game
 repeat 20

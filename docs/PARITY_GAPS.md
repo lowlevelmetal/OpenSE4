@@ -631,7 +631,8 @@ keys the client ignored followed the specs:
   in a turn-based game and as the vehicle's only order in a simultaneous one, tested again at
   its first action; designs keep Number Scrapped. The window shows the last selected vehicle's
   research potential word and lights each button only when every selected vehicle qualifies.
-  Our choices are spec 03 §19 Q78 (the computer players' Scrap and Retrofit go the same way).
+  Our choices are spec 03 §19 Q78; since 2026-10-14 the computer players' Retrofit is the
+  original's (at once at the minister's yard, else a Move To and the Retrofit on arrival).
 - **Since 2026-10-13** (the REA parity audit, findings on orders): a Scrap-window order that
   fails when carried out counts as done (the orders behind it run), with "Cannot Mothball",
   "Cannot Unmothball" and "Cannot Retrofit" entries; Unmothball's button needs a yard but not

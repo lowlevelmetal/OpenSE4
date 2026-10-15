@@ -145,7 +145,14 @@ struct QueueFlags { QueueTarget target; bool onHold = false; bool repeat = false
 // Upgrade Facilities button moves queued facility items to the newest level
 // (spec 02 §6.6), and so do the computer player's upgrades (spec 05 §7.5).
 struct QueueReplaceFacility { QueueTarget target; uint32_t index = 0; uint32_t facility = 0; };
-struct Retrofit { VehicleId vehicle; DesignId design; };  // a Scrap window action (above), at an own space yard (spec 03 §14)
+// A Scrap window action (above), at an own space yard (spec 03 §14).
+// `moveFirst` is the Retrofit minister's yard (spec 05 §7.5 *Retrofit*,
+// confirmed: binary): a vehicle standing there is retrofitted at once in
+// either turn style; one elsewhere gets the "go there and retrofit" orders, a
+// Move To there and the Retrofit, put straight onto its own list without the
+// window's checks; the Retrofit makes its test on arrival. Only the
+// ministers give it. Carried in orders files and messages from format 11.
+struct Retrofit { VehicleId vehicle; DesignId design; Location moveFirst; };
 
 // ---- Planets -------------------------------------------------------------------------------
 struct SetColonyType { ObjectId planet; std::string colonyType; };

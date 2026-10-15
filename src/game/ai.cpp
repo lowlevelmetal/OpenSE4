@@ -50,17 +50,19 @@ std::vector<uint8_t> presence(const GameState& s) {
     return present;
 }
 
+// "Larger" in the colonization order (spec 05 §7.5, confirmed: binary): the
+// planet size's `Stellar Size`, so Ringworlds and Sphereworlds, Huge in the
+// stock data, tie with Huge planets. A size the five names do not hold ranks
+// below Tiny (inferred).
 int sizeRank(const Rules& r, const SpaceObject& planet) {
     static constexpr std::array<std::string_view, 5> kSizes{"Tiny", "Small", "Medium", "Large", "Huge"};
     std::string_view name = planet.size;
-    if (const ruleset::PlanetSize* ps = planetSize(r, planet)) {
-        if (ps->constructed) return 5;
-        name = ps->stellarSize;
-    }
+    if (const ruleset::PlanetSize* ps = planetSize(r, planet)) name = ps->stellarSize;
     for (size_t i = 0; i < kSizes.size(); ++i)
         if (keysEqual(name, kSizes[i])) return static_cast<int>(i);
-    return 2;
+    return -1;
 }
+
 
 bool hasRuins(const SpaceObject& planet) {
     for (const auto& a : planet.abilities)
@@ -72,6 +74,41 @@ int64_t bestDamage(const Rules& r, const DesignEntry& en) {
     int best = 0;
     for (int range = 1; range <= std::max(1, weaponMaxRange(r, en)); ++range) best = std::max(best, weaponDamageAtRange(r, en, range));
     return best;
+}
+
+// The ratings (without the + 1) of every object in a sector that is not ours, whoever owns it.
+int64_t foreignRatingsAt(const Rules& r, const GameState& s, EmpireId us, Location where) {
+    int64_t sum = 0;
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.owner != us && v.location == where) sum += vehicleRating(r, s, v);
+    return sum;
+}
+
+} // namespace
+
+// ---- Situation ---------------------------------------------------------------------------------
+
+// A colonization target's planet value (spec 05 §7.5 *Order* 6, confirmed:
+// binary): the three resource values, each × 1000 unless the game uses
+// finite resources; for a hostile colony without population also 100 per
+// population unit, 1,000,000 per facility, 10,000 per cargo unit and
+// 1,000,000,000 for a capital (the flag's meaning was not traced; taken as
+// the trade value's capital, inferred). The sum is taken in single precision,
+// each addition stored as a 32-bit float, and compared as a whole number.
+int64_t colonyTargetValue(const GameState& s, const SpaceObject& planet, const Colony* taken) {
+    xmath::Ext sum;
+    auto add = [&](int64_t v) { sum = (sum + xmath::Ext(v)).roundedTo(xmath::kSingleBits); };
+    const int64_t scale = s.options.finiteResources ? 1 : 1000;
+    for (size_t k = 0; k < 3; ++k) add(int64_t{planet.value[k]} * scale);
+    if (taken) {
+        add(100 * taken->totalPopulation());
+        add(1'000'000 * static_cast<int64_t>(taken->facilities.size()));
+        int64_t cargo = taken->cargo.totalPopulation();
+        for (const UnitStack& u : taken->cargo.units) cargo += std::max(0, u.count);
+        add(10'000 * cargo);
+        if (taken->homeworld) add(1'000'000'000);
+    }
+    return sum.trunc();
 }
 
 // The planet's defence in an attack candidate's value (spec 05 §7.2,
@@ -86,17 +123,18 @@ int64_t planetDefence(const Rules& r, const GameState& s, const Colony& c) {
     return tenths;
 }
 
-// The ratings (without the + 1) of every object in a sector that is not ours, whoever owns it.
-int64_t foreignRatingsAt(const Rules& r, const GameState& s, EmpireId us, Location where) {
-    int64_t sum = 0;
-    for (const Vehicle& v : s.vehicles)
-        if (v.count > 0 && v.owner != us && v.location == where) sum += vehicleRating(r, s, v);
-    return sum;
+std::vector<const Vehicle*> ministersFleet(const GameState& s, const Fleet& f) {
+    std::vector<const Vehicle*> out;
+    for (VehicleId id : fleetMembersAt(s, f))
+        if (const Vehicle* v = s.vehicle(id)) out.push_back(v);
+    std::sort(out.begin(), out.end(), [](const Vehicle* a, const Vehicle* b) { return std::pair(a->arrival, a->id) < std::pair(b->arrival, b->id); });
+    return out;
 }
 
-} // namespace
-
-// ---- Situation ---------------------------------------------------------------------------------
+const Vehicle* ministersLeader(const GameState& s, const Fleet& f) {
+    const std::vector<const Vehicle*> members = ministersFleet(s, f);
+    return members.empty() ? nullptr : members.front();
+}
 
 bool hostileTo(const Empire& e, EmpireId other) {
     if (!other.valid() || other == e.id || other.index() >= e.relations.size()) return false;
@@ -209,14 +247,19 @@ std::vector<SystemId> territoryOf(const GameState& s, EmpireId id) {
     return out;
 }
 
+// The defend-list order (spec 05 §7.2, confirmed: binary): the threats are
+// compared as whole numbers; "a sector holding a planet first, the weaker
+// threat first" is the key 10,100 − threat for such a sector against 0 for
+// the others, the higher first, so a planet sector whose threat is 10,100 or
+// more loses its place before the others. The ministers' sort is not stable.
 void sortDefendEntries(std::vector<DefendEntry>& entries, bool weakestFirst) {
-    std::stable_sort(entries.begin(), entries.end(), [&](const DefendEntry& a, const DefendEntry& b) {
-        if (a.jumps != b.jumps) return a.jumps < b.jumps;
-        if (a.ourMaxPopulation != b.ourMaxPopulation) return a.ourMaxPopulation > b.ourMaxPopulation;
-        if (a.planetSector != b.planetSector) return a.planetSector;
-        if (a.planetSector && a.threat != b.threat) return a.threat < b.threat;  // the weaker threat first among planet sectors
-        if (a.threat != b.threat) return weakestFirst ? a.threat < b.threat : a.threat > b.threat;
-        return false;
+    ministersSort(entries, [&](const DefendEntry& a, const DefendEntry& b) {
+        const int64_t ta = a.threat / kStrengthScale, tb = b.threat / kStrengthScale;
+        if (const int k = threeWay(a.jumps, b.jumps)) return k;
+        if (const int k = threeWay(b.ourMaxPopulation, a.ourMaxPopulation)) return k;
+        const int64_t pa = a.planetSector ? 10'100 - ta : 0, pb = b.planetSector ? 10'100 - tb : 0;
+        if (const int k = threeWay(pb, pa)) return k;
+        return weakestFirst ? threeWay(ta, tb) : threeWay(tb, ta);
     });
 }
 
@@ -301,8 +344,12 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         sit.candidates.push_back({c->planet, sys, c->owner, jumps(sys), rel.anger, value});
         if (rel.contact && treatyIsHostile(rel.treaty) && s.empire(c->owner).alive) sit.hostile[sys.index()] += kStrengthScale;
     }
-    std::sort(sit.candidates.begin(), sit.candidates.end(), [](const Candidate& a, const Candidate& b) {
-        return std::tuple(a.jumps, -a.anger, -a.value, a.planet) < std::tuple(b.jumps, -b.anger, -b.value, b.planet);
+    // Fewest jumps, the highest anger, the highest value compared as a whole
+    // number; the ministers' sort is not stable (confirmed: binary).
+    ministersSort(sit.candidates, [](const Candidate& a, const Candidate& b) {
+        if (const int k = threeWay(a.jumps, b.jumps)) return k;
+        if (const int k = threeWay(b.anger, a.anger)) return k;
+        return threeWay(b.value / kStrengthScale, a.value / kStrengthScale);
     });
 
     // The exploration frontier (spec 05 §7.2, confirmed: binary): the warp
@@ -360,6 +407,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         it->latest = t;
     }
     sortDefendEntries(sit.defendEntries, false);
+    for (size_t i = 0; i < sit.defendEntries.size(); ++i) sit.defendEntries[i].index = i;
     const size_t maxDefend = static_cast<size_t>(std::max(0, prof.settings.maxSystemsToDefend));
     for (const DefendEntry& d : sit.defendEntries)
         if (sit.defend.size() < maxDefend && std::find(sit.defend.begin(), sit.defend.end(), d.where.system) == sit.defend.end())
@@ -390,41 +438,48 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         if (v.owner == id)
             for (const Order& o : v.orders)
                 if (o.kind == OrderKind::Colonize) targeted.insert(o.object);
+    // Gathered in the game's object-slot order (objectOrder), then sorted
+    // with the ministers' sort, which is not stable (confirmed: binary).
     std::vector<int> danger(nSys, -1);
-    for (size_t i = 0; i < nSys; ++i) {
-        const SystemId sys{i};
-        if (!e.hasExplored(sys) || !considered(sys)) continue;
+    for (const ObjectRef& ref : objectOrder(s)) {
+        if (!ref.object.valid()) continue;
+        const ObjectId o = ref.object;
+        const SpaceObject& planet = s.galaxy.object(o);
+        if (planet.kind != ObjectKind::Planet || targeted.contains(o)) continue;
+        const SystemId sys = planet.system;
+        const size_t i = sys.index();
+        if (i >= nSys || !e.hasExplored(sys) || !considered(sys)) continue;
         if (friendlyColony[i] && !ourColony[i]) continue;
-        for (ObjectId o : s.galaxy.system(sys).objects) {
-            const SpaceObject& planet = s.galaxy.object(o);
-            if (planet.kind != ObjectKind::Planet || targeted.contains(o)) continue;
-            const Colony* taken = s.colony(o);
-            if (taken && (taken->owner == id || taken->totalPopulation() > 0 || !hostileTo(e, taken->owner))) continue;
-            if (!notices(s, id, planetKey(o))) continue;
-            if (danger[i] < 0) {
-                // 5 per non-friendly empire present here, plus 1 for each such
-                // empire present in each system a warp point leads to (one
-                // entry per warp point, so two points into one system count twice).
-                danger[i] = 5 * nonFriendlyPresent(sys);
-                for (const SystemId nb : s.galaxy.neighbors(sys)) danger[i] += nonFriendlyPresent(nb);
-            }
-            ColonyTarget t;
-            t.planet = o;
-            t.system = sys;
-            t.danger = danger[i];
-            t.jumps = jumps(sys);
-            t.ruins = hasRuins(planet);
-            t.breathable = keysEqual(planet.atmosphere, e.race.atmosphere);
-            t.size = sizeRank(r, planet);
-            t.value = int64_t{planet.value[0]} + planet.value[1] + planet.value[2];
-            t.settleable = canSettle(r, s, e, planet);
-            t.colonized = taken != nullptr;
-            sit.colonyTargets.push_back(t);
+        const Colony* taken = s.colony(o);
+        if (taken && (taken->owner == id || taken->totalPopulation() > 0 || !hostileTo(e, taken->owner))) continue;
+        if (!notices(s, id, planetKey(o))) continue;
+        if (danger[i] < 0) {
+            // 5 per non-friendly empire present here, plus 1 for each such
+            // empire present in each system a warp point leads to (one
+            // entry per warp point, so two points into one system count twice).
+            danger[i] = 5 * nonFriendlyPresent(sys);
+            for (const SystemId nb : s.galaxy.neighbors(sys)) danger[i] += nonFriendlyPresent(nb);
         }
+        ColonyTarget t;
+        t.planet = o;
+        t.system = sys;
+        t.danger = danger[i];
+        t.jumps = jumps(sys);
+        t.ruins = hasRuins(planet);
+        t.breathable = keysEqual(planet.atmosphere, e.race.atmosphere);
+        t.size = sizeRank(r, planet);
+        t.value = colonyTargetValue(s, planet, taken);
+        t.settleable = canSettle(r, s, e, planet);
+        t.colonized = taken != nullptr;
+        sit.colonyTargets.push_back(t);
     }
-    std::sort(sit.colonyTargets.begin(), sit.colonyTargets.end(), [](const ColonyTarget& a, const ColonyTarget& b) {
-        return std::tuple(a.danger, a.jumps, !a.ruins, !a.breathable, -a.size, -a.value, a.planet) <
-               std::tuple(b.danger, b.jumps, !b.ruins, !b.breathable, -b.size, -b.value, b.planet);
+    ministersSort(sit.colonyTargets, [](const ColonyTarget& a, const ColonyTarget& b) {
+        if (const int k = threeWay(a.danger, b.danger)) return k;
+        if (const int k = threeWay(a.jumps, b.jumps)) return k;
+        if (const int k = threeWay(b.ruins, a.ruins)) return k;
+        if (const int k = threeWay(b.breathable, a.breathable)) return k;
+        if (const int k = threeWay(b.size, a.size)) return k;
+        return threeWay(b.value, a.value);
     });
 
     // The Not Connected test: the reachability counts the systems other than
@@ -1230,6 +1285,14 @@ std::vector<Command> ministerCommands(const Rules& r, const GameState& s, Empire
     p.runOrders();
     p.runEconomy();
     return p.report().commands;
+}
+
+void forgetUnsavedLists(GameState& s) {
+    for (Empire& e : s.empires) {
+        for (Relation& rel : e.relations) rel.promises = rel.queuedWar = rel.queuedBreak = rel.queuedPeace = 0;
+        e.aiMemory.avoid.clear();
+        e.aiMemory.attackSystems.clear();
+    }
 }
 
 uint32_t aiDate(const GameState& s) { return s.options.simultaneous ? s.turn + 1 : s.turn; }

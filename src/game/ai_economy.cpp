@@ -348,20 +348,44 @@ private:
     std::map<std::tuple<uint32_t, uint32_t, uint32_t>, bool> queueable_;
     std::map<uint32_t, int64_t> production_;
 
-    // The queue's own refusals (spec 02 §6.5), and the builder's: no ship or
-    // base while the empire is at its ship limit. The queues take them (the
-    // limit is met when one is built), so the builder checks the limit itself,
-    // as the engine's queues did before 2026-10-13 (inferred, spec 05
-    // question 81).
+    // The queue's own refusals (spec 02 §6.5). Nothing looks at the ship
+    // limit: at the limit the computer player keeps queueing ships and bases,
+    // which wait in the queues (spec 05 §7.5, question 81, confirmed: binary).
     bool queueable(DesignId design, const cmd::QueueTarget& target) {
         const auto key = std::tuple(design.value, target.planet.value, target.vehicle.value);
         if (auto it = queueable_.find(key); it != queueable_.end()) return it->second;
         QueueItem probe;
         probe.kind = QueueItem::Kind::Vehicle;
         probe.design = design;
-        bool ok = queueItemProblem(p_.r, p_.st, p_.id, target, probe).empty();
-        if (ok && !isUnitType(p_.info(design).stats.vehicleType)) ok = shipCount(p_.r, p_.st, p_.id) < p_.st.options.maxShipsPerPlayer;
-        return queueable_[key] = ok;
+        return queueable_[key] = queueItemProblem(p_.r, p_.st, p_.id, target, probe).empty();
+    }
+
+    // A unit row's design is under-supplied only when some queue owner of the
+    // empire has a working space yard (workingYard) with free cargo space of
+    // at least the design's tonnage; for satellites, troops, drones and
+    // weapon platforms that owner must be a colony (spec 05 §7.5 step 1,
+    // confirmed: binary). Placement then follows its own rules, on any
+    // colony's queue.
+    bool yardRoomFor(DesignId design) {
+        using ruleset::VehicleType;
+        const VehicleType type = p_.info(design).stats.vehicleType;
+        const bool colonyOnly = type == VehicleType::Satellite || type == VehicleType::Troop || type == VehicleType::Drone ||
+                                type == VehicleType::WeaponPlatform;
+        const int64_t tonnage = designTonnage(p_.r, p_.st.design(design));
+        for (const cmd::QueueTarget& t : queueList(p_)) {
+            if (!workingYard(p_, t)) continue;
+            int64_t free = 0;
+            if (t.vehicle.valid()) {
+                if (colonyOnly) continue;
+                const Vehicle& v = *p_.st.vehicle(t.vehicle);
+                free = vehicleCargoCapacity(p_.r, p_.st, v) - cargoSpaceUsed(p_.r, p_.st, v.cargo);
+            } else {
+                const Colony& c = *p_.st.colony(t.planet);
+                free = colonyCargoCapacity(p_.r, p_.st, c) - cargoSpaceUsed(p_.r, p_.st, c.cargo);
+            }
+            if (free >= tonnage) return true;
+        }
+        return false;
     }
 
     const std::vector<VehicleId>& yardShips() {
@@ -397,6 +421,10 @@ private:
         const int64_t colonies = p_.colonyCount();
         int placed = 0;
         size_t i = 0;
+        // The first row of the turn whose item found no queue (confirmed:
+        // binary): never forgotten; when that same row fails again, after a
+        // placement has restarted the scan, the whole list stops for the turn.
+        std::optional<size_t> firstBlocked;
         while (i < table.entries.size() && placed < 1000 && positive(budget_)) {
             const VehicleEntry& entry = table.entries[i];
             const std::optional<DesignId> design = designFor(entry);
@@ -412,14 +440,28 @@ private:
                 ++i;
                 continue;
             }
+            // In the same gate, a neutral empire's colony-ship rows qualify only
+            // while the colonization targets this step reads hold an entry,
+            // settleable or not (confirmed: binary, question 64).
+            if (colonyShip && p_.neutral && p_.sit.colonyTargets.empty()) {
+                ++i;
+                continue;
+            }
             const int64_t count = have(type, colonyShip);
-            const bool under = count < entry.mustHave || (entry.planetsPerItem > 0 && count * entry.planetsPerItem < colonies * 10);
-            if (under && place(*design)) {
+            bool under = count < entry.mustHave || (entry.planetsPerItem > 0 && count * entry.planetsPerItem < colonies * 10);
+            if (under && isUnitType(p_.info(*design).stats.vehicleType)) under = yardRoomFor(*design);
+            if (!under) {
+                ++i;
+                continue;
+            }
+            if (place(*design)) {
                 ++placed;
                 i = 0;  // restart the scan from the top
-            } else {
-                ++i;
+                continue;
             }
+            if (firstBlocked == i) break;
+            if (!firstBlocked) firstBlocked = i;
+            ++i;  // after a failure the scan goes on below
         }
     }
 
@@ -433,12 +475,17 @@ private:
     // type exactly, whose units in the colony's cargo take less than its
     // Maximum in kT, whose type has a newest valid design and whose design
     // tonnage is below the free cargo space, gets one batch.
+    // The colonies are visited in the empire's queue-list order (queueList:
+    // system by system, then the system's object order). A units file that
+    // reported a loading error is not used for this step (its reserve still
+    // holds, unitReserveLeft; confirmed: binary).
     void units() {
-        if (p_.prof.units.empty()) return;
+        if (p_.prof.units.empty() || p_.prof.unitsErrors) return;
         Resources budget = p_.netIncome();
         std::vector<ObjectId> planets;
-        for (const auto& c : p_.st.colonies)
-            if (c && p_.controlsColony(*c, Minister::ShipConstruction)) planets.push_back(c->planet);
+        for (const cmd::QueueTarget& t : queueList(p_))
+            if (const Colony* c = t.planet.valid() ? p_.st.colony(t.planet) : nullptr; c && p_.controlsColony(*c, Minister::ShipConstruction))
+                planets.push_back(c->planet);
         for (ObjectId planet : planets) {
             if (!positive(budget)) return;
             const Colony& c = *p_.st.colony(planet);
@@ -486,9 +533,14 @@ private:
     // loop places (count()), so an item the clean-up removes this turn still
     // counts for its type until the next turn.
     std::map<std::string, int64_t> counts_;
+    // The queued colony ships of each colony-ship type that the Colonizer
+    // rows use, taken with the counts and grown by one per placement
+    // (confirmed: binary): an item counts once, whatever it builds.
+    std::map<std::string, int64_t> queuedColonyShips_;
 
     void takeCounts() {
         counts_.clear();
+        queuedColonyShips_.clear();
         auto add = [&](DesignId d, int64_t n) {
             if (d.valid() && d.index() < p_.st.designs.size()) counts_[p_.info(d).aiType] += n;
         };
@@ -506,11 +558,19 @@ private:
                 for (const UnitStack& u : c->cargo.units) add(u.design, u.count);
         for (const auto& [target, q] : queues())
             for (const QueueItem& item : q->items)
-                if (item.kind == QueueItem::Kind::Vehicle) add(item.design, std::max(1, item.count));
+                if (item.kind == QueueItem::Kind::Vehicle) {
+                    add(item.design, std::max(1, item.count));
+                    if (item.design.valid() && item.design.index() < p_.st.designs.size() && p_.info(item.design).role == Role::Colonizer)
+                        ++queuedColonyShips_[p_.info(item.design).aiType];
+                }
     }
 
-    // An item the loop placed.
-    void count(DesignId design, int64_t n) { counts_[p_.info(design).aiType] += n; }
+    // An item the loop placed: its batch to its type's count, one to the
+    // queued colony ships when it is one.
+    void count(DesignId design, int64_t n) {
+        counts_[p_.info(design).aiType] += n;
+        if (p_.info(design).role == Role::Colonizer) ++queuedColonyShips_[p_.info(design).aiType];
+    }
 
     // The count of a type; the three colony-ship types share one count.
     int64_t have(std::string_view type, bool colonyShips) const {
@@ -523,11 +583,7 @@ private:
     // The colony-ship type of the first target no queued colony ship covers;
     // the race's own surface when all are covered; nothing without a target.
     std::optional<DesignId> colonizerDesign() {
-        std::map<std::string, int> queued;
-        for (const auto& [target, q] : queues())
-            for (const QueueItem& item : q->items)
-                if (item.kind == QueueItem::Kind::Vehicle && p_.info(item.design).role == Role::Colonizer)
-                    queued[p_.info(item.design).aiType] += std::max(1, item.count);
+        std::map<std::string, int64_t> queued = queuedColonyShips_;
         bool any = false;
         for (const ColonyTarget& t : p_.sit.colonyTargets) {
             if (!t.settleable) continue;
