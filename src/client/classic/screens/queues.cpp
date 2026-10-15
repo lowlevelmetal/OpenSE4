@@ -1497,7 +1497,7 @@ private:
             if (namingForComputer_) {
                 userTemplates_.push_back(templateFromQueue(r, s, *name, q));
                 saveTemplates();
-            } else {
+            } else if (canAddQueueType(ui.me().queueTypes, *name)) {   // a name listed already adds nothing (spec 02 §6.4)
                 std::vector<game::QueueType> list = ui.me().queueTypes;
                 game::QueueType type{*name, q.items};
                 for (game::QueueItem& it : type.items) it.spent = {};

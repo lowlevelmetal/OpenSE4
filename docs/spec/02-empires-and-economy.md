@@ -1146,7 +1146,10 @@ fresh queue, which ended emergency and slow mode.
   and are saved with the game (spec 08 §3.6.6; `Empire::queueTypes`, save format 10):
   - Select Queue Type (Fill Queue) lists them. Add Type asks for a "Queue Type Name" and
     stores a copy of the current queue's items with their counts; Delete Type removes the
-    selected type.
+    selected type. An empty name, or a name already in the empire's list (letter case
+    ignored), adds nothing and says nothing (confirmed: binary; added 2026-10-14, complete
+    listing). Since 2026-10-14 our client follows (`canAddQueueType`); before, it added a
+    second type of that name.
   - Fill appends each item of the type with its stored count. Each item goes through the
     queue's acceptance (§6.5), and each one refused gives its own "Warning" message box
     with the reason; the others are added.
