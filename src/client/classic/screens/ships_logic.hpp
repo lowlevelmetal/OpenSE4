@@ -287,14 +287,14 @@ StellarAim stellarAim(game::StellarAction a);
 std::optional<game::ObjectKind> stellarTargetKind(game::StellarAction a);
 // Its candidates: every object of that kind in the vehicle's sector, in the
 // system's object order, whether or not the empire sees it, as for Colonize
-// (inferred, spec 06 §7 Q114). One is the target at once; several open Pick
+// (confirmed: binary, spec 06 §7 Q114). One is the target at once; several open Pick
 // Object; none gives the "Cannot Perform Action" box and no order.
 std::vector<game::ObjectId> stellarCandidates(const game::GameState& s, const game::Vehicle& v, game::StellarAction a);
 
 // Construct's size picker (spec 06 §1.3, confirmed: binary): the constructed
 // worlds (PlanetSize records with `Constructed`) whose `Special Ability ID`
 // is from 1 to the vehicle's best Create Constructed Planet value, in
-// PlanetSize.txt order (the order inferred, §7 Q114).
+// PlanetSize.txt order (confirmed: binary, §7 Q114).
 struct ConstructSize {
     int id = 0;          // the record's Special Ability ID: what the order stores
     std::string name;    // "Ringworld"

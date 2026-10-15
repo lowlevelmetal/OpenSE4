@@ -956,7 +956,6 @@ What remains:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Stellar Manipulation's targets and Construct's sizes (`shipui::stellarCandidates`, `constructSizes`) | Every object of the kind in the vehicle's sector, seen or not, as Colonize's pick lists them; the size picker always shown, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114) | L |
 | Stellar Construction in the original's saved games (`classic_save_*`) | The order's size is neither read nor written; an imported order builds the size its device names | The record carries the size, in a place not known (spec 08 §11.1 Q7) | L |
 
 The REA parity audit of the main window (2026-10-14, spec 06 §2.3, §2.4, §2.8, §3, §7 Q99(d),
@@ -997,7 +996,7 @@ What remains different:
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Change Name on the unchanged name | Taken as no change | Refused as a name in use, the prompt asked again | none (a quirk not copied) |
-| Held keys (spec 06 §3) | Only the selection cycles and the movement log's single step repeat | Every main-window key repeats while held (inferred) | L |
+| Held keys (spec 06 §3, §7 Q117) | Only the selection cycles and the movement log's single step repeat (OpenSE4's choice, kept) | Every main-window key repeats while held, End Turn too (confirmed: binary, 2026-10-15) | L |
 | Set Patrol's end | Also Enter or a right click (OpenSE4's), Repeat on, a lone order kept as a plain move | Only a click on the object's own sector | none (an addition) |
 | View Orders | Editable (Move Up, Move Down, Delete Order, Clear Orders, Repeat), the current order first | Read-only, the list in place | none (an addition) |
 | Opening Set Construction Queue from Construction Queues | Marks the object changed only when something is changed there | Marks it as the window opens | L (which minister flags a switched player's copy carries) |

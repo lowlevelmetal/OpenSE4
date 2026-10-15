@@ -1082,9 +1082,9 @@ void MainWindow::cloakNow(UiContext& ui, bool cloak) {
 void MainWindow::chooseFormation(UiContext& ui) {
     const game::Fleet* f = fleet_ ? ui.state().fleet(*fleet_) : nullptr;
     if (!f) return;
-    // Two pickers in turn (spec 06 §1.3, confirmed: binary): the formation,
-    // which is set as it is picked, then the strategy (inferred: Cancel on the
-    // second keeps the formation picked).
+    // Two pickers in turn (spec 06 §1.3, §7 Q118, confirmed: binary): the
+    // formation, which is set as it is picked, then the strategy; Cancel on
+    // the second keeps the formation picked.
     Chooser c;
     c.title = "Select Formation";
     c.note = f->name;
@@ -2339,10 +2339,10 @@ void MainWindow::hotkeys(UiContext& ui) {
     // uses as it is held stays itself (OpenSE4's own, such as Ctrl+Shift+N).
     auto taken = [&](const KeyChord& c) { return !chordUser(keys, appSettings().controls.modKeys, modActions(), c).empty(); };
     auto pressed = [&](Action a) { return keys.pressedOneModifier(a, false, taken); };
-    // A held key repeats, as the original's key-down does (spec 06 §3,
-    // inferred): ours only for the selection cycles and the movement log's
-    // single step, so that a held key never opens a window again, flips an
-    // order twice or ends several turns.
+    // A held key repeats, as the original's key-down does for every key
+    // (spec 06 §3, §7 Q117, confirmed: binary): ours only for the selection
+    // cycles and the movement log's single step, so that a held key never
+    // opens a window again, flips an order twice or ends several turns.
     auto pressedOrHeld = [&](Action a) { return keys.pressedOneModifier(a, true, taken); };
 
     // The four movement-log keys start the replay whatever their buttons show

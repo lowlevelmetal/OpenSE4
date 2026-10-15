@@ -318,7 +318,7 @@ OpenSE4's own choices, (inferred):
 | Select Facility | Pick a usable facility. | Use Facility order. |
 | Convert Resources | Choose source/target resource and amount. | Convert Resources order (Ctrl+V). |
 | Change Name | Text prompt "Enter New Name" holding the current name (the fleet's for a fleet). A name exactly equal, case counting, to the name of any space object of the game (a ship, base or unit group, a planet, star, warp point or other stellar object, of any empire) is refused with an "Invalid Name" box saying the name is in use, and the prompt opens again until the name is free or the player cancels; fleets' names are not compared (confirmed: binary). The original also refuses OK on the unchanged current name, as in use. Our client differs: that is taken as no change. Since 2026-10-14 the engine refuses such names for every player (`cmd::Rename`, `spaceObjectNameInUse`) and our prompt shows the box. | Order N. |
-| Formation \ Strategy picker | For a selected fleet: two pickers in turn, the formation, then the strategy (confirmed: binary). Ours sets the formation as it is picked, and Cancel on the strategy picker keeps it (inferred). | Order H. |
+| Formation \ Strategy picker | For a selected fleet: two pickers in turn, the formation, then the strategy; the formation is set as soon as it is picked, and Cancel on the strategy picker keeps it (confirmed: binary, §7 Q118). Ours does the same. | Order H. |
 | Abandon Planet confirmation | Two questions: abandon the planet, then (with facilities) whether to scrap them; the answer becomes the colony's Abandon order (spec 02 §5, confirmed: binary). | Ctrl+A. |
 | Pick Object | Choose one planet, warp point, own object or target when the sector clicked holds several (§2.9), or the object a stellar manipulation acts on when the vehicle's sector holds several (below) (confirmed: binary). | Colonize, Warp, Drop Cargo, a pursuing Attack, Stellar Manipulation. |
 | Colony-type picker | Shown when a colonize order completes, if the empire option is on. | Colonize. |
@@ -333,8 +333,8 @@ vehicle's sector and a button for each of the 13 manipulations.
   ability's value above 0. Nothing else is tested: the order's own checks (spec 01 §9) are
   made when it is carried out.
 - Construct first asks for the world's size: the constructed worlds (PlanetSize records
-  with `Constructed`) whose `Special Ability ID` is at most the ability's value. Our list
-  offers them in PlanetSize.txt order (inferred).
+  with `Constructed`) whose `Special Ability ID` is at most the ability's value, in
+  PlanetSize.txt order; the picker opens even when one size qualifies (§7 Q114).
 - With Empire Options' "confirm stellar manipulation" on, a "Confirm Action" Yes/No names
   the effect; for Construct it names the size, asking whether to build that world around
   this star (§7 Q46). No gives no order.
@@ -347,7 +347,7 @@ vehicle's sector and a button for each of the 13 manipulations.
   window asks which; with none a "Cannot Perform Action" box says the sector holds no such
   object, and no order is given. The candidates are every object of that kind in the
   sector, in the system's object order, whether or not the player sees it, as for Colonize
-  (§2.9) (inferred; §7 Q114).
+  (§2.9) (§7 Q114).
 - The order is appended to the vehicle's **own** order list, never given to its fleet: the
   other members' lists stay as they are (a fleet member's own list can then differ from
   theirs; spec 03 §8 says how a fleet acts on such lists).
@@ -1725,7 +1725,8 @@ Three groups, left to right [T][S]:
      and dim buttons do nothing.
 3. **Selection buttons**: three stacked "previous | icon | next" controls (48x24) cycling
    through ships, fleets and colonies, at the panel's top right: 48 px left of its right
-   edge, at (448,34) at 800x600 and (965,34) at 1024x768 (confirmed: binary).
+   edge, at (448,34) at 800x600 and (965,34) at 1024x768; they play no sound (confirmed:
+   binary).
    **The ship cycle** (confirmed: binary). The top selector's arrows, Space, Ctrl+N and
    Ctrl+B all run one command over the same ships: next (Space, Ctrl+N, the right arrow)
    or previous (Ctrl+B, the left arrow) through the vehicles in object order, wrapping
@@ -2652,10 +2653,12 @@ same (`Bindings::pressedOneModifier`, `oneModifier`, `MainWindow::hotkeys`); bef
 took only its exact modifiers (AltGr counting as Alt). A chord that one of OpenSE4's own bindings
 or a mod's key uses as it is held, such as Ctrl+Shift+N (the AI notes view), keeps its meaning.
 
-A held key repeats: the main window acts on every key-down message the system sends, so
-holding Space keeps cycling through the ships and holding Ctrl+I keeps stepping the movement
-log's days (inferred: the usual key-down repeat, with nothing in the handlers telling a
-repeat apart). Our client differs: only the selection cycles (Space, Ctrl+N, Ctrl+B, Ctrl+F,
+A held key repeats: the main window acts on every key-down message the system sends, repeats
+included, with no repeat test anywhere, so holding Space keeps cycling through the ships,
+holding Ctrl+I keeps stepping the movement log's days, and every other main-window key, End
+Turn too, acts again whenever no window is open and the main window is not busy (confirmed:
+binary; 2026-10-15, complete listing; §7 Q117). A window that opens at the turn's start then
+takes the following repeats (inferred). Our client differs: only the selection cycles (Space, Ctrl+N, Ctrl+B, Ctrl+F,
 Ctrl+D, Ctrl+C, Ctrl+X) and the movement log's single step repeat; a held window, order or
 End Turn key acts once, so that it never opens a window again, flips an order twice or ends
 several turns.
@@ -4524,10 +4527,10 @@ something open; all are now settled from the executable:
     - **Skip ships under construction** skips ships whose status is Under Construction,
       which a ship has only from its creation until its components are first updated; a
       space yard runs that update at once (and every supply update does too), so in a
-      normal game the option skips nothing. This answer was not rechecked when the claims
-      that something is never read or never done were checked again on the complete
-      listing (2026-10-14); it rests on the listing that cut routines short at their
-      cleanup blocks, so a reader of the status may have been missed. To recheck.
+      normal game the option skips nothing. Rechecked on the complete listing (2026-10-15):
+      a ship is Under Construction only from its creation until its first component update,
+      the build completion runs that update at once, and nothing else sets the status, so
+      the answer stands.
     - **Save Empire** first asks whether to save the designs with the empire (Yes/No; Esc
       and Enter mean No), then opens the empire file picker. The file holds a copy of the
       empire with the game state cleared (research, intelligence, diplomacy, queues, log,
@@ -6245,7 +6248,10 @@ an imported turn-based game of the original.
      (a planet a storm hides, a cloaked colony's planet), as Colonize's pick does (§2.9)? And
      does the Construct size picker list the constructed worlds in PlanetSize.txt order, and
      appear when only one size qualifies? Our client lists every object of the kind, seen or
-     not, and always shows the size picker, its sizes in file order (inferred).
+     not, and always shows the size picker, its sizes in file order (inferred). **Answer**
+     (confirmed: binary; 2026-10-15, complete listing): the targets are every object of the kind
+     in the sector, seen or not; the Construct size picker always opens, its sizes in
+     PlanetSize.txt order. Ours already does.
 
 **The REA parity audit's main window (2026-10-14).** The audit of the original's main window
 against the executable settled the ship cycle, the location keys, Set Patrol, Change Name,
@@ -6270,9 +6276,15 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      ends?
 117. **Held keys.** Which of the main window's keys repeat while held, and does End Turn?
      Ours repeats only the selection cycles and the movement log's single step (§3).
+     **Answer** (confirmed: binary; 2026-10-15, complete listing): every one, End Turn too: the
+     main window acts on every key-down message, repeats included, whenever no window is open
+     and it is not busy (§3). Ours keeps acting once for windows, orders and End Turn, a choice
+     of its own (§3, docs/PARITY_GAPS.md).
 118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is
      picked; Cancel on the strategy picker that follows keeps it. Does the original keep the
-     formation, or change nothing unless both are picked?
+     formation, or change nothing unless both are picked? **Answer** (confirmed: binary;
+     2026-10-15, complete listing): the formation is set as soon as it is picked, and Cancel on
+     the strategy picker keeps it. Ours already does.
 
 **From implementing the REA parity audit's units package (2026-10-14).**
 
