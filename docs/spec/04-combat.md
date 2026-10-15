@@ -1174,7 +1174,11 @@ same (§10.6).
      recomputed every round.
   2. Every unit rolls: it hits if roll ≤ (its side's offense + 50 − the other side's
      defense). There is no clamp. Every living unit of every stack on both sides rolls,
-     those that add nothing included (confirmed: binary).
+     those that add nothing included: a troop without weapons, and a stored fighter,
+     satellite, platform, mine or drone, draws its number and adds 0 on a hit; all the
+     invaders roll first, stack by stack, then all the defenders (confirmed: binary).
+     Since 2026-10-14 ours follows (`hits`, `combat_ground.cpp`); it used to skip the
+     stacks whose attack is 0, so they drew no number.
   3. A hit adds the unit's attack: militia use the setting; a troop unit uses the sum,
      over its weapons, of each weapon's largest table entry (with mount). Units without
      weapons, and stored units other than troops and militia, add nothing.
@@ -2162,8 +2166,9 @@ answered from the executable. The engine was brought in line with the answers th
     the invaders all their troop stacks, for the defender every stack in the planet's
     cargo, militia and other stored units included. A drawn militia stack credits nothing.
     Every living unit of every stack on both sides rolls, units that add nothing included
-    (confirmed: binary). The engine matches in effect: it skips the rolls that add nothing
-    and the draw when militia die, which changes only how many random numbers are used.
+    (confirmed: binary). The engine matched in effect: it skipped the rolls that add
+    nothing and the draw when militia die, which changes only how many random numbers are
+    used. Since 2026-10-14 ours makes both (`hits`, `applyDamage`, `combat_ground.cpp`).
 66. **Seekers.** **Answer:** yes, the pool keeps its old value when a hit of another type
     destroys a member; when such a hit destroys none, its damage joins the pool. After a
     hull-damaging hit destroys a member the pool is 0 and the rest of that hit is lost

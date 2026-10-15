@@ -464,6 +464,42 @@ TEST_CASE("combat rules: ground combat hits armed troops first, then militia, th
     CHECK(s.design(marksman).enemyTonnageDestroyed == combatRules().hull(s.design(armed).hull).tonnage);
 }
 
+TEST_CASE("combat rules: every unit rolls in a ground combat round, those that add nothing too") {
+    // Spec 04 §13 "Round" step 2 (confirmed: binary): a troop without weapons
+    // and a stored fighter draw their numbers and add 0 on a hit; the invaders
+    // roll first, then the defenders.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& target = homeworld(s, ar.b);
+    target.population = {{ar.b, 10}};   // no militia
+    const DesignId rifleman = design(s, ar.a, "Rifleman", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const DesignId porter = design(s, ar.a, "Porter", "Test Troop Hull", {"Test Troop Armor"});
+    const DesignId guard = design(s, ar.b, "Guard", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor", "CT Big Armor"});
+    const DesignId wasp = design(s, ar.b, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "CT Big Armor"});
+    target.cargo.units = {{guard, 1}, {wasp, 3}};
+    target.landedTroops = {{rifleman, 1}, {porter, 2}};
+    target.invader = ar.a;
+    target.militia = -1;
+    combat::detail::GroundFight fight;
+    fight.attacker = ar.a;
+    fight.defender = ar.b;
+    fight.invaders = &target.landedTroops;
+    fight.cargo = &target.cargo;
+    fight.population = &target.population;
+    fight.militia = &target.militia;
+    combat::CombatSettings cs = combat::loadSettings(combatRules());
+    cs.groundTurns = 1;
+    Rng rng(4);
+    Rng probe = rng;
+    const combat::detail::GroundOutcome o = combat::detail::fightGround(combatRules(), s, cs, fight, rng);
+    REQUIRE(o.rounds == 1);
+    // Nobody can die (8 a hit, 30 % of it), so the round drew one number for
+    // each of the 3 invaders and the 4 defenders.
+    CHECK(target.landedTroops == std::vector<UnitStack>{{rifleman, 1}, {porter, 2}});
+    for (int n = 0; n < 7; ++n) probe.rangeInt(1, 100);
+    CHECK(probe.next() == rng.next());
+}
+
 TEST_CASE("combat rules: stored units other than troops do not stop a capture") {
     Arena ar = makeArena();
     GameState& s = ar.s;

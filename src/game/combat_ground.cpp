@@ -111,20 +111,22 @@ int holders(const std::vector<Stack>& side) {
     return n;
 }
 
+// Every living unit of every stack rolls, those that add nothing included (a
+// troop without weapons, a stored fighter, satellite, platform, mine or drone
+// adds 0 on a hit) (spec 04 §13, confirmed: binary; since 2026-10-14).
 int64_t hits(const std::vector<Stack>& side, int chance, Rng& rng) {
     int64_t total = 0;
-    for (const Stack& st : side) {
-        if (st.attack <= 0) continue;
+    for (const Stack& st : side)
         for (int n = 0; n < st.count; ++n)
             if (rng.rangeInt(1, 100) <= chance) total += st.attack;   // no clamp (confirmed: binary)
-    }
     return total;
 }
 
 // Whole units die while the damage covers their hit points; the rest moves on
-// to the next stack. Each loss credits a random stack of the killing side with
-// the dead units' hull tonnage, unless that stack is militia (confirmed:
-// binary). Returns what is left over.
+// to the next stack. Each loss, militia's too, draws a random stack of the
+// killing side, which is credited with the dead units' hull tonnage unless it
+// is militia; dead militia have none (confirmed: binary; the draw for dead
+// militia since 2026-10-14). Returns what is left over.
 int64_t applyDamage(const Rules& r, GameState& s, std::vector<Stack>& side, const std::vector<Stack>& killers, int64_t damage, Rng& rng) {
     for (Stack& st : side) {
         if (damage <= 0) break;
@@ -132,9 +134,9 @@ int64_t applyDamage(const Rules& r, GameState& s, std::vector<Stack>& side, cons
         const int64_t killed = std::min<int64_t>(st.count, damage / st.hitPoints);
         st.count -= static_cast<int>(killed);
         damage -= killed * st.hitPoints;
-        if (killed <= 0 || !st.list || killers.empty()) continue;
+        if (killed <= 0 || killers.empty()) continue;
         const Stack& credit = killers[rng.index(killers.size())];
-        if (credit.list && credit.design.valid())
+        if (st.list && credit.list && credit.design.valid())
             s.design(credit.design).enemyTonnageDestroyed += killed * designTonnage(r, s.design(st.design));
     }
     return std::max<int64_t>(0, damage);
