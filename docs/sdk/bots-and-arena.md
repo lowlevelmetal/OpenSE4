@@ -144,8 +144,10 @@ moves every player i seats on, so that over a run each player plays each seat an
 race (`--no-swap` keeps them in place). The races are drawn from each game's seed unless
 `--race` names them; `--systems`, `--quadrant-size`, `--quadrant` and `--turn-based`
 shape the game, or `--setup=FILE.toml` takes the options and empires of a server
-[setup file](../MULTIPLAYER.md#setup-files). A game ends after `--turns`, at a victory,
-or when one empire is left. Its winner is the victory's, the last one standing, or the
+[setup file](../MULTIPLAYER.md#setup-files). A game ends after `--turns`, at a victory
+(in a simultaneous game, as soon as the classic victory check is met: the game could go
+on, but nothing is produced and no computer player acts any more), or when one empire is
+left. Its winner is the victory's, the last one standing, or the
 best score at the end.
 
 **What it writes** (in `--out=DIR`, default `./arena`):

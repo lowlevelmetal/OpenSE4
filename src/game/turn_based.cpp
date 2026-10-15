@@ -318,6 +318,15 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     // Unless it asked for none, the classic AI's own steps run around them as
     // for a computer empire; its options and claims are commands of the
     // classic politics answer instead (docs/sdk/ai-protocol.md §9).
+    // Once the victory check has marked the game completed (its last game
+    // turn), the start-of-turn step skips the ministers and the computer
+    // player, and the vehicles get no movement back and carry out no orders
+    // by themselves: a human gives orders live with whatever movement is
+    // left (spec 05 §6, confirmed: binary). The destruction check still runs.
+    if (s.lastTurn) {
+        score::checkDestruction(ctx, e);
+        return human || living(s, e);
+    }
     const bool player = playedByController(ctx, e);
     const bool own = classicStateKept(ctx, e);
     std::optional<ai::StartOfTurnFigures> figures;
@@ -482,6 +491,8 @@ void computerTurn(LiveContext& lc, EmpireId e, Control control) {
             passTurn(ctx, e);
             return;
         }
+    } else if (s.lastTurn) {
+        // The game's last turn: no computer player and no minister acts (spec 05 §6).
     } else if (playedByController(ctx, e)) {
         // An empire handed to the computer during its own turn whose
         // controller is a script or external player: the player plans the

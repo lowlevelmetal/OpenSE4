@@ -299,7 +299,7 @@ bool galaxyAtPeace(const GameState& s) {
 void checkVictory(TurnContext& ctx, uint32_t date) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    if (s.gameOver || s.lastTurn) return;
+    if (s.gameOver) return;
     const VictoryConditions& v = s.options.victory;
     const int64_t now = date;
     // "After X years": nothing is checked before then, and the peace counter stands still.
@@ -308,6 +308,9 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     // The peace counter rises each turn and restarts whenever two living
     // empires hold a treaty worse than Non-Aggression (no contact included).
     s.peacefulTurns = galaxyAtPeace(s) ? s.peacefulTurns + 1 : 0;
+    // A simultaneous game already marked completed goes on being checked when
+    // the host processes more turns; nothing more comes of it (spec 05 §6).
+    if (s.lastTurn) return;
 
     std::vector<std::pair<EmpireId, int64_t>> scores;
     for (const Empire& e : s.empires)
@@ -350,14 +353,15 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     else if (techMet) reason = std::format("an empire has researched {}% of its technology", v.techPercentValue);
     else reason = std::format("the quadrant has been at peace for {} years", yearsText(v.peaceTurns));
 
-    // The game ends; the original names no winner. A turn-based game first
-    // plays one more game turn, its last, which every player plays (spec 05
-    // §6, confirmed: binary); a simultaneous game ends at once (OpenSE4's,
-    // spec 05 open question 79). The best score (neutral empires aside, ties
-    // to the lower number) is kept for the game-over screen (OpenSE4 choice,
+    // The game ends; the original names no winner. The check only sets the
+    // game's completed mark (spec 05 §6, confirmed: binary): a turn-based
+    // game plays one more game turn, its last, which every player plays, and
+    // the next wrap ends it; nothing ends a simultaneous game, which the host
+    // may go on processing, every start- and end-of-turn step skipped (spec
+    // 05 question 79). The best score (neutral empires aside, ties to the
+    // lower number) is kept for the game-over screen (OpenSE4 choice,
     // inferred).
-    if (s.options.simultaneous) s.gameOver = true;
-    else s.lastTurn = true;
+    s.lastTurn = true;
     s.winner = {};
     int64_t best = 0;
     for (const auto& [id, sc] : scores)

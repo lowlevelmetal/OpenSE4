@@ -673,7 +673,10 @@ Q88–Q96 (their remaining choices are noted beside each answer):
   the Victory picture and asks whether to play on. Since 2026-10-14 a turn-based game destroys
   the human at the end of that last turn's start, as the original does (Q99), plays one more
   game turn after its victory check is met, every human seeing the Victory ending at its own
-  turn, and ends with the Game Completed box (spec 05 §6).
+  turn, and ends with the Game Completed box (spec 05 §6). Since 2026-10-14 (complete
+  listing) that last turn has no start- or end-of-turn steps, and a simultaneous game is no
+  longer ended by its victory check: it is marked completed, the Victory ending shows at every
+  turn, and further turns skip those steps (spec 05 §6, Q79).
 - **Help** and the **Galaxy Map** (spec 07 session 5): the original's layout, frame, places and
   button slots; Help's Weap Mount tab and Manual button.
 
@@ -733,7 +736,6 @@ different:
 | Scenario pages in network and e-mail games (`classic_mode.cpp` `openTurnPage`) | Each player's own computer shows that player's page at the start of their turn | The host's turn processing shows every human's page on the host's screen; a network player never sees them (spec 06 §5.6) | L |
 | Scenario quirks not copied (`classic_scenario.hpp`) | `For Players` is a list of numbers; "Page i of n" counts i within the page's series; loading a scenario game from the intro keeps it one; a new game never carries the tutorial's flag; the page shown last is kept per empire | Player 1 also gets player 11's pages; i is the page's place in the whole file; Load Game and Resume Game from the intro drop scenario mode; the Game Menu's New keeps the tutorial's flag, "T" and pages (inferred); one page shown last for the game (spec 06 §5.6, spec 08 §3.4) | L |
 | The endings that end the game (`ClassicMode::leaveToFront`) | Game Completed, Human Dead, No to playing on after the conquest and a fourth wrong Next Player password return to the intro | The program exits (spec 06 §1.7) | L |
-| Victory in a simultaneous game (`score::checkVictory`) | The game ends at once: the Victory ending at the next turn's start, no further turn | Not described: a turn-based game plays one more game turn first (spec 05 §6, open question 79) | L |
 | Sign-in passwords (`ClassicSession::passwordMatches`, `loginPasswordMatches`) | Only a hash is kept: the trimmed password in small letters, then as typed, is tried, so a password set with capitals opens Login To Game only with them; "master" is recognised in a local game's hash only | The plain password: Next Player trims and keeps case, Login To Game trims and ignores case (spec 06 §1.1, §1.2.1) | L |
 | Login To Game's Game Master (`ClassicMode::drawLogin`) | Goes on to the first human's turn behind the Next Player window; a destroyed or computer-controlled empire's row signs nobody in; Cancel returns to the intro | The host's between-turns view (player 0) (spec 06 §1.1) | L |
 | Save Game (`screens/game_menu.cpp`) | OpenSE4's window: a name box, the saves, Save, Change Folder (the original's Change Directory), Save for SE IV; questions before overwriting and deleting; it stays open after saving | The Load Game dialog titled "Save Game": a click overwrites at once, New Save Game asks for the name; Delete Game deletes at once and also removes the file of the same name in `temp/` (spec 06 §1.2) | L |

@@ -145,7 +145,7 @@ others of that mod for that hook do not run that time.
 | `treaty_changed` | Event: the treaty between two empires changed. | `f(game, empire, other, treaty, old_treaty, fx)` (treaty names) |
 | `message_sent` | Event: a diplomatic message reached its empire. | `f(game, message, fx)` |
 | `event_fired` | Event: an event took effect: a classic one (Events.txt) or a mod's. | `f(game, event, fx)`: `event.name` (the classic event's Type, or the mod event's name), `event.mod` (None for a classic one), `empire`, `colony`, `vehicle`, `location`. |
-| `check_victory` | Each game turn, after the classic victory check, while the game goes on; the mods' victory conditions and the scenario's objectives follow. | `f(game, fx)`; `fx.victory` ends the game. |
+| `check_victory` | Each game turn, after the classic victory check, while the game goes on and that check has not marked it completed; the mods' victory conditions and the scenario's objectives follow. | `f(game, fx)`; `fx.victory` ends the game. |
 | `turn_end` | The end of the game turn, after the event step, before its flags are cleared and the turn number advances. | `f(game, fx)` |
 
 `game.turn` is the turn being processed throughout (`GameState::turn`).

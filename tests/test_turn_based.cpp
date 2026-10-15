@@ -308,23 +308,75 @@ TEST_CASE("turn-based: each player's end-of-turn processing runs when it ends it
     CHECK(activePlayer(d.s()) == kB);
     CHECK_FALSE(d.s().gameOver);
     endPlayerTurn(d.r(), d.s(), kB);
-    // When the last turn wraps, the game is over before anything of the next
-    // game turn: the date stays, no statistics row is added.
+    // The last turn's end-of-turn processing is skipped entirely (spec 05 §6,
+    // confirmed: binary): no statistics row. When it wraps, the game is over
+    // before anything of the next game turn: the date stays.
     CHECK(d.s().gameOver);
     CHECK(d.s().turn == 1);
-    CHECK(d.s().empire(kA).history.size() == 2);
+    CHECK(d.s().empire(kA).history.size() == 1);
     CHECK(activePlayer(d.s()) == EmpireId{});
     CHECK(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {}))));
 }
 
-TEST_CASE("turn-based: a simultaneous game's victory ends it at once") {
+TEST_CASE("turn-based: the last turn has no start- or end-of-turn steps but orders given live (spec 05 §6)") {
+    Duel d;
+    d.s().options.victory.years = true;
+    d.s().options.victory.yearsTurns = 0;
+    resumeTurnBased(d.r(), d.s());
+    endPlayerTurn(d.r(), d.s(), kA);
+    endPlayerTurn(d.r(), d.s(), kB);
+    REQUIRE(d.s().lastTurn);
+    REQUIRE_FALSE(d.s().gameOver);
+    // A's turn of the last game turn has begun (resume): its runner got no
+    // movement back, and the order it was given before ran nothing.
+    Vehicle& runner = d.w.v(d.runner);
+    runner.movement = 2;
+    runner.orders = {moveTo(d.a, 12, 6)};
+    d.s().playerTurn = PlayerTurn{};
+    d.s().empire(kA).researchPool = 5000;
+    const int64_t pool = d.s().empire(kA).researchPool;
+    resumeTurnBased(d.r(), d.s());
+    REQUIRE(activePlayer(d.s()) == kA);
+    CHECK(d.w.v(d.runner).movement == 2);
+    CHECK(d.w.v(d.runner).location == at(d.a, 0, 6));
+    // The human still gives orders live, with the movement left.
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 12, 6)}))));
+    CHECK(d.w.v(d.runner).movement == 0);
+    CHECK(d.w.v(d.runner).location == at(d.a, 2, 6));
+    // Its end-of-turn processing is skipped: the research pool is not spent.
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK(d.s().empire(kA).researchPool == pool);
+    CHECK(d.s().empire(kA).history.size() == 1);
+}
+
+TEST_CASE("turn-based: a simultaneous game's victory marks it completed, and further turns skip every start- and end-of-turn step (spec 05 §6)") {
     Duel d;
     d.s().options.simultaneous = true;
     d.s().options.victory.years = true;
     d.s().options.victory.yearsTurns = 0;
     processTurn(d.r(), d.s(), {});
-    CHECK(d.s().gameOver);
-    CHECK_FALSE(d.s().lastTurn);
+    // Nothing ends the game: the check only marks it completed.
+    CHECK_FALSE(d.s().gameOver);
+    CHECK(d.s().lastTurn);
+    CHECK(gameDecided(d.s()));
+    REQUIRE(d.s().turn == 1);
+    REQUIRE(d.s().empire(kA).history.size() == 1);
+    // The host may go on: the turn is processed, the date advances, the ships
+    // move, but no end-of-turn processing runs.
+    d.s().empire(kA).researchPool = 5000;
+    Vehicle& runner = d.w.v(d.runner);
+    runner.orders = {moveTo(d.a, 12, 6)};
+    processTurn(d.r(), d.s(), {});
+    CHECK(d.s().turn == 2);
+    CHECK_FALSE(d.s().gameOver);
+    CHECK(d.s().empire(kA).researchPool == 5000);
+    CHECK(d.s().empire(kA).history.size() == 1);
+    CHECK(d.w.v(d.runner).location != at(d.a, 0, 6));
+    // The Game Over entry is not logged again; the log is no longer pruned
+    // (that is end-of-turn processing too), so the first one stays.
+    int overs = 0;
+    for (const LogEntry& l : d.s().empire(kA).log) overs += l.title == "Game Over" ? 1 : 0;
+    CHECK(overs == 1);
 }
 
 TEST_CASE("turn-based: a human with nothing left is destroyed at its turn start and plays that turn marked dead") {

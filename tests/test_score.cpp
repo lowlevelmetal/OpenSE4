@@ -246,10 +246,13 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         s.options.victory.score = true;
         s.options.victory.scoreValue = score::empireScore(r, s, kB) + 1;
         end(s);
-        CHECK_FALSE(s.gameOver);
+        CHECK_FALSE(s.lastTurn);
         boost(s, kB, 1);
         end(s);
-        CHECK(s.gameOver);
+        // The check only marks the game completed (spec 05 §6): a
+        // simultaneous game goes on, so it is not over.
+        CHECK(s.lastTurn);
+        CHECK_FALSE(s.gameOver);
         CHECK(s.winner == kB);  // the best score, for the game-over screen
         const LogEntry* over = findLog(s, kA, "Game Over");
         REQUIRE(over);
@@ -262,11 +265,11 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         s.options.victory.percentOfSecondValue = 200;
         boost(s, kC, 18);
         end(s);
-        CHECK_FALSE(s.gameOver);
+        CHECK_FALSE(s.lastTurn);
         wipeOut(s, kC);
         s.empire(kC).alive = false;
         end(s);
-        CHECK(s.gameOver);
+        CHECK(s.lastTurn);
         CHECK(s.winner == kB);
     }
     SUBCASE("percent of second place overrides the score and years tests") {
@@ -279,23 +282,23 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         s.options.victory.yearsTurns = 10;
         s.turn = 30;
         end(s);
-        CHECK_FALSE(s.gameOver);  // score and years are met, but the lead is not
+        CHECK_FALSE(s.lastTurn);  // score and years are met, but the lead is not
         s.options.victory.percentOfSecond = false;
         end(s);
-        CHECK(s.gameOver);
+        CHECK(s.lastTurn);
     }
     SUBCASE("technology share, counting levels") {
         GameState s = fresh();
         s.options.victory.techPercent = true;
         s.options.victory.techPercentValue = 75;
         end(s);
-        CHECK_FALSE(s.gameOver);
+        CHECK_FALSE(s.lastTurn);
         Empire& c = s.empire(kC);
         const int total = research::maxLevels(r, s, c);
         for (uint32_t i = 0; i < r.data().techAreas.size() && research::totalLevels(r, c) * 100 < 75 * total; ++i)
             if (research::canGainLevel(r, s, c, ruleset::TechAreaId{i})) c.techLevels[i] = r.data().techAreas[i].maxLevel;
         end(s);
-        CHECK(s.gameOver);
+        CHECK(s.lastTurn);
     }
     SUBCASE("years elapsed") {
         GameState s = fresh();
@@ -303,10 +306,10 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         s.options.victory.yearsTurns = 20;
         s.turn = 18;
         end(s);
-        CHECK_FALSE(s.gameOver);
+        CHECK_FALSE(s.lastTurn);
         s.turn = 19;  // the date reaches 2402.0 at the end of this turn
         end(s);
-        CHECK(s.gameOver);
+        CHECK(s.lastTurn);
         CHECK(s.winner == kB);
     }
     SUBCASE("peace needs Non-Aggression or better between every pair") {
@@ -320,13 +323,13 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         diplomacy::setTreaty(ctx, kA, kC, Treaty::None);
         for (int i = 0; i < 12; ++i) end(s);
         CHECK(s.peacefulTurns == 0);  // no treaty breaks it too
-        CHECK_FALSE(s.gameOver);
+        CHECK_FALSE(s.lastTurn);
         diplomacy::setTreaty(ctx, kA, kC, Treaty::TradeAlliance);
         for (int i = 0; i < 9; ++i) end(s);
         CHECK(s.peacefulTurns == 9);
-        CHECK_FALSE(s.gameOver);
+        CHECK_FALSE(s.lastTurn);
         end(s);
-        CHECK(s.gameOver);
+        CHECK(s.lastTurn);
     }
     SUBCASE("before the After-X-years date nothing is checked and peace does not count") {
         GameState s = fresh();
@@ -337,11 +340,11 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         s.options.victory.delayTurns = 10;
         s.turn = 8;
         end(s);
-        CHECK_FALSE(s.gameOver);
+        CHECK_FALSE(s.lastTurn);
         CHECK(s.peacefulTurns == 0);
         s.turn = 9;
         end(s);
-        CHECK(s.gameOver);
+        CHECK(s.lastTurn);
         CHECK(s.peacefulTurns == 1);
     }
 }

@@ -937,18 +937,44 @@ before the random event (§8) (confirmed: binary).
 binary). It announces that this is the last turn and points the players to the Scores
 window, where the ranking shows the result.
 
+**The completed mark** (confirmed: binary). The check only sets the game's "completed" mark,
+in both turn styles. Once it is set, every empire's start-of-turn step skips its ministers and
+its computer player (the AI state update, the political step and every order they give) and, in
+a turn-based game, the movement refill and the automatic carrying out of standing orders at the
+turn's start; and every empire's end-of-turn processing (§8) is skipped entirely: no player
+files, intelligence, research, income, trade, maintenance, planets, happiness, construction,
+repair, design forgetting, supply, storage cap, system abilities, ground combat or log pruning.
+The destruction check is not affected. The score display shows every empire as soon as the
+mark is set (§5; corrected 2026-10-14, complete listing: the last turn was played in full, and
+"every score shows during the last turn" was inferred).
+
 **The last turn of a turn-based game** (confirmed: binary). The check runs as each game turn
-wraps and only sets the game's "completed" mark. The game goes on for one more full game turn:
-every computer player plays its turn, and every human gets the usual sign-in, then the Victory
-ending (this is the last turn; see the Scores window), then plays that turn as usual. At the
-next wrap, before any event or turn processing, an OK box titled "Game Completed" says the game
-is over and the program exits. OpenSE4 follows this since 2026-10-14 (`GameState::lastTurn`,
-save format 10; `score::checkVictory`, `turn_based.cpp` `endGameTurn`): the completed mark is
-`lastTurn`, the next wrap sets `gameOver` before the date advances, every score shows during
-the last turn as once the game is over (`score::scoreVisible`, inferred), and the client's Game
-Completed box returns to the intro (spec 06 §1.7). The original's saved games carry the mark
-(spec 08 §3.4). A simultaneous game ends at once when a condition is met in ours (open
-question 79).
+wraps. The game goes on for one more game turn: every human gets the usual sign-in, then the
+Victory ending (this is the last turn; see the Scores window), then gives orders live, with
+whatever movement its vehicles had left (none is given back), and sends messages; the computer
+players do nothing, and nothing is produced or researched. At the next wrap, before any event
+or turn processing, an OK box titled "Game Completed" says the game is over and the program
+exits.
+
+**A simultaneous game** (confirmed: binary; question 79). The host's check sets the same mark
+(and shows the Victory ending on the host's screen when a player sits there). Nothing ends the
+game: every player who opens a later turn sees the Victory ending again, there is no "Game
+Completed" box, and the host can go on processing turns. Those turns read the orders, process
+the messages, advance the date, move ships and fight, run the destruction, contact and victory
+checks and the event step, but skip every start-of-turn and end-of-turn step. Whether the
+network host's window refuses to process turns then was not traced.
+
+OpenSE4 follows this since 2026-10-14 (`GameState::lastTurn` is the mark, save format 10;
+`score::checkVictory`, `empireEndOfTurn`, `turn_based.cpp` `startPlayerTurn` and `endGameTurn`,
+`turn.cpp` `processTurn`): in a turn-based game the next wrap sets `gameOver` before the date
+advances and the client's Game Completed box returns to the intro (spec 06 §1.7); in a
+simultaneous game the client shows the Victory ending at every turn (`FinaleWatch`), and a
+network host keeps processing turns, telling its players once that the game is complete. The
+original's saved games carry the mark in both styles (spec 08 §3.4). OpenSE4's own automated
+runs (the SDK's matches, arena and tests) stop a simultaneous game at its mark
+(`game::gameDecided`); a mod's victory condition or scenario still ends a game at once
+(`gameOver`). Until 2026-10-14 ours played the last turn in full and ended a simultaneous game
+at once.
 
 | Condition | Test (confirmed: binary) | Initial value |
 |---|---|---|
@@ -4882,6 +4908,14 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     once more, the players told it is the last), and what do the players see when it ends?
     OpenSE4 ends a simultaneous game at once, as before (`score::checkVictory`): the Victory
     ending shows at the next turn's start, and the game plays no further turn (inferred).
+    **Answer** (confirmed: binary, the 2026-10-14 accuracy pass): the host's check sets the
+    same completed mark, and nothing ends the game. Every player who opens a later turn sees
+    the Victory ending again; the host can go on processing turns, which read orders, process
+    messages, advance the date, move and fight and run the checks and the event step, but skip
+    every start-of-turn and end-of-turn step (§6). There is no "Game Completed" box in
+    simultaneous play. Left open: whether the network host's window refuses to process turns
+    then. Since 2026-10-14 ours follows (§6 "A simultaneous game"; `score::checkVictory`,
+    `empireEndOfTurn`, `processTurn`); our host keeps processing turns.
 80. **Communicate's lists the 2026-10-11 audit left open** (§3.4 "What a player may send",
     "Select Package's lists"). Our client chooses, until checked in the executable:
     (a) Declare War is not offered while the two empires are already at war; does the

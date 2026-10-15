@@ -96,6 +96,12 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!living(s, e)) return;
+    // Once the victory check has marked the game completed, every empire's
+    // end-of-turn processing is skipped entirely: no player files,
+    // intelligence, research, income, trade, maintenance, planets, happiness,
+    // construction, repair, design forgetting, supply, storage cap, system
+    // abilities, ground combat or log pruning (spec 05 §6, confirmed: binary).
+    if (s.lastTurn) return;
 
     // 1. The ministers' end-of-turn actions (spec 05 §7.1 group 2): Design,
     // Research, Intelligence and the construction ministers. The queues need
@@ -247,6 +253,13 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     // The script and external players of this turn (players.hpp) and the
     // rules hooks of the game's mods (hooks.hpp), if any.
     CallSession session(ctx);
+    // A game the victory check has marked completed goes on when the host
+    // processes more turns: they read the orders and messages, advance the
+    // date, move and fight, and run the destruction, contact and victory
+    // checks and the event step, but every start-of-turn step (step 4) and
+    // every end-of-turn processing (step 6, empireEndOfTurn) is skipped (spec
+    // 05 §6, confirmed: binary).
+    const bool completed = s.lastTurn;
     ctx.battles = battles;
     ctx.movementDay = options.movementDay;
     ctx.movementStep = options.movementStep;
@@ -349,7 +362,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
         stepDone();
-        if (!s.empire(id).alive) continue;
+        if (!s.empire(id).alive || completed) continue;
         // An empire that gave no orders of its own (a computer player, or a
         // human the computer plays) looks up the offer it accepts dated
         // exactly the advanced date − 2; a player's ministers use the window
@@ -414,7 +427,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
             diplomacy::deliverMessages(ctx, date, lookup);
         }
     }
-    ai::recordAiDecisions(ctx);
+    if (!completed) ai::recordAiDecisions(ctx);
     // The mods' orders_applied hooks: every empire's orders for the turn are in.
     runHook(ctx, Hook::OrdersApplied);
     deliverHooks(ctx);
@@ -453,7 +466,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     // ---- 8. Victory check; then the mods' check_victory hooks, victory
     // conditions and scenario objectives, while the game goes on.
     score::checkVictory(ctx, date);
-    if (!s.gameOver) runHook(ctx, Hook::CheckVictory);
+    if (!s.gameOver && !s.lastTurn) runHook(ctx, Hook::CheckVictory);
     deliverHooks(ctx);
 
     // ---- 9. Event step: hazard damage, the timed events that are due, then

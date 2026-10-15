@@ -604,7 +604,7 @@ what is shared, shared sight and resupply; and who pays whom.
 | Movement log replay | Not a window: in simultaneous games the main window replays the host's 30-day movement (full, stepped by day, per ship, rewind) [T]. Exact behaviour: §7 Q51 (confirmed: binary). |
 | Tutorial / Scenario text window | A page of the scenario's text: title, a 128x128 picture, Previous and Next through its series; re-opened with Ctrl+H, and in the tutorial with the "T" buttons. Layout and rules in §5.6 (confirmed: binary). |
 | Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. Ours: §1.9 "Other Settings.txt keys". |
-| Game Completed | An OK box, titled "Game Completed", saying the game is over: at the first wrap of the game turn after a turn-based game's last turn (spec 05 §6), before anything of the next game turn runs (confirmed: binary). |
+| Game Completed | An OK box, titled "Game Completed", saying the game is over: at the first wrap of the game turn after a turn-based game's last turn (spec 05 §6), before anything of the next game turn runs (confirmed: binary). A simultaneous game has none: it goes on, the Victory ending shown at every turn (spec 05 §6). |
 | Progress | A small modal window, a caption centred over a dark blue gauge from 0 to 100 %: "processing the turn" while a simultaneous game's turn is processed at the host (not shown when the host runs without a window; the work counted in the number of empires × 4 + 30 steps), and "creating the galaxy" and "placing the players" while a new game starts (confirmed: binary). |
 
 **Endings that end the game** (confirmed: binary). Each of these ends the turn loop and exits
@@ -966,7 +966,9 @@ Other Settings.txt keys the client must honour (confirmed: binary):
   since 2026-10-14). The Lose ending of a turn-based game reads the engine's mark from the
   moment the turn came up (`PlayerTurn::loseEnding`); a turn-based game's last turn shows the
   Victory ending to every human at its own turn, saying it is the last turn and pointing to
-  the Scores window, where every score shows (`score::scoreVisible`, inferred).
+  the Scores window, where every score shows (`score::scoreVisible`, confirmed: binary); a
+  simultaneous game marked completed shows it at every turn a player opens, as the original
+  does (spec 05 §6, since 2026-10-14).
 - `Use Old Log Political Message Display`: the log layout (§4.1, §7 Q11).
 - `Create Log Text File for Game` is read but never used by the original: nothing to honour.
 

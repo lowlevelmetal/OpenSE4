@@ -1364,15 +1364,18 @@ struct GameState {
     uint64_t arrivals = 0;          // the last Vehicle::arrival stamp given
     uint32_t nextMessageId = 0;
     uint32_t peacefulTurns = 0;
-    // No further turn is played: a simultaneous game whose victory check
-    // was met, a turn-based game whose last turn every player has played, or
-    // a mod's victory condition or scenario.
+    // No further turn is played: a turn-based game whose last turn every
+    // player has played, or a mod's victory condition or scenario.
     bool gameOver = false;
-    // Turn-based games (save format 10): the victory check was met as the last
-    // game turn ended (the original's "completed" mark, spec 05 §6, confirmed:
-    // binary). The game turn in progress is the last: every player plays it,
-    // the humans after the Victory ending, and when it ends the game is over
-    // (gameOver), before anything of the next game turn runs.
+    // The victory check was met (save format 10: the original's "completed"
+    // mark, spec 05 §6, confirmed: binary). From the next turn on every
+    // empire's start-of-turn step skips its ministers and computer player
+    // (and, turn-based, the movement refill and the orders run at the turn's
+    // start), and its end-of-turn processing is skipped entirely. Turn-based:
+    // the game turn in progress is the last, every player plays it after the
+    // Victory ending, and when it ends the game is over (gameOver). A
+    // simultaneous game is never ended by it: the host may go on processing
+    // turns, every player seeing the Victory ending each turn.
     bool lastTurn = false;
     EmpireId winner;
     Rng rng;

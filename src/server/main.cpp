@@ -900,6 +900,8 @@ int pbemInfo(std::span<char*> args) {
             std::printf("Turn-based: between player turns (\"pbem process\" plays on).\n");
     }
     if (state.gameOver) std::printf("The game is over.\n");
+    else if (!game::turnBased(state) && state.lastTurn)
+        std::printf("A victory condition is met: the game is complete. Turns may still be processed, but no empire produces or researches any more.\n");
     return 0;
 }
 
