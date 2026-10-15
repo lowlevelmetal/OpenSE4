@@ -2287,8 +2287,19 @@ binary).
       arrival); in the same system, a move and then Load or Drop; in the same sector, Load
       or Drop at once. Only a Drop order reserves its destination against other
       transports. A transport left without orders gets the resupply orders below.
-    - Idle ships with a Medical Bay get no order: the routine picks a planet and then drops
-      it.
+    - *Medical aid* (confirmed: binary; corrected 2026-10-14, complete listing: this line
+      said earlier, from the truncated export, that such ships get no order). When any of
+      the empire's colonies has a plague (the highest plague level among them is 1 or
+      more), each idle own ship with a Medical Bay is handled first, whatever its design
+      type: it leaves its fleet, its orders are cleared, and it gets a Move To the last
+      plagued colony in the empire's planet list, then the "Render Medical Aid" order.
+      Without a plagued colony found it gets nothing that turn. When the empire has no
+      plague, such a ship is treated by its type, so a Population Transport with a Medical
+      Bay carries people as usual. OpenSE4 follows this since 2026-10-14 (`planTransports`,
+      `ai_military.cpp`), with the Move To alone: it has no Render Medical Aid order, and its
+      Medical Bay cures a plague in the sector by itself (spec 03 §3); what the original's
+      order does when carried out was not read (spec 03 §8, question 85). It used to skip
+      every Population Transport with a Medical Bay.
   - *Retrofit*: none while over the soft cap, in the Attack, Incursion or Defend (Short
     Term) states, or while 3 ships are already being retrofitted.
     - Eligible ships are idle, have empty cargo, are in a system without enemies, and have
@@ -5093,3 +5104,6 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     first system in system order wins a tie.
     (g) *Loading errors* of the research and units files (§7.5): ours counts as one a number
     field whose value is not a whole number. Which faults does the original report?
+    (h) *Medical aid* (§7.5 *Transports*): ours gives the Move To to the plagued colony
+    without the original's Render Medical Aid order, which OpenSE4 does not have. What does
+    that order do when carried out (spec 03 §8)?

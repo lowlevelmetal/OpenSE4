@@ -3845,14 +3845,17 @@ TEST_CASE("ai: a transport delivers only where every carried race breathes, or t
     CHECK(load.back().kind == OrderKind::LoadCargo);
     CHECK(load.back().location == locationOf(s.galaxy, homePlanet));
 
-    // A transport with a Medical Bay gets no order.
+    // A transport with a Medical Bay, with no plague in the empire, goes by
+    // its type: it carries people as usual (confirmed: binary).
     const DesignId medic = addTestDesign(s, r, me, "Medic", "Test Transport Hull",
                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Medical Bay"});
     s.design(medic).designType = "Population Transport";
     const VehicleId medicId = addTestVehicle(s, r, medic, locationOf(s.galaxy, homePlanet)).id;
     ai::detail::Planner m(r, s, me, ai::detail::Mode::Computer, 5);
     ai::detail::planTransports(m);
-    CHECK(ordersOf(m, medicId).empty());
+    const auto medicOrders = ordersOf(m, medicId);
+    REQUIRE_FALSE(medicOrders.empty());
+    CHECK(medicOrders.back().kind == OrderKind::LoadCargo);
 }
 
 TEST_CASE("ai: facility upgrades go on while what was queued is at most half the net income; queued old versions switch") {
@@ -7124,4 +7127,50 @@ TEST_CASE("ai: a colonization target's value is summed in single precision, a ho
     c.homeworld = true;
     CHECK(ai::detail::colonyTargetValue(s, obj, &c) == 1'000'300'032);
     (void)r;
+}
+
+TEST_CASE("ai: with a plague, a ship with a Medical Bay leaves its fleet for the last plagued colony, whatever its type") {
+    TempTree t("medical");
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (auto& c : rs.components)
+        if (c.name == "Test Cargo Bay") {
+            ruleset::Ability a;
+            a.type = std::string(identifier(AbilityKind::MedicalBay));
+            a.value1 = "5";
+            c.abilities.push_back(a);
+        }
+    const Rules r{std::move(rs), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const auto second = freePlanetIn(s, home.system);
+    REQUIRE(second);
+    addColony(s, *second, me, {{me, 50}});
+    const DesignId medic = addTestDesign(s, r, me, "Medic", "Test Frigate",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Cargo Bay", "Test Laser"});
+    s.design(medic).designType = "Attack Ship";
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    const VehicleId ship = addTestVehicle(s, r, medic, home).id;
+    const VehicleId mate = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {mate, ship}}).ok);
+    // No plague: the Transports minister leaves a warship alone.
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        ai::detail::planTransports(p);
+        CHECK(p.st.vehicle(ship)->fleet.valid());
+        CHECK(p.st.vehicle(ship)->orders.empty());
+    }
+    // Both colonies plagued: the last one in the planet list.
+    homeworld(s, me).plagueLevel = 1;
+    s.colony(*second)->plagueLevel = 3;
+    std::optional<Location> last;
+    for (const auto& c : s.colonies)
+        if (c && c->owner == me && c->plagueLevel >= 1) last = locationOf(s.galaxy, c->planet);
+    REQUIRE(last);
+    s.vehicle(ship)->location = s.vehicle(mate)->location;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planTransports(p);
+    CHECK_FALSE(p.st.vehicle(ship)->fleet.valid());
+    if (*last == home) CHECK(p.st.vehicle(ship)->orders.empty());
+    else CHECK(p.st.vehicle(ship)->orders == std::vector<Order>{ai::detail::moveOrder(*last)});
 }

@@ -854,11 +854,26 @@ void planTransports(Planner& p) {
         }
         return one;
     };
+    // Medical aid (spec 05 §7.5 *Transports*, confirmed: binary): when any of
+    // our colonies has a plague, each idle ship of ours with a Medical Bay,
+    // whatever its design type, is handled first: it leaves its fleet, its
+    // orders are cleared, and it gets a Move To the last plagued colony in the
+    // planet list (then, in the original, the Render Medical Aid order, which
+    // OpenSE4 does not have: its Medical Bay cures in the sector by itself,
+    // spec 03 §3, question 85). Without a plague such a ship goes by its type.
+    std::optional<Location> plagued;
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id && c->plagueLevel >= 1) plagued = locationOf(p.st.galaxy, c->planet);
     for (VehicleId id : p.ownVehicles(Minister::Transports)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).aiType != "Population Transport") continue;
-        // A ship with a Medical Bay gets no order: the routine picks a planet and then drops it.
-        if (hasAbility(vehicleAbilities(p.r, p.st, *v), AbilityKind::MedicalBay)) continue;
+        if (!v || !p.idle(*v)) continue;
+        if (plagued && hasAbility(vehicleAbilities(p.r, p.st, *v), AbilityKind::MedicalBay)) {
+            if (v->fleet.valid()) p.emit(cmd::LeaveFleet{id});
+            v = p.st.vehicle(id);
+            p.setOrders(id, v->location == *plagued ? std::vector<Order>{} : std::vector<Order>{moveOrder(*plagued)});
+            continue;
+        }
+        if (v->fleet.valid() || p.info(v->design).aiType != "Population Transport") continue;
         const int capacity = vehicleCargoCapacity(p.r, p.st, *v);
         if (capacity <= 0) continue;
         const Location here = v->location;
