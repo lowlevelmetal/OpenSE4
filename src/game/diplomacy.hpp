@@ -57,6 +57,10 @@ const DiplomaticMessage* newestMessage(const GameState& s, EmpireId reader, Empi
 // to the accepter, looked up with `lookup` at that date, only when it is the
 // matching offer (spec 05 §3.4, confirmed: binary).
 void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt, MessageLookup lookup = MessageLookup::Window);
+// Delivers one message not yet delivered, as deliverMessages does, dated
+// `date` (`Politics - Fake Messages`: the date of the attacker's end-of-turn
+// processing). Nothing when it is gone or already delivered.
+void deliverMessage(TurnContext& ctx, MessageId id, uint32_t date, MessageLookup lookup = MessageLookup::Window);
 // The first-contact check in one system (spec 05 §3.1, confirmed: binary):
 // every pair of living empires that have not both met the other, that each
 // detect an object of the other in `sys` now (a vehicle or a colony there

@@ -842,6 +842,40 @@ const DiplomaticMessage* newestMessage(const GameState& s, EmpireId reader, Empi
     return newest;
 }
 
+namespace {
+
+// Delivers message `i`, dated `today`; false when its sender or recipient is
+// gone (the caller drops it).
+bool deliverAt(TurnContext& ctx, size_t i, uint32_t today, MessageLookup lookup) {
+    GameState& s = ctx.state;
+    s.messages[i].delivered = true;
+    s.messages[i].dated = today;
+    const DiplomaticMessage& m = s.messages[i];
+    if (!living(s, m.from) || !living(s, m.to) || m.from == m.to) return false;
+    if (!answerable(m.type)) s.messages[i].answered = true;
+    receive(ctx, s.messages[i], today, lookup);
+    if (ctx.hooks) {
+        // A mod's event (hooks.hpp): the message reached its empire.
+        HookArgs a;
+        a.empire = s.messages[i].from;
+        a.other = s.messages[i].to;
+        a.message = s.messages[i].id;
+        runHook(ctx, Hook::MessageSent, a);
+    }
+    return true;
+}
+
+} // namespace
+
+void deliverMessage(TurnContext& ctx, MessageId id, uint32_t date, MessageLookup lookup) {
+    GameState& s = ctx.state;
+    for (size_t i = 0; i < s.messages.size(); ++i) {
+        if (s.messages[i].id != id || s.messages[i].delivered) continue;
+        if (!deliverAt(ctx, i, date, lookup)) std::erase_if(s.messages, [&](const DiplomaticMessage& m) { return m.id == id; });
+        return;
+    }
+}
+
 void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date, MessageLookup lookup) {
     GameState& s = ctx.state;
     std::vector<MessageId> lost;
@@ -849,23 +883,7 @@ void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date, MessageLook
     const uint32_t today = date.value_or(s.turn);
     for (size_t i = 0; i < n; ++i) {
         if (s.messages[i].delivered) continue;
-        s.messages[i].delivered = true;
-        s.messages[i].dated = today;
-        const DiplomaticMessage& m = s.messages[i];
-        if (!living(s, m.from) || !living(s, m.to) || m.from == m.to) {
-            lost.push_back(m.id);
-            continue;
-        }
-        if (!answerable(m.type)) s.messages[i].answered = true;
-        receive(ctx, s.messages[i], today, lookup);
-        if (ctx.hooks) {
-            // A mod's event (hooks.hpp): the message reached its empire.
-            HookArgs a;
-            a.empire = s.messages[i].from;
-            a.other = s.messages[i].to;
-            a.message = s.messages[i].id;
-            runHook(ctx, Hook::MessageSent, a);
-        }
+        if (!deliverAt(ctx, i, today, lookup)) lost.push_back(s.messages[i].id);
     }
     std::erase_if(s.messages, [&](const DiplomaticMessage& m) {
         if (std::find(lost.begin(), lost.end(), m.id) != lost.end()) return true;
