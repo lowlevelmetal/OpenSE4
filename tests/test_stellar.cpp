@@ -102,9 +102,9 @@ TEST_CASE("stellar manipulation: only visible, active ships and bases and coloni
     CHECK_FALSE(inSystemList(w.s, target));
     CHECK(w.objectAt(a, {8, 8}, ObjectKind::Asteroids).valid());
     CHECK(w.s.colony(target) == nullptr);
-    // The colony type decides Homeworld Lost (spec 02 §2).
-    CHECK(hasMood(w.lastMoods, kB, "Homeworld Lost"));
-    CHECK(hasMood(w.lastMoods, kB, "Any Planet Lost"));
+    // A destroyed planet logs no happiness event, whatever its colony type (spec 02 §2, confirmed: binary).
+    CHECK_FALSE(hasMood(w.lastMoods, kB, "Homeworld Lost"));
+    CHECK_FALSE(hasMood(w.lastMoods, kB, "Any Planet Lost"));
 }
 
 TEST_CASE("stellar manipulation: a destroyed planet is reported to the empires still present once it is gone, mine fields aside (spec 05 Q50)") {

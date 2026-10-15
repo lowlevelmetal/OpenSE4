@@ -404,6 +404,13 @@ TEST_CASE("classic ui: Set Construction Queue's groups, amounts and free slots (
     CHECK_FALSE(canAddType(types, "", 255));
     CHECK_FALSE(canAddType(types, "Mining", 255));
     CHECK_FALSE(canAddType(types, "Farming", 2));
+    // Select Queue Type's Add Type ignores letter case (spec 02 §6.4, confirmed: binary).
+    const std::vector<game::QueueType> queueTypes{{"Defence Line", {}}};
+    CHECK(canAddQueueType(queueTypes, "Mines"));
+    CHECK_FALSE(canAddQueueType(queueTypes, ""));
+    CHECK_FALSE(canAddQueueType(queueTypes, "Defence Line"));
+    CHECK_FALSE(canAddQueueType(queueTypes, "defence LINE"));
+    CHECK(canAddQueueType(queueTypes, "Defence  Line"));  // only letter case is ignored
 
     // Free slots count every facility of every queued item.
     const Rules& r = engineRules();

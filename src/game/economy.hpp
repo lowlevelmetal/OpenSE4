@@ -289,9 +289,15 @@ void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c, int64_t 
 
 // A colony whose population died out is removed: each planet value drops by
 // `Planet Value Percent Loss After Owner Death`, and the owner gets `Homeworld
-// Lost` (first default colony type) or `Any Planet Lost` (spec 02 §2). The
-// owner's history record notes the loss, with `cause` when given.
+// Lost` (colony type "Homeworld", the built-in name) or `Any Planet Lost`;
+// nothing else logs either (spec 02 §2). The owner's history record notes the
+// loss, with `cause` when given.
 void colonyDiesOut(TurnContext& ctx, ObjectId planet, std::string_view cause = {});
+
+// A planet value as the game's value setter stores it: clamped to `Minimum/
+// Maximum Planet Percent Value` (finite games: `... Resource Value`), never
+// below 0 (spec 02 §1.2, confirmed: binary).
+int clampPlanetValue(const Rules& r, const GameState& s, int64_t value);
 // A planet that rebels founds a new computer empire and becomes its capital
 // (spec 02 §4): effects::breakAway (events.hpp) does it.
 

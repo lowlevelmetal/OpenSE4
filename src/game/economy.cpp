@@ -123,6 +123,8 @@ int clampedValue(const Rules& r, const GameState& s, int64_t v) {
 
 } // namespace detail
 
+int clampPlanetValue(const Rules& r, const GameState& s, int64_t value) { return detail::clampedValue(r, s, value); }
+
 // A turn-based game advances the date only after the last player's end-of-turn
 // processing (spec 05 §8), so its players' processing sees the unadvanced date.
 uint32_t processingTurn(const GameState& s) { return s.options.simultaneous ? s.turn + 1 : s.turn; }
@@ -348,10 +350,13 @@ bool colonyBlockaded(const Rules& r, const GameState& s, const Colony& c) {
 }
 
 int reproductionPercent(const Rules& r, const GameState& s, const Colony& c) {
-    // One rate for the whole colony, from the owner's race (confirmed: binary, spec 02 §3).
+    // One rate for the whole colony, from the owner's race (confirmed: binary,
+    // spec 02 §3). The riot test reads the anger band alone, an Emotionless
+    // race's too; only the mood term ignores the band for such a race (spec 02
+    // §4, confirmed: binary).
     const bool calm = emotionless(r, s, c.owner);
     const Mood mood = moodFromAnger(c.anger);
-    if (c.totalPopulation() <= 0 || c.plagueLevel > 0 || (mood == Mood::Rioting && !calm)) return 0;
+    if (c.totalPopulation() <= 0 || c.plagueLevel > 0 || mood == Mood::Rioting) return 0;
     const Race& race = s.empire(c.owner).race;
     const SpaceObject& planet = s.galaxy.object(c.planet);
     int64_t rate = std::max<int64_t>(0, r.setting("Empire Starting Percent Reproduction", 10) + racialEffect(r, race, RacialEffect::Reproduction));
@@ -444,8 +449,10 @@ ColonyOutput colonyOutput(const Rules& r, const GameState& s, const Colony& c) {
         baseResearch += sumValue1(ab, AbilityKind::PointGenResearch);
         baseIntel += sumValue1(ab, AbilityKind::PointGenIntelligence);
     }
-    // Step 6: a rioting or blockaded colony produces nothing at all; the output is lost.
-    if ((out.mood == Mood::Rioting && !emotionless(r, s, c.owner)) || out.blockaded) return out;
+    // Step 6: a rioting or blockaded colony produces nothing at all; the output
+    // is lost. The riot test reads the anger band alone, an Emotionless race's
+    // too, and so does the mood modifier below (spec 02 §4, confirmed: binary).
+    if (out.mood == Mood::Rioting || out.blockaded) return out;
 
     const std::vector<ParsedAbility> own = workingAbilities(r, s, c);
     const int common = (moodOutputPercent(r, out.mood) - 100) + (populationModifier(r, population).production - 100);
@@ -833,10 +840,16 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
     GameState& s = ctx.state;
     const int64_t perDead = std::max<int64_t>(1, r.setting("Maintenance Cost Amt Per Dead", 20000));
     int64_t victims = unpaid / perDead + 1;
+    // First choice: the vehicles in space out of supply whose maintenance
+    // charge is above 0 in some resource (so no unit group or mothballed ship,
+    // nor a ship whose charge comes to 0); with none, every vehicle of the
+    // empire (spec 02 §7, confirmed: binary).
     std::vector<VehicleId> candidates;
     for (const Vehicle& v : s.vehicles)
-        if (v.owner == e && v.count > 0 && v.supply <= 0 && v.status != VehicleStatus::Mothballed && isShipOrBase(vehicleType(r, s, v)))
-            candidates.push_back(v.id);
+        if (v.owner == e && v.count > 0 && v.supply <= 0) {
+            const Resources charge = vehicleMaintenance(r, s, v);
+            if (std::any_of(charge.v.begin(), charge.v.end(), [](int64_t x) { return x > 0; })) candidates.push_back(v.id);
+        }
     if (candidates.empty())
         for (const Vehicle& v : s.vehicles)
             if (v.owner == e && v.count > 0) candidates.push_back(v.id);
@@ -845,8 +858,10 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
         Vehicle& v = *s.vehicle(candidates[pick]);
         candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(pick));
         const bool ship = isShipOrBase(vehicleType(r, s, v));
-        ctx.log(e, LogCategory::Construction, std::format("{} {} abandoned", ship ? "Ship" : "Unit group", v.name),
-                "The empire could not pay its maintenance.", v.location, "ShipDamaged");
+        // A Misc entry that goes to the vehicle's place (spec 02 §7, confirmed: binary).
+        ctx.log(e, LogCategory::Misc, ship ? "Ship Abandoned" : "Unit Group Abandoned",
+                std::format("The Maintenance Minister reports that the {} was abandoned for lack of maintenance funds.", v.name), v.location,
+                "ShipDamaged");
         for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;
         // No happiness event: only a ship destroyed by damage logs `Ship Lost in
         // System` and `Any Ship Lost` (confirmed: binary).

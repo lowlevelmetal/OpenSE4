@@ -353,13 +353,12 @@ void endInvasion(Colony& c, bool joinCargo) {
 void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
     GameState& s = ctx.state;
     const EmpireId old = c.owner;
-    const bool home = c.homeworld;
     const SystemId sys = s.galaxy.object(c.planet).system;
     const std::string name = s.galaxy.object(c.planet).name;
     // The captor takes the planet with its facilities, stored units and
-    // population; its surviving troops join the cargo (spec 04 §13).
+    // population; its surviving troops join the cargo (spec 04 §13). Only the
+    // owner changes: a capital stays a capital (spec 02 §2, confirmed: binary).
     c.owner = captor;
-    c.homeworld = false;
     // Its queue gets the clear of a treaty or package transfer: the items, their
     // progress, On Hold, Repeat Build and the automatic waypoint go; emergency
     // mode and its counter stay, so slow mode carries over (spec 02 §6.4,
@@ -369,9 +368,9 @@ void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
     endInvasion(c, c.invader == captor);
     Empire& e = s.empire(captor);
     if (sys.index() < e.knowledge.explored.size()) e.knowledge.explored[sys.index()] = 1;
+    // The two capture events and nothing else: no planet is "lost" here
+    // (spec 02 §2, confirmed: binary).
     ctx.mood(old, "Any Our Planet Captured", sys, c.planet);
-    ctx.mood(old, "Any Planet Lost", sys, c.planet);
-    if (home) ctx.mood(old, "Homeworld Lost", sys, c.planet);
     ctx.mood(captor, "Any Enemy Planet Captured", sys, c.planet);
     const Location where = locationOf(s.galaxy, c.planet);
     ctx.log(old, LogCategory::Combat, std::format("{} captured", name), std::format("{} troops overran our defenders and took {}.", e.name, name),

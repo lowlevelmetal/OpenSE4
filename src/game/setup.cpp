@@ -41,16 +41,6 @@ AbilityKind colonizeKind(std::string_view surface) {
     return AbilityKind::ColonizeRock;
 }
 
-// True when the empire has every technology it could research at its
-// maximum level (the starting-planet facility rule of spec 02 §9).
-bool knowsEverything(const Rules& r, const GameState& s, const Empire& e) {
-    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
-        const ruleset::TechAreaId a{i};
-        if (r.techVisible(s, e, a) && e.techLevel(a) < r.tech(a).maxLevel) return false;
-    }
-    return true;
-}
-
 // Facilities of a starting planet (spec 02 §9, confirmed: binary): the empire's
 // best facility for each role, while slots are free: a spaceport (unless the
 // race has No Spaceports), a space yard, a supply generator, one mineral, one
@@ -71,7 +61,10 @@ void addStartingFacilities(const Rules& r, const GameState& s, const Empire& e, 
     add(AbilityKind::ResourceGenMinerals);
     add(AbilityKind::ResourceGenRadioactives);
     add(AbilityKind::ResourceGenOrganics);
-    const bool everything = knowsEverything(r, s, e);
+    // Every technology known: the empire's levels in every area, each capped at
+    // its maximum, add up to the maxima of the areas allowed in the game and
+    // open to the race (spec 02 §9, confirmed: binary).
+    const bool everything = research::researchedEverything(r, s, e);
     if (!everything) add(AbilityKind::PointGenResearch);
     const bool mines = r.bestFacilityWith(e, AbilityKind::ResourceGenMinerals).has_value();
     const bool labs = !everything && r.bestFacilityWith(e, AbilityKind::PointGenResearch).has_value();
@@ -217,9 +210,10 @@ std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const E
 // Every starting planet, the homeworld and the extra ones alike, is set up the
 // same way (spec 02 §9, confirmed: binary): its system explored, ruins
 // removed, the Home Planet Value (plus R[1,10] − 5 per resource in a normal
-// game), conditions unchanged, and a colony of the empire's race at maximum
-// population that is a capital (anger at most 80) of colony type "Homeworld",
-// with the starting facilities.
+// game) through the value setter's clamp, conditions unchanged, and a colony
+// of the empire's race with the planet size's plain `Max Population` (without
+// the `Planet Storage Space` trait) that is a capital (anger at most 80) of
+// colony type "Homeworld", with the starting facilities.
 void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId planet) {
     SpaceObject& obj = s.galaxy.object(planet);
     sight::markExplored(s, e.id, obj.system);
@@ -228,22 +222,26 @@ void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId plane
     });
     const char* level = s.options.homePlanetValue == 0 ? "Low" : s.options.homePlanetValue == 2 ? "High" : "Medium";
     if (s.options.finiteResources) {
-        const int v = static_cast<int>(r.setting(std::format("Plr Planet Value {} Resources", level), 20000));
+        const int v = economy::clampPlanetValue(r, s, r.setting(std::format("Plr Planet Value {} Resources", level), 20000));
         obj.value = {v, v, v};
     } else {
-        const int base = static_cast<int>(r.setting(std::format("Plr Planet Value {} Percent", level), 100));
-        for (int& v : obj.value) v = base + s.rng.rangeInt(1, 10) - 5;
+        const int64_t base = r.setting(std::format("Plr Planet Value {} Percent", level), 100);
+        for (int& v : obj.value) v = economy::clampPlanetValue(r, s, base + s.rng.rangeInt(1, 10) - 5);
     }
     Colony c;
     c.planet = planet;
     c.owner = e.id;
     c.homeworld = true;
-    c.colonyType = "Homeworld";
+    c.colonyType = std::string(kHomeworldColonyType);
     c.foundedTurn = 0;
     c.population.push_back({e.id, 0});
     s.colonies[planet.index()] = std::move(c);
     Colony& col = *s.colonies[planet.index()];
-    col.population.front().millions = maxPopulation(r, s, col);
+    // The plain column, read before the colony exists: a race with the
+    // `Planet Storage Space` trait starts below its maximum and grows into
+    // the rest. The facilities do use the trait's larger slot count.
+    const ruleset::PlanetSize* size = planetSize(r, obj);
+    col.population.front().millions = size ? size->maxPopulation : 0;
     addStartingFacilities(r, s, e, col);
     sight::recalculateColony(r, col);  // the colony is founded (spec 01 §6.9)
 }

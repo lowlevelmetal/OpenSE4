@@ -51,6 +51,13 @@ void Ruleset::reindex() {
     buildIndex(vehicleIndex_, vehicleSizes, [](const VehicleSize& v) -> const std::string& { return v.name; });
 }
 
+std::optional<uint32_t> Ruleset::racialTraitNamed(std::string_view name) const {
+    std::optional<uint32_t> found;
+    for (uint32_t i = 0; i < racialTraits.size(); ++i)
+        if (racialTraits[i].name == name) found = i;   // the later of two of one name
+    return found;
+}
+
 std::optional<TechAreaId> Ruleset::findTechArea(std::string_view name) const {
     if (auto i = lookup(techIndex_, name)) return TechAreaId{*i};
     return std::nullopt;

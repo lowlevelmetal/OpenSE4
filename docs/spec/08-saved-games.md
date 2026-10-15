@@ -739,7 +739,7 @@ problem, 25, 26 and 52 planet value or conditions changed, 29 / 30 / 31 / 37 new
 component / facility / hull / intelligence project (key = data position), 32 / 33 gift
 given / received, 34 / 35 contact made / lost, 36 order failed or warning (key =
 object), 40 scrap or retrofit result (key = design), 42 damage while moving, 43 treaty
-lost, 47 atmosphere changed, 48 / 49 population happy / angry, 51 new stellar
+lost, 47 atmosphere changed, 48 / 49 population happier / growing unhappy (the mood reports of spec 02 §4), 51 new stellar
 construction, 57 counter-intelligence success, 58 unit launch or recovery warning, 59
 password reset. For entries OpenSE4 makes itself, export kind 36 with picture key 0 and
 no other empire: that kind shows a generic picture and does not count for anger.
@@ -1286,7 +1286,7 @@ memory between turns and have no source are a loss on import (§7.6).
 | `vehicles` | Classes 5, 7, 8, 9, 10 | Same, at their slots |
 | `fleets` | Every empire's fleet list, renumbered into global ids (keep a map from (owner, number)) | Each owner's list, a fleet's number being its position there; free slots where numbers would otherwise move |
 | `messages` | Message records of log entries dated the current turn, as delivered and unanswered | Delivered, unanswered messages as log entries of the recipient (kind 19 with the message record); undelivered ones cannot be written (lossy) |
-| `pendingEvents` | Timed events (§3.4), free slots skipped | Timed events (five or more slots block later scheduling in the original, §11.2) |
+| `pendingEvents` | Timed events (§3.4), free slots kept as free slots (`PendingEvent::kFree`) | Every slot, a free one as event 0 |
 | `pendingMood` | Not stored (the original keeps it in memory too): empty | — |
 | `combats` | Not in the file; optionally minimal records from the log's battle details | Battle details of the log entries (§3.6.11) |
 | `nextVehicleId`, `nextFleetId`, `nextMessageId`, `arrivals` | Derive from the imported lists | — |
@@ -1718,7 +1718,9 @@ carries out OpenSE4's start of that player's turn before writing (§12).
   should be checked again.
 - The timed-event scheduler refuses to schedule when its list already has five or more
   slots, free or not, and the slots are never removed: once five timed events have been
-  pending together, no timed event is ever scheduled again (spec 05 §4).
+  pending together, no timed event is ever scheduled again (spec 05 §4). OpenSE4 follows
+  since 2026-10-14: `GameState::pendingEvents` keeps the free slots, in its own saves and
+  both ways in the original's.
 - The random generator is reseeded from the game's stored seed on every load.
 - The trade counter of every pair goes up by one per turn whatever the treaty, and is
   reset only when a treaty changes to or from one below Trade (compare spec 05 §3.3).

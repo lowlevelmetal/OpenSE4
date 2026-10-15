@@ -3046,7 +3046,7 @@ TEST_CASE("movement: stellar manipulation - planets from asteroids and back") {
     CHECK(w.s.colony(rubble) == nullptr);
     CHECK(w.logged(kB, "lost"));
     CHECK(w.logged(kA, "Planet Destroyed"));
-    CHECK(hasMood(w.lastMoods, kB, "Any Planet Lost"));
+    CHECK_FALSE(hasMood(w.lastMoods, kB, "Any Planet Lost"));  // no happiness event (spec 02 §2)
 
     // A guard in the planet's sector protects it (whoever owns it); one elsewhere does not.
     const ObjectId guarded = w.planet(a, {4, 4});

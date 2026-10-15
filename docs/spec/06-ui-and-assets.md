@@ -840,7 +840,12 @@ grouped: ships and units under their design type, facilities and upgrades under 
 that a click does nothing on; the items indented 10 px, in the game's design order or
 Facility.txt order. A design we cannot build yet (§6.5 of spec 02) is drawn in grey
 #A0A0A0, and an upgrade already queued stays listed and is refused when clicked. A click on
-a unit design opens the "Amount" list (spec 02 §6.5); any other click adds one. Adding a
+a unit design opens the "Amount" list (spec 02 §6.5); any other click adds one. A click on a
+design drawn grey, on the Ships or the Units tab, is ignored, here and in Multi-Add: no
+"Amount" list opens, no "Warning" appears, and nothing is added (confirmed: binary;
+corrected 2026-10-14, complete listing). Since 2026-10-14 our client follows (`queues.cpp`
+`add`); before, it opened the Amount list for a unit design and then warned, and warned at
+once for a ship design. Adding a
 facility by hand first shows the "Note" of §7 Q29 when it applies; a refusal then comes as
 an OK box titled "Warning" with the reason, one box per refused item (Fill Queue gives one
 for each). Since 2026-10-13 our client follows; ours names the group of designs without a

@@ -324,8 +324,9 @@ message at all.
     construction queues, options, experience, and its ministers' state: the minister
     style, the anger toward each empire, the turns since war with each, the AI state and
     turns in it, and the AI's target, staging, secured and defended systems and its
-    attack timer. It gets no designs, and the lists of accepted demands start empty.
-    Whether it also takes the owner's waiting happiness events is question 82. Then:
+    attack timer. It gets no designs, and the lists of accepted demands start empty. The
+    copy also takes the owner's list of happiness events waiting for its next update,
+    while the owner keeps its own (question 82, confirmed: binary). Then:
     - its name is the system's name. When that is empty or any other empire (destroyed
       ones included) has the name, a random line of the empire-names file is drawn, again
       until the name is unique. It gets a new leader name and the pictures of a random
@@ -431,8 +432,9 @@ ability never changes anything in the stock game.
   target, a sweeper group's in a tagged minefield, a cloak lost after an action or at the
   supply step, the start of a battle that decloaks a piece, a colony's Decloak), a logged
   event, a package's planet or vehicle and a rebellion project. Detection is worked out
-  from the current positions and sensors. A timed event's start message counts as the
-  event being logged (inferred, question 57). The colony's automatic decloak at a
+  from the current positions and sensors. Every message sending of an event, a timed
+  event's start message as well as its strike, runs the check, whoever the messages reach,
+  `Message To` None included (question 57, confirmed: binary). The colony's automatic decloak at a
   recalculation is spec 01 §14 Q44 (`diplomacy::recalculateColony`, the check in the
   colony's system). In a simultaneous game a colony's Decloak makes only the acting
   empire's side of a contact (`firstContactIn` with its `onlySide`, spec 01 §14 Q44); a
@@ -703,7 +705,9 @@ up the trade chain [M].
   2. Timed events that are due strike (below).
   3. **One roll for the whole galaxy**: a new event happens when a roll of 1–100 is at most
      the chance of the chosen frequency. There are no new events until the date (already
-     advanced for this turn) reaches 2402.0, so the first 19 turns have none.
+     advanced for this turn) reaches 2402.0, so the first 19 turns have none. The roll is
+     made every turn the frequency is not None, before the date test, so those 19 turns
+     draw it too (confirmed: binary; corrected 2026-10-14, complete listing).
 - **Choosing the record** (confirmed: binary): let N be the number of `Events.txt` records
   whose `Severity` is at most the Maximum Event Severity. The record is drawn uniformly
   among the **first N records of the file**, whatever their severity. This is a bug in the
@@ -738,10 +742,47 @@ up the trade chain [M].
   - `Change Bad Event Chance - System` behaves exactly like its intel counterpart (§2.4):
     it never matters in the stock game.
   If no candidate passes, there is no event.
+
+  **The draws** (confirmed: binary; corrected 2026-10-14, complete listing). For a candidate
+  that exists every roll is made, whatever the checks before it found: the luck roll also
+  after a failed home-location test; for a star event every empire with a colony there
+  rolls, without stopping at the first failure; and the bad-event-chance roll for every
+  candidate with a system, even when no such ability is there (the value is then 0: the roll
+  is made and cannot fail), unless the system's value is exactly 100 (the intel pick of
+  §2.4 rolls only when the ability is set). Empire targets and targets that no longer exist
+  draw none of these. Per candidate: the home test (no draw), the luck draw or draws, the
+  bad-event draw. None of this changes a chance; it fixes the sequence of
+  random numbers. Since 2026-10-14 ours draws in this order and number (`events.cpp`
+  `rollNewEvent`, `pickEventTarget`, `starLuckHolds`, `effects::chanceRejectsRoll`); before,
+  it skipped each of these rolls.
 - **Applying** (confirmed: binary): with `Time Till Completion` 0 the effect (§2.3, with no
-  source) applies at once and a random message from the record is sent. With N > 0 the
-  event is scheduled and strikes in the event step exactly N turns later, if its target
-  object still exists; otherwise it is dropped silently.
+  source) applies at once and, when it took, a random message from the record is sent. With
+  N > 0 the event is scheduled and strikes in the event step exactly N turns later, if its
+  target object still exists; otherwise it is dropped silently.
+- **Timed events in detail** (confirmed: binary; corrected 2026-10-14, complete listing):
+  - *Slots.* The game keeps a list of timed-event slots. Scheduling first looks at its
+    size: with five or more slots, free or not, nothing is scheduled (no slot, no start
+    message, no strike). With fewer, the first free slot is reused, or a slot is appended.
+    A slot whose event strikes (or is dropped) is emptied, never removed. So once five
+    timed events have been pending together, no timed event (in the stock data the
+    catastrophes and the 3-turn population change) is ever scheduled again in that game.
+    The slots, free ones included, are saved (spec 08 §3.4).
+  - *Start.* The start message is sent even when the record has no start text: an entry
+    with an empty title and text goes to the recipients, and the first-contact check
+    follows it. Every stock timed record has a start message.
+  - *Strike.* The target must still exist (checked only when the event has a target
+    object). The effect is applied for the empire recorded when the event was scheduled,
+    and the strike message is sent whenever the message picked for it has a title, whether
+    or not the effect took. Its "Owner" recipient is that recorded empire, not the target's
+    present owner. What the recorded empire changes inside each effect was not traced
+    (question 85).
+  - Since 2026-10-14 ours follows (`events.cpp` `trigger`, `fireDueEvents`,
+    `PendingEvent::kFree`, `events::kMaxTimedEventSlots`). Before, the list grew without
+    limit and struck events were removed, the strike used the target's current owner and
+    sent nothing when the effect did not take, and a record without start messages sent no
+    start entry and ran no first-contact check. Our engine fills an entry without a title
+    or text of its own as it fills every event entry (the OpenSE4 choice at the end of
+    this section).
 - **Event-only handlers** (confirmed: binary):
   - `Ship - Moved`: the ship is moved to a random system of the quadrant (its own
     included), at a random sector, and its orders are cleared. Amount is not used.
@@ -4150,6 +4191,13 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the event has a location, whoever its messages reach (inferred). To verify: does the
     start message of a timed event run the check too, and does an event whose messages
     reach nobody (`Message To` None) run it?
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): every message sending of
+    an event, the start message of a timed event as well as its strike, ends with the sight
+    update and the first-contact check in the event's system, whoever the messages reach,
+    `Message To` None included. An immediate event whose effect did not take sends nothing
+    and runs no check. A timed event's start message is sent even when the record has none,
+    and its strike's message whenever the message picked has a title (§4 "Timed events in
+    detail"). Since 2026-10-14 ours follows (`events.cpp` `sendMessage`, `trigger`, `fire`).
 58. **The order of step 2's candidates** (§7.4 "Demands the AI starts"): each system where
     the AI has a colony and sees a ship (or holds a colony) of X is a candidate that needs
     a 1-in-3 roll. OpenSE4 tries the candidate systems in system order and takes the first
@@ -4804,6 +4852,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     owner keep its own? Our engine gives the rebels no waiting events: each waiting event
     names its empire (`GameState::pendingMood`, `MoodEvent::empire`), so the former owner's
     stay with it (`events.cpp` `breakAway`, inferred).
+    **Answer** (confirmed: binary, 2026-10-14, complete listing): yes. The new empire is
+    made as a copy of the former owner, and the copy includes the list of happiness events
+    waiting for the next update; the former owner keeps its own list unchanged. The
+    rebellion comes in the event step, after every empire's update (or in a spying empire's
+    end-of-turn processing), so the rebels' first update counts what the former owner
+    logged since its own update: its construction events, for example, as far as they lie in
+    the rebels' sector or system, and the empire-wide ones in full. The colony that broke
+    away is not among them: no happiness event is logged for it (spec 02 §2). It counts only
+    in a game not saved and loaded between the rebellion and the next update, since the list
+    is never saved (spec 02 §4). Since 2026-10-14 ours follows: `breakAway` copies the
+    former owner's waiting events (`TurnContext::moodEvents`) to the new empire.
 83. **The demand lists across a save** (raised 2026-10-14 by the recheck of the negative
     claims on the complete listing, seen in passing and not checked; §7.4 "Demand lists").
     The computer player's war, break and peace lists, its promises and the systems it
@@ -4833,3 +4892,13 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     (d) a turn-based e-mail game is hosted as `pbem process` hosts it, and signing in needs
     a living human empire whose turn it is; (e) `-nd` and `/nd` are not counted, and an
     empty name is a file that is not found.
+85. **What a timed event's recorded empire changes inside its effect** (raised 2026-10-14 by
+    the accuracy recheck of §4, "Timed events in detail"). A timed event strikes for the
+    empire recorded when it was scheduled, and its "Owner" message reaches that empire
+    (confirmed: binary). Whether each effect then also acts for that empire, for example
+    whether a planet effect still applies once the planet has changed hands, or acts on the
+    empire's stock, queues and relations rather than the present owner's, was not traced.
+    Our engine passes the recorded empire as the effect's target empire and keeps each
+    handler as it is: the planet and ship effects act on the target object whoever holds it
+    now, and the effects on an empire's stock, queues or relations act on the recorded
+    empire (`events.cpp` `fireDueEvents`, inferred). To verify in the executable.

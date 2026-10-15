@@ -1375,7 +1375,14 @@ private:
 
     void events() {
         for (const TimedEvent& t : in_.events) {
-            if (t.event == 0) continue;   // a free slot
+            if (t.event == 0) {
+                // A free slot stays one: it counts toward the five that stop
+                // any further scheduling (spec 05 §4, spec 08 §3.4).
+                PendingEvent slot;
+                slot.eventType = PendingEvent::kFree;
+                s_.pendingEvents.push_back(slot);
+                continue;
+            }
             const auto type = position(t.event, d_.eventTypes.size(), "Events.txt", "a timed event");
             if (!type) return;
             PendingEvent pe;
@@ -1395,8 +1402,6 @@ private:
             }
             s_.pendingEvents.push_back(pe);
         }
-        const size_t slots = in_.events.size();
-        if (slots >= 5) count("timed-event slots: the original schedules no more timed events in this game (spec 08 §11.2)");
         auto add = [&](const StartPointRecord& p, int who) {
             if (!inRange(p.system, s_.galaxy.systems.size())) return;
             const StartingPoint sp{SystemId{p.system - 1u}, sector(p.sector), who};

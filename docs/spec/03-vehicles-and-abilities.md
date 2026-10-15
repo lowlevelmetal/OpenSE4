@@ -474,7 +474,10 @@ type, none = defined but unused.
   that it adds the numerals II to XV to a name; without a list it uses a generic numbered
   name (confirmed: binary).
 - **Prototype:** a design is a prototype until a construction queue completes a vehicle or unit
-  of it, or a ship is retrofitted to it; from then on it is marked as built for good. The Edit
+  item of it that the ship limit does not stop, or a ship is retrofitted to it; from then on it
+  is marked as built for good. The mark comes before the ships are made or the units placed, so
+  a unit item none of whose units finds room marks it too (spec 02 §6.5; confirmed: binary;
+  corrected 2026-10-14, complete listing; ours follows since then). The Edit
   button is enabled only for one of the player's own designs that is still a prototype (never on
   the enemy design tabs or with nothing selected), and the Edit action also refuses a design that
   is in one of the empire's construction queues. Editing changes the design **in place**: the
@@ -2849,6 +2852,11 @@ fleet's row in the sector list is spec 06 §7 Q110.
       entry: title and category (OpenSE4: "<planet> abandoned", Misc).
     - The Scrap window's Order By Class: OpenSE4 sorts by design name, then by vehicle name.
       And what Status shows with nothing selected (OpenSE4: "-").
+
+    *Abandon Planet's refund percentage settled* (confirmed: binary, 2026-10-14, complete
+    listing): the percentage, the larger of the setting and the best reclamation in the
+    sector, is worked out once, and then every facility is scrapped with it. OpenSE4 matches
+    (spec 02 §3). The entry's title and category and the other points stay open.
 85. **Movement left after a battle (GitHub issue #13).** "Ships damaged in combat can display as
     having more than their maximum movement after combat." "I went to move the ship which
     displayed 4 / 3, and it changed to 0 / 3 movement and queued it for the next turn instead of

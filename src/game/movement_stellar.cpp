@@ -72,20 +72,16 @@ bool isStar(ObjectKind k) { return isStarKind(k); }
 
 bool matches(ObjectKind want, ObjectKind have) { return want == have || (isStar(want) && isStar(have)); }
 
-// A colony lost to a stellar manipulation or event: its owner is told why.
-// `Homeworld Lost` goes with the colony type "Homeworld", which every starting
-// planet has (spec 01 §3.6, spec 02 §2).
+// A colony lost to a stellar manipulation or event: its owner is told why. A
+// destroyed planet logs no happiness event (spec 02 §2, confirmed: binary).
 void loseColony(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     GameState& s = ctx.state;
     Colony* c = s.colony(planet);
     if (!c) return;
     const EmpireId owner = c->owner;
-    const SystemId sys = s.galaxy.object(planet).system;
     ctx.log(owner, LogCategory::Events, std::format("{} lost", s.galaxy.object(planet).name), std::string(cause), locationOf(s.galaxy, planet),
             "PlanetDestroyed");
     addHistory(s, owner, owner, std::format("Lost the colony on {}. {}", s.galaxy.object(planet).name, cause), locationOf(s.galaxy, planet));
-    ctx.mood(owner, "Any Planet Lost", sys, planet);
-    if (keysEqual(c->colonyType, "Homeworld")) ctx.mood(owner, "Homeworld Lost", sys, planet);
     s.colonies[planet.index()].reset();
 }
 

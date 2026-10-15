@@ -787,6 +787,16 @@ bool canAddType(const std::vector<std::string>& types, const std::string& name, 
     return !name.empty() && types.size() < limit && std::find(types.begin(), types.end(), name) == types.end();
 }
 
+bool canAddQueueType(const std::vector<game::QueueType>& types, std::string_view name) {
+    if (name.empty()) return false;
+    auto sameLetters = [&](std::string_view other) {
+        return other.size() == name.size() && std::equal(other.begin(), other.end(), name.begin(), [](char a, char b) {
+                   return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+               });
+    };
+    return std::none_of(types.begin(), types.end(), [&](const game::QueueType& t) { return sameLetters(t.name); });
+}
+
 // ---- Queue types ---------------------------------------------------------------------------------
 
 std::vector<QueueTemplate> builtInQueueTemplates() {

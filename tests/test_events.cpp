@@ -299,7 +299,9 @@ TEST_CASE("events: timed events warn first and strike exactly N turns later") {
     }
     s.turn = 3;
     eventStep(ctx);
-    CHECK(s.pendingEvents.empty());
+    // The slot that struck is emptied, not removed (spec 05 §4, confirmed: binary).
+    REQUIRE(s.pendingEvents.size() == 1);
+    CHECK(s.pendingEvents[0].isFree());
     // -100 with a spread of ± trunc(100 / 5).
     const int64_t lost = pop - homeworld(s, kA).totalPopulation();
     CHECK(lost >= 80);
@@ -316,13 +318,139 @@ TEST_CASE("events: timed events warn first and strike exactly N turns later") {
     for (const Vehicle& v : s.vehicles)
         if (v.owner == kA) ship = v.id;
     REQUIRE(events::trigger(sctx, 0, onShip(kA, ship), rng));
+    REQUIRE(s.pendingEvents.size() == 1);  // it took the free slot
+    CHECK_FALSE(s.pendingEvents[0].isFree());
     s.vehicle(ship)->count = 0;
     s.removeDeadVehicles();
     s.turn = 10;
     const size_t logs = s.empire(kA).log.size();
     eventStep(sctx);
-    CHECK(s.pendingEvents.empty());
+    REQUIRE(s.pendingEvents.size() == 1);
+    CHECK(s.pendingEvents[0].isFree());
     CHECK(s.empire(kA).log.size() == logs);
+}
+
+TEST_CASE("events: five timed-event slots, free ones included, stop all later scheduling (spec 05 §4, confirmed: binary)") {
+    auto r = rulesWith({event(Effect::PlanetValueChange, -1, "Low", "Owner", 2)});
+    GameState s = newPoliticsGame();
+    const ObjectId home = homeworld(s, kA).planet;
+    TurnContext ctx = context(*r, s);
+    Rng rng(1);
+    for (int i = 0; i < 5; ++i) REQUIRE(events::trigger(ctx, 0, onObject(kA, home), rng));
+    CHECK(s.pendingEvents.size() == 5);
+    // A sixth: no slot, no start message, no strike.
+    const size_t logs = s.empire(kA).log.size();
+    CHECK_FALSE(events::trigger(ctx, 0, onObject(kA, home), rng));
+    CHECK(s.empire(kA).log.size() == logs);
+    CHECK(s.pendingEvents.size() == 5);
+    // Once they have struck the five slots are free, and still nothing is scheduled.
+    s.turn = 2;
+    eventStep(ctx);
+    REQUIRE(s.pendingEvents.size() == 5);
+    for (const PendingEvent& pe : s.pendingEvents) CHECK(pe.isFree());
+    CHECK_FALSE(events::trigger(ctx, 0, onObject(kA, home), rng));
+    CHECK(s.pendingEvents.size() == 5);
+    // An immediate event needs no slot.
+    auto now = rulesWith({event(Effect::PlanetValueChange, -1, "Low", "Owner")});
+    TurnContext nctx = context(*now, s);
+    CHECK(events::trigger(nctx, 0, onObject(kA, home), rng));
+}
+
+TEST_CASE("events: a timed event strikes for the empire recorded, with its message whether or not the effect took (spec 05 §4, confirmed: binary)") {
+    // Plague Cured does nothing to a colony without plague.
+    auto r = rulesWith({event(Effect::PlanetPlagueCured, 1, "Low", "Owner", 2)});
+    GameState s = newPoliticsGame();
+    const ObjectId home = homeworld(s, kA).planet;
+    TurnContext ctx = context(*r, s);
+    Rng rng(1);
+    REQUIRE(events::trigger(ctx, 0, onObject(kA, home), rng));
+    REQUIRE(s.pendingEvents.size() == 1);
+    CHECK(s.pendingEvents[0].empire == kA);
+    // The planet changes hands before the strike: the "Owner" message still
+    // reaches the empire recorded when the event was scheduled.
+    diplomacy::transferColony(s, home, kB);
+    s.turn = 2;
+    eventStep(ctx);
+    CHECK(hasLog(s, kA, "Omen"));
+    CHECK_FALSE(hasLog(s, kB, "Omen"));
+    // The same record as an immediate event sends nothing when the effect does not take.
+    auto now = rulesWith({event(Effect::PlanetPlagueCured, 1, "Low", "Owner")});
+    GameState t = newPoliticsGame();
+    TurnContext tctx = context(*now, t);
+    REQUIRE(events::trigger(tctx, 0, onObject(kA, homeworld(t, kA).planet), rng));
+    CHECK_FALSE(hasLog(t, kA, "Omen"));
+    // A strike whose picked message has no title sends nothing.
+    ruleset::EventType untitled = event(Effect::PlanetValueChange, -1, "Low", "Owner", 2);
+    untitled.messages = {{"", "No title here."}};
+    auto quiet = rulesWith({untitled});
+    GameState q = newPoliticsGame();
+    TurnContext qctx = context(*quiet, q);
+    REQUIRE(events::trigger(qctx, 0, onObject(kA, homeworld(q, kA).planet), rng));
+    q.turn = 2;
+    const size_t logs = q.empire(kA).log.size();
+    eventStep(qctx);
+    CHECK(q.empire(kA).log.size() == logs);
+}
+
+TEST_CASE("events: a timed event without start messages still logs its start (spec 05 §4, confirmed: binary)") {
+    ruleset::EventType bare = event(Effect::PlanetValueChange, -1, "Low", "Owner", 2);
+    bare.startMessages.clear();
+    auto r = rulesWith({bare});
+    GameState s = newPoliticsGame();
+    TurnContext ctx = context(*r, s);
+    Rng rng(1);
+    const size_t logs = s.empire(kA).log.size();
+    REQUIRE(events::trigger(ctx, 0, onObject(kA, homeworld(s, kA).planet), rng));
+    CHECK(s.empire(kA).log.size() == logs + 1);
+}
+
+TEST_CASE("events: the event step makes the original's draws (spec 05 §4, confirmed: binary)") {
+    GameState s = newPoliticsGame();
+    // The new-event roll is made every turn the frequency is not None, before 2402.0 too.
+    {
+        auto r = rulesWith({event(Effect::PlanetValueChange, -1)});
+        TurnContext ctx = context(*r, s);
+        s.options.eventFrequency = 1;
+        Rng used(11), expected(11);
+        events::rollNewEvent(ctx, events::kFirstEventDate - 1, used);
+        expected.range(1, 100);
+        CHECK(used.next() == expected.next());
+        s.options.eventFrequency = 0;
+        Rng none(11), untouched(11);
+        events::rollNewEvent(ctx, events::kFirstEventDate + 5, none);
+        CHECK(none.next() == untouched.next());
+    }
+    // A planet target with one candidate: the draw, the luck roll and the
+    // bad-chance roll, even without such an ability; the luck roll also when
+    // the home-location test has failed already.
+    {
+        GameState one = s;
+        const ObjectId home = homeworld(one, kA).planet;
+        for (auto& c : one.colonies)
+            if (c && c->planet != home) c.reset();
+        auto low = rulesWith({event(Effect::PlanetValueChange, -1, "Low")});
+        Rng used(5), expected(5);
+        REQUIRE(events::pickEventTarget(*low, one, 0, used).has_value());
+        expected.index(1);
+        expected.range(1, 100);
+        expected.range(1, 100);
+        CHECK(used.next() == expected.next());
+        // A system value of exactly 100 makes no bad-chance draw.
+        GameState hundred = one;
+        hundred.galaxy.system(hundred.galaxy.object(home).system).abilities.push_back({"Change Bad Event Chance - System", "", "100", ""});
+        Rng skip(5), noBad(5);
+        REQUIRE(events::pickEventTarget(*low, hundred, 0, skip).has_value());
+        noBad.index(1);
+        noBad.range(1, 100);
+        CHECK(skip.next() == noBad.next());
+        auto high = rulesWith({event(Effect::PlanetValueChange, -1, "High")});
+        Rng spared(5), spent(5);
+        CHECK_FALSE(events::pickEventTarget(*high, one, 0, spared).has_value());  // a homeworld, spared
+        spent.index(1);
+        spent.range(1, 100);
+        spent.range(1, 100);
+        CHECK(spared.next() == spent.next());
+    }
 }
 
 TEST_CASE("events: who hears about an event") {
@@ -399,6 +527,36 @@ TEST_CASE("events: a star event rolls luck for every empire present, a total of 
     s.empire(kB).race.traits = {traitIndex(pr, "Test Half Luck")};
     s.empire(kA).race.traits.clear();
     CHECK(passes(3) == 1000);
+    // Every empire with a colony there rolls, each one whatever the others rolled.
+    {
+        GameState two = s;
+        for (ObjectId o : two.galaxy.system(homeA).objects)
+            if (two.galaxy.object(o).kind == ObjectKind::Planet && !two.colony(o)) {
+                Colony c;
+                c.planet = o;
+                c.owner = kB;
+                c.population = {{kB, 100}};
+                two.colonies[o.index()] = c;
+                break;
+            }
+        two.empire(kA).race.traits = {traitIndex(pr, "Test Half Luck")};
+        two.empire(kB).race.traits = {traitIndex(pr, "Test Half Luck")};
+        int failedFirst = 0;
+        for (uint64_t seed = 1; seed < 40; ++seed) {
+            Rng used(seed), expected(seed);
+            const auto t = events::pickEventTarget(*r, two, 0, used);
+            // One candidate: the draw, then a luck roll for each of the two
+            // empires, then the bad-chance roll.
+            expected.index(1);
+            const bool aHolds = expected.range(1, 100) < 50;
+            const bool bHolds = expected.range(1, 100) < 50;
+            expected.range(1, 100);
+            failedFirst += aHolds ? 0 : 1;
+            CHECK(t.has_value() == (aHolds && bHolds));
+            CHECK(used.next() == expected.next());
+        }
+        CHECK(failedFirst > 0);
+    }
     // High and Catastrophic star events spare only the exact home planet
     // locations, and a star practically never sits on one.
     auto high = rulesWith({event(Effect::StarDestroyed, 1, "High")});
@@ -952,6 +1110,27 @@ TEST_CASE("events: a rebel empire keeps its former owner's ministers' state, ang
     CHECK((again.empire(second).race.style == "Hermit" || again.empire(second).race.style == "Drifter"));
 }
 
+TEST_CASE("events: a rebel empire takes a copy of its former owner's waiting happiness events (spec 05 Q82, confirmed: binary)") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    const ObjectId planet = secondColony(s, kA, 50);
+    const SystemId sys = s.galaxy.object(planet).system;
+    TurnContext ctx = context(r, s);
+    ctx.mood(kA, "Facility Constructed", sys, planet);
+    ctx.mood(kA, "Any Ship Constructed");
+    ctx.mood(kB, "Any Ship Lost");
+    const EmpireId id = effects::breakAway(ctx, planet);
+    REQUIRE(id.valid());
+    auto count = [&](EmpireId e) { return std::count_if(ctx.moodEvents.begin(), ctx.moodEvents.end(), [&](const MoodEvent& m) { return m.empire == e; }); };
+    CHECK(count(kA) == 2);   // the former owner keeps its own
+    CHECK(count(id) == 2);   // the rebels get a copy
+    CHECK(count(kB) == 1);
+    CHECK(hasMood(ctx, id, "Facility Constructed"));
+    CHECK(hasMood(ctx, id, "Any Ship Constructed"));
+    CHECK_FALSE(hasMood(ctx, id, "Any Ship Lost"));
+    CHECK_FALSE(hasMood(ctx, kA, "Any Planet Lost"));  // nothing is logged for the colony that broke away
+}
+
 TEST_CASE("events: points and projects") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
@@ -1077,7 +1256,7 @@ TEST_CASE("events: stellar events") {
     CHECK(s.galaxy.warpPoints(away).size() == warpPoints);
     CHECK(s.colony(planet) == nullptr);
     CHECK(s.vehicle(doomed) == nullptr);  // it left the game in the pass
-    CHECK(hasMood(ctx, kA, "Any Planet Lost"));
+    CHECK_FALSE(hasMood(ctx, kA, "Any Planet Lost"));  // a destroyed planet logs none (spec 02 §2)
 }
 
 TEST_CASE("events: a colony that breaks away mid-turn becomes an empire that plays on") {

@@ -117,8 +117,11 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
 // a positive value V (the largest, inferred). 0 when there is none.
 int64_t unownedChanceValue(const GameState& s, SystemId sys, AbilityKind k);
 // A candidate is rejected when V is set, is not 100, and a roll of 1–100 is
-// at most V. So it never matters in the stock data.
+// at most V. So it never matters in the stock data. The intelligence pick
+// rolls only when V is set; the event pick rolls for every candidate with a
+// system (spec 05 §4, confirmed: binary) and tests the roll it made.
 bool chanceRejects(int64_t v, Rng& rng);
+bool chanceRejectsRoll(int64_t v, int64_t roll);
 
 // A colony breaks away as a new independent empire (spec 05 §2.3, confirmed:
 // binary), when fewer than kMaxEmpires empires exist (destroyed ones count). The
@@ -154,6 +157,9 @@ Severity parseSeverity(std::string_view text);
 // No new events before the date 2402.0, counted in turns since 2400.0
 // (spec 05 §4, confirmed: binary).
 inline constexpr uint32_t kFirstEventDate = 20;
+// Timed events are scheduled only while the slot list holds fewer slots,
+// free ones included (spec 05 §4, confirmed: binary).
+inline constexpr size_t kMaxTimedEventSlots = 5;
 
 // The chance (percent) of a new event this turn for the whole galaxy, from
 // the Event Frequency option and `Event Percent Chance Low/Medium/High`.
@@ -184,15 +190,21 @@ std::optional<effects::Target> pickEventTarget(const Rules& r, const GameState& 
 bool targetExists(const Rules& r, const GameState& s, const effects::Target& t);
 
 // Starts event record `record` against `target`: with `Time Till Completion`
-// 0 the effect applies at once and a random message goes out; otherwise the
-// start message goes out and the event strikes exactly that many turns later.
-// Returns false when the record is unknown or the target does not exist.
+// 0 the effect applies at once and, when it took, a random message goes out;
+// otherwise the event is scheduled, taking the first free slot or a new one
+// while the list holds fewer than kMaxTimedEventSlots slots, its start
+// message goes out (also when the record has none), and it strikes exactly
+// that many turns later (spec 05 §4, confirmed: binary). Returns false when
+// the record is unknown, the target does not exist or no slot is left.
 bool trigger(TurnContext& ctx, uint32_t record, const effects::Target& target, Rng& rng);
 
 // Event step parts (spec 05 §8 step 9, after movement::runStellarHazards):
 // the timed events that are due strike, then the single galaxy-wide roll for
 // a new event. `date` is the game date in turns since 2400.0, already
-// advanced for this turn.
+// advanced for this turn. A due event's slot is emptied; it strikes for the
+// empire recorded when it was scheduled if its target object still exists,
+// and its message goes out whenever the one picked has a title, whether or
+// not the effect took (spec 05 §4, confirmed: binary).
 void fireDueEvents(TurnContext& ctx, Rng& rng);
 void rollNewEvent(TurnContext& ctx, uint32_t date, Rng& rng);
 

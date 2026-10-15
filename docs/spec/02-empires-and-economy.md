@@ -232,6 +232,22 @@ Combat, sensor and shield facility abilities are covered in other specs.
 - `Required Trait 1..3` and `Restricted Trait 1..3`: trait names or `None`. These are
   prerequisites and exclusions.
 
+**What the game reads** (confirmed: binary; added 2026-10-14, complete listing):
+- A `Trait Type` outside the 33 names below, spelled exactly, is a data-file error.
+- Only `Value 1` and `Value 2` and the three Required and three Restricted slots are read;
+  further values and slots are ignored.
+- A Required or Restricted name is resolved to a trait when the file is loaded, by exact
+  spelling; "None" means an empty slot. A name that matches no trait is silently dropped,
+  and of two traits of one name the later one is meant.
+
+Since 2026-10-14 ours follows (`ruleset/load.cpp` `loadRacialTrait`, `crossCheck`,
+`Ruleset::racialTraitNamed`, and Empire Setup's trait rules in `setup_model.cpp`). Our loader
+still says what the game passes over: the unknown or misspelled type as an error with file,
+line and record, a dropped name as a warning, and the further values and slots among
+`opense4-datacheck`'s unread fields. Before, it accepted any type, read any number of values
+and slots, matched names without regard to case and spacing, and reported an unknown name as
+an error.
+
 **`Trait Type` values** (confirmed: binary). The engine accepts 33 type names; stock data
 uses only some of them. The meaning of Val1 follows each type.
 - Flags: `No Plagues` (§3), `No Spaceports` (§5.5), `Galaxy Seen`, `Population
@@ -308,7 +324,7 @@ change to anger in tenths of a percent: positive means angrier.
 
 How the game uses each record value is in §4 (confirmed: binary). In short:
 - The five planet events at the top are empire-wide. So are the `New Treaty …` values,
-  unless a game option switches treaty effects off.
+  unless Game Setup's Team Mode is on (§4).
 - `Any Ship Lost` is counted from every "ship lost in system" event and `Any Ship
   Constructed` from every ship built; both are empire-wide.
 - Battles are logged per sector: the colonies of that system get the `… in System` value,
@@ -414,6 +430,16 @@ Trim values, since some have trailing spaces.
   planets, §9), and a planet that rebels and founds a new empire, are **capitals**: their
   anger can never rise above 80, so a capital never riots (confirmed: binary). Ordinary
   colonies are not capitals.
+- **The capital mark belongs to the colony** (confirmed: binary; corrected 2026-10-14,
+  complete listing). It is written only when a colony is created, copied, loaded or set up
+  as a new colony (the starting planets, colonization, a rebellion). A change of owner
+  (capture in ground combat, a treaty or package transfer, an intelligence project) changes
+  only the owner and leaves the mark as it was. So a captured or ceded capital stays a
+  capital for its new owner: its anger is at most 80, it never riots, and whatever else
+  reads the mark still sees it (the computer players value a capital far above other
+  planets, spec 05 §7.4). Since 2026-10-14 ours follows (`combat_ground.cpp`
+  `capturePlanet` and `diplomacy::transferColony` keep `Colony::homeworld`); before, both
+  cleared it.
 - **No single homeworld marker** (confirmed: binary). Three separate things play that
   part:
   - the capital flag above;
@@ -428,8 +454,22 @@ Trim values, since some have trailing spaces.
   The `Palace` ability plays no part (§1.5).
 - When a colony's population dies out (for example to plague), the colony is removed.
   Each planet value then drops by `Planet Value Percent Loss After Owner Death` (§1.2),
-  and the owner gets `Homeworld Lost` if the colony's type is `Homeworld` (the first of
-  the game's built-in colony types, §10), else `Any Planet Lost` (confirmed: binary).
+  and the owner gets `Homeworld Lost` if the colony's type is `Homeworld`, else `Any Planet
+  Lost` (confirmed: binary). The test compares the colony type, as written, with the game's
+  own built-in name `Homeworld`, the name every starting planet gets (§9), not with
+  `DefaultColonyTypes.txt` (confirmed: binary; corrected 2026-10-14, complete listing:
+  this said "the first of the game's built-in colony types"; the same in the stock data).
+- **That is the only place `Homeworld Lost` and `Any Planet Lost` are logged**
+  (confirmed: binary; corrected 2026-10-14, complete listing). A planet taken in ground
+  combat logs `Any Our Planet Captured` for the loser and `Any Enemy Planet Captured` for
+  the captor (§4), and nothing else. A planet destroyed (by an event, a stellar
+  manipulation or a star's shockwave), a planet that rebels and founds an empire, and a
+  planet that an intelligence project makes join another empire log no happiness event at
+  all. Since 2026-10-14 ours follows (`economy::colonyDiesOut` alone logs the two;
+  `combat_ground.cpp` `capturePlanet`, `movement_stellar.cpp` `loseColony` and `events.cpp`
+  `breakAway` and the rebellion's join no longer do); before, the loser of a captured
+  capital got both, `Any Planet Lost` came with every capture, rebellion and destruction,
+  and `Homeworld Lost` with a rebel or captured capital and a destroyed Homeworld.
 
 **Domes.** A colony is domed if any race on it cannot breathe the atmosphere. A domed
 colony uses the `… Domed` capacities [M/D]. Edge cases:
@@ -589,8 +629,9 @@ system is added each turn to every colony of the owner there. Negative values do
   Our engine follows this since 2026-10-13 (`cmd::AbandonPlanet` with `scrapFacilities`,
   `OrderKind::Abandon`, movement's `abandon`): it used to abandon at once in both turn
   styles after scrapping the facilities one command at a time, and always wrote the entry.
-  The percentage is worked out once, before the first facility goes (inferred, spec 03 §19
-  Q84), and the empire's history keeps an entry either way (OpenSE4's).
+  The percentage is worked out once, before the first facility goes, and every facility is
+  scrapped with it (confirmed: binary, 2026-10-14, complete listing; spec 03 §19 Q84 said
+  "inferred"); the empire's history keeps an entry either way (OpenSE4's).
 
 **Death and defence**
 - Bombardment kills 1M for every `Damage Points To Kill One Population` points of damage.
@@ -628,7 +669,12 @@ entry in the empire's happiness type (§1.8), in tenths of a percent.
 logged since the last update (each event carries a count):
 - `count × v[…]` for `Homeworld Lost`, `Any Planet Lost`, `Any Planet Colonized`, `Any Our
   Planet Captured` and `Any Enemy Planet Captured`;
-- `count × v[New Treaty …]` for new treaties, unless a game option turns treaty effects off;
+- `count × v[New Treaty …]` for new treaties, unless Game Setup's **Team Mode** ("All
+  computer players versus all human players", a game option saved with the game) is on: then
+  every new-treaty event is ignored, logged and dropped with the rest of the list, so it
+  changes no anger and makes no report (confirmed: binary; corrected 2026-10-15, complete
+  listing: the option was not named, and OpenSE4 counted the events regardless; since
+  2026-10-15 `updateHappiness` follows);
 - `count × v[Any Ship Lost]` for each "ship lost in system" event, and `count × v[Any Ship
   Constructed]` for each "ship constructed" event;
 - minus `trunc(E_happy / 5)`, where `E_happy` is the Happiness characteristic − 100 plus
@@ -670,10 +716,53 @@ logged since the last update (each event carries a count):
 - `change = trunc(total / 10)` in whole percent, plus the sum of `Planet - Change
   Population Happiness` Val1 on the colony (positive values make it angrier).
 - A negative change is limited to `trunc(Max Negative Anger Change / 10)`, a positive one
-  to `trunc(Max Positive Anger Change / 10)`.
+  to `trunc(Max Positive Anger Change / 10)`. For the negative side the rule is exactly:
+  a negative change below the stored value ÷ 10 (truncated) is replaced by that value, with
+  its sign as stored. A positive stored value thus turns every calming change into that
+  many points of anger; the stock values are negative (confirmed: binary; corrected
+  2026-10-14, complete listing: our engine used minus the absolute value, inferred).
 - `anger = clamp(anger + change, 0, 100)`, then at most 80 for a capital (§2).
 - Changes smaller than 10 tenths in total are lost each turn, because of the truncation.
-- A colony that is rioting after the update logs a riot message to its owner.
+- A colony that is rioting after the update, and has population, logs a riot message to its
+  owner: category Misc, an event-style entry (confirmed: binary; corrected 2026-10-14,
+  complete listing: a colony without people logs none).
+
+**Mood reports** (confirmed: binary; added 2026-10-14, complete listing; the order
+corrected 2026-10-15). The update writes reports to the empire's own log, a computer
+player's included, by cause. The causes come in this fixed order: the five planet events
+(`Homeworld Lost`, `Any Planet Lost`, `Any Planet Colonized`, `Any Our Planet Captured`,
+`Any Enemy Planet Captured`); the twelve `New Treaty …` values in the order of §1.8; the
+three battle results (`… - Win`, `… - Loss`, `… - Stalemate`, a battle's sector and system
+values in one total); enemy ships counted system-wide (when none is in the colony's
+sector), enemy ships in the sector, our ships in the sector, our ships counted system-wide
+(two totals each, the pairs sharing a phrase); enemy troops; our troops; population killed;
+ship losses (empire-wide `Any Ship Lost`, per system `Ship Lost in System`); ship
+construction (empire-wide `Any Ship Constructed`, per system `Ship Constructed`); facility
+construction; plague (the `Planet Plagued` event and a plagued colony's own term). Each
+cause has a short phrase of its own. Empire-wide only the planet events, the treaties (not
+in Team Mode), ship losses and ship construction can appear; per system the rest.
+- **Empire-wide**, right after the empire-wide sum: for each cause in turn, the cause's
+  total from the empire-wide events alone, truncated to whole percent; above 20 a
+  "Population Growing Unhappy" entry says that the Planetary Minister reports the general
+  population growing unhappy because of that cause, below −20 a "Population Growing
+  Happier" entry that it has grown happier because of it. The Happiness characteristic's
+  calm is not a cause.
+- **Per system**, after every colony is updated: for each system, in system order, where at
+  least one of the empire's colonies changed its anger this update, and each cause in turn,
+  the cause's contributions summed over the empire's colonies in that system (their sector
+  and system events, ships present, troops and plague; not the drift, the empire-wide part
+  or the colonies' own happiness facilities), truncated to whole percent: above 20 the same
+  "Unhappy" entry naming that system's population, below −20 the "Happier" one.
+- The entries are category Politics, of the original's entry kind 49 (unhappy, picture
+  `PopulationAngry`) or 48 (happier, picture `PopulationHappy`), with a Goto to the system.
+- **Order in the log**: the empire-wide reports, then each colony's riot entry as it is
+  updated, then the per-system reports.
+- The wording is ours. An empire-wide report names no system and has no Goto, and a
+  per-system one goes to the system's centre sector (inferred, question 57).
+- Since 2026-10-14 ours follows all of this (`economy_population.cpp` `updateHappiness`,
+  `reportMoods`, `updateColonyAnger`); before, the update wrote no reports, logged a riot
+  for a colony without people, and replaced a negative change only by minus the stored
+  value's absolute size.
 
 **Later the same turn**, after construction, the best `Change Population Happiness -
 System` Val1 in each system is subtracted from the anger of every colony of the owner
@@ -685,7 +774,8 @@ loaded game starts every list empty. An event logged after the empire's update i
 end-of-turn processing (§12) waits for the next turn's update: the `Ship Constructed` and
 `Facility Constructed` events of its construction step (§6), and the events of anything
 later in the turn (spec 05 §8, ground combat included). It counts only when the game is not
-saved and loaded before that update. A game hosted turn by turn (every game on different
+saved and loaded before that update. A rebel empire starts with a copy of its former owner's
+list, the owner keeping its own (spec 05 §2.3, question 82, confirmed: binary). A game hosted turn by turn (every game on different
 machines and every play-by-email game, which the host saves after each turn and loads for
 the next) therefore never counts a construction event; a game played on one machine
 without reloading does. Observed under a debugger (2026-10-02): in two hosted 100-turn games
@@ -733,8 +823,18 @@ saved and loaded.
 - **Emotionless** trait: the empire skips the whole update above, riot events skip its
   planets, and any other change to its colonies' anger (such as a system happiness
   facility) sets the anger to 35 (Indifferent) instead. A new colony keeps its starting 25
-  (Happy, so +10 % output with stock Settings) until such a change. It never riots, and
-  its growth gets no mood term. The UI shows its mood as "Emotionless".
+  (Happy, so +10 % output with stock Settings) until such a change. The UI shows its mood
+  as "Emotionless", and its growth gets no mood term; nothing else ignores the band
+  (confirmed: binary; corrected 2026-10-14, complete listing: this said "it never riots").
+  The riot tests of output, growth and the queue rate look at the anger band only, with no
+  trait test, and the output follows the band's `Mood … Modifier` (25 gives the Happy
+  rate). A change of owner keeps the colony's anger (capture, treaty, gift, intelligence),
+  so a colony at anger 90 or more that passes to an Emotionless empire goes on rioting (no
+  output, no growth, no construction) until something changes its anger (a system happiness
+  facility sets it to 35). Since 2026-10-14 ours follows (`economy.cpp`
+  `reproductionPercent`, `colonyOutput` step 6, `economy_queue.cpp` `rioting`); before, such
+  a colony never rioted for growth and construction, and for output it skipped the riot stop
+  but took the riot modifier.
 
 ---
 
@@ -1072,7 +1172,10 @@ fresh queue, which ended emergency and slow mode.
   and are saved with the game (spec 08 §3.6.6; `Empire::queueTypes`, save format 10):
   - Select Queue Type (Fill Queue) lists them. Add Type asks for a "Queue Type Name" and
     stores a copy of the current queue's items with their counts; Delete Type removes the
-    selected type.
+    selected type. An empty name, or a name already in the empire's list (letter case
+    ignored), adds nothing and says nothing (confirmed: binary; added 2026-10-14, complete
+    listing). Since 2026-10-14 our client follows (`canAddQueueType`); before, it added a
+    second type of that name.
   - Fill appends each item of the type with its stored count. Each item goes through the
     queue's acceptance (§6.5), and each one refused gives its own "Warning" message box
     with the reason; the others are added.
@@ -1137,6 +1240,17 @@ at the ship limit (spec 05 §7.5, question 81).
   Reached"; the progress was already cleared, and the item stays, so it must be paid for
   again (confirmed: binary). The limit is checked once per item, so an item of several
   ships can go past it.
+- The empire's construction step carries one flag across all its queues: only the first
+  item that meets the ship limit in a turn logs the message; later blocked items that turn
+  stay in their queues as usual, without one (confirmed: binary; corrected 2026-10-14,
+  complete listing). Since 2026-10-14 ours follows (`economy_queue.cpp` `runConstruction`,
+  `completeItem`); before, every blocked queue logged an entry.
+- When a vehicle item completes and the ship limit does not stop it, its design gets the
+  "built at least once" mark first (spec 03 §4.1, spec 05 §2.3); only then are the ships
+  made or the units placed. So a unit item none of whose units finds room still ends the
+  design's prototype status: it can no longer be edited, and spying can steal it
+  (confirmed: binary; corrected 2026-10-14, complete listing). Since 2026-10-14 ours follows
+  (`completeItem`); before, a unit design was marked only when a unit was placed.
 
 **Facilities**
 - Only as many facilities can be queued as there are free slots, counting the whole count
@@ -1253,12 +1367,21 @@ at the ship limit (spec 05 §7.5, question 81).
 - If anything is unpaid, `unpaid div Maintenance Cost Amt Per Dead + 1` vehicles are
   destroyed (so 1 to 19999 unpaid destroys one, 20000 destroys two), but never more than
   there are candidates.
-- Candidates: the empire's ships that are out of supply (supply 0) and pay maintenance.
-  If there are none, every ship and unit group of the empire is a candidate.
+- Candidates: the empire's vehicles in space whose supply is 0 and whose maintenance
+  charge (steps 1–4 above) is above 0 in at least one resource; so no unit group or
+  mothballed ship, nor a ship or base whose charge comes to 0 in every resource (cost
+  modifiers or a full system reduction). If there are none, every ship and unit group of
+  the empire is a candidate (confirmed: binary; corrected 2026-10-14, complete listing:
+  OpenSE4 took every ship and base out of supply that was not mothballed).
 - Each victim is picked at random among the remaining candidates and destroyed whole (a
   unit group loses all its units). The owner gets a "Ship Abandoned" or "Unit Group
-  Abandoned" message. The loss fires no happiness event: `Ship Lost in System` (and so
-  `Any Ship Lost`) is logged only for a ship destroyed by damage.
+  Abandoned" entry, category Misc (the original's entry kind 24, maintenance or supply
+  problem), with a Goto to the vehicle's place: the Maintenance Minister reports that the
+  vehicle was abandoned for lack of maintenance funds (confirmed: binary; corrected
+  2026-10-14, complete listing: OpenSE4 wrote Construction entries). The loss fires no
+  happiness event: `Ship Lost in System` (and so `Any Ship Lost`) is logged only for a ship
+  destroyed by damage.
+- Since 2026-10-14 ours follows both (`economy.cpp` `abandonVehicles`).
 
 ---
 
@@ -1461,14 +1584,26 @@ homeworld and the extra ones alike, is set up the same way:
   {Low,Medium,High} Percent` of the Home Planet Value setting plus R[1,10] − 5, drawn
   separately per resource, so it lies within −4 to +5 of the setting (the observed 100 / 98
   / 102 % fits). In a finite game each value is exactly the matching `... Resources` key.
+  Either way each value goes through the game's ordinary value setter, which clamps it to
+  `Minimum/Maximum Planet Percent Value` (normal game) or `... Resource Value` (finite
+  game), a negative result becoming 0 (§1.2) (confirmed: binary; corrected 2026-10-14,
+  complete listing). No stock value is affected (120 + 5 < 250).
 - Conditions are not changed: they stay as generated (spec 01 §5.6).
 - **Colony.** Any previous owner is removed. The planet becomes a colony of the empire's
-  race at its **maximum population**. Every starting planet, the extra ones included, is a
-  capital (anger at most 80, §2) with colony type `Homeworld`, so losing any of them logs
-  `Homeworld Lost`.
-- **Facilities.** For each role the empire's best known facility is used (the facility
-  whose ability value, or tech level, is highest). They are added in this order while the
-  planet has free facility slots:
+  race with the **`Max Population` of its PlanetSize record** (the normal column), read
+  before the colony exists and so without the `Planet Storage Space` trait (confirmed:
+  binary; corrected 2026-10-14, complete listing: this said "at its maximum population").
+  A race with that trait (the stock one gives +20 %) therefore starts below its maximum and
+  grows into the rest; the facilities below do use the trait's larger slot count. Every
+  starting planet, the extra ones included, is a
+  capital (anger at most 80, §2) with colony type `Homeworld`, so any of them whose people
+  die out logs `Homeworld Lost` (§2).
+- **Facilities.** For each role the empire's best known facility is used (confirmed:
+  binary; corrected 2026-10-14, complete listing). For the resource producers, the research
+  facility and the supply generator the score is the role's ability Val1; for the spaceport
+  and the space yard it is the sum of the facility's tech-level requirements. On a tie the
+  facility later in Facility.txt wins. They are added in this order while the planet has
+  free facility slots:
   1. a spaceport, unless the race has the `No Spaceports` trait;
   2. a space yard;
   3. a supply generator (resupply depot);
@@ -1476,6 +1611,20 @@ homeworld and the extra ones alike, is set up the same way:
   5. one research facility, unless the empire already knows every technology;
   6. then, until the slots are full, alternately a mineral producer and a research
      facility, starting with minerals (only minerals once every technology is known).
+
+  "Every technology known" compares two sums (confirmed: binary; corrected 2026-10-14,
+  complete listing): the empire's levels in every tech area, each capped at the area's
+  maximum, the areas the race cannot use included, against the maxima of the areas allowed
+  in the game and open to the race. The two readings ("every visible area at its maximum")
+  agree unless levels in unusable areas make up a shortfall elsewhere, which the stock data
+  never allows at Low, Medium or High.
+
+  Since 2026-10-14 ours follows all of this (`setup.cpp` `setUpStartingPlanet`,
+  `addStartingFacilities` with `research::researchedEverything`, `Rules::bestFacilityWith`,
+  `economy::clampPlanetValue`). Before, the population was the trait-raised maximum (2,400M
+  instead of 2,000M on a Medium homeworld, with a higher population bracket and opening
+  stockpile), a tie went to the earlier facility, the yard was scored by its total rate,
+  every visible area had to be at its maximum, and the values were not clamped.
 
   A Medium planet (15 slots) thus gets a spaceport, a yard, a depot, 5 mineral, 1 organic,
   1 radioactive and 5 research facilities, as observed (07-observations, Calibration).
@@ -1733,8 +1882,9 @@ section named.
     fifth more) per turn by level; the level does not progress on its own.
 21. **Homeworld start.** *Answered* (confirmed: binary): see §9. Home Planet Value picks
     the homeworld size (Small, Medium or Large) and the value keys, each value within −4 to
-    +5 of the setting. Every starting planet gets full population and facilities in a fixed
-    order, and the resupply depot is the third facility placed. The stockpile is Starting
+    +5 of the setting. Every starting planet gets the planet size's plain maximum population
+    (without the `Planet Storage Space` trait; corrected 2026-10-14) and facilities in a
+    fixed order, and the resupply depot is the third facility placed. The stockpile is Starting
     Resources plus one turn of production. Every starting planet is a capital (anger
     capped at 80) of colony type `Homeworld`.
 22. **Setup ranges.** *Answered* (confirmed: binary): racial points 0, 2,000 (the
@@ -1902,3 +2052,9 @@ must change.
     commands can come from any client. No difference in play is expected.
     *Corrected 2026-10-13* (REA audit, confirmed: binary): a facility item is also refused
     when the facility is not researched; the full list is §6.5 "Acceptance".
+57. **Where the mood reports point** (§4 "Mood reports", raised 2026-10-14 when the
+    complete listing showed the reports). The reports go to the system they name; which
+    system and sector an empire-wide report records, if any, and which sector a per-system
+    one records, were not read. Our engine gives an empire-wide report no location and no
+    Goto, and a per-system one the system's centre sector (`reportMoods`, inferred). To
+    verify in the executable.

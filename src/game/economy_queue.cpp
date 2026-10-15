@@ -46,9 +46,8 @@ Resources vehicleYardRates(const Rules& r, const GameState& s, const Vehicle& v)
     return out;
 }
 
-bool rioting(const Rules& r, const GameState& s, const Colony& c) {
-    return moodFromAnger(c.anger) == Mood::Rioting && !emotionless(r, s, c.owner);
-}
+// The anger band alone, whatever the race (spec 02 §4, confirmed: binary).
+bool rioting(const Colony& c) { return moodFromAnger(c.anger) == Mood::Rioting; }
 
 // Why a queue cannot work this turn (empty = it can).
 std::string_view queueBlocked(const Rules& r, const GameState& s, const cmd::QueueTarget& t) {
@@ -62,7 +61,7 @@ std::string_view queueBlocked(const Rules& r, const GameState& s, const cmd::Que
     const Colony* c = s.colony(t.planet);
     if (!c) return "gone";
     if (c->totalPopulation() <= 0) return "no population";
-    if (rioting(r, s, *c)) return "rioting";
+    if (rioting(*c)) return "rioting";
     return {};
 }
 
@@ -86,7 +85,7 @@ Resources constructionRate(const Rules& r, const GameState& s, EmpireId e, const
     } else {
         const Colony* c = s.colony(t.planet);
         if (!c || c->owner != e) return {};
-        if (c->totalPopulation() <= 0 || rioting(r, s, *c)) return {};
+        if (c->totalPopulation() <= 0 || rioting(*c)) return {};
         const int popShipyard = populationModifier(r, c->totalPopulation()).shipyard - 100;
         Resources base;
         int64_t m = 0;
@@ -332,7 +331,6 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
         ++placed;
     }
     s.design(design).built += placed;
-    if (placed > 0) s.design(design).everBuilt = true;  // built at least once (spec 05 §2.3)
     if (placed > 0 && ctx.hooks) {
         // A mod's event (hooks.hpp): units go into cargo, no vehicle.
         HookArgs a;
@@ -349,7 +347,10 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
     return last;
 }
 
-Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const QueueItem& item, int autoWaypoint) {
+// `shipLimitReported`: the empire's construction step has logged the ship
+// limit this turn already; only its first item to meet the limit does (spec 02
+// §6.5, confirmed: binary).
+Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const QueueItem& item, int autoWaypoint, bool& shipLimitReported) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     const std::string where = placeName(s, q);
@@ -358,18 +359,25 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
             if (!item.design.valid() || item.design.index() >= s.designs.size()) return Outcome::Invalid;
             const Design& d = s.design(item.design);
             const int count = std::max(1, item.count);
-            if (isShipOrBase(r.hull(d.hull).type)) {
-                // At the ship limit nothing is built; the progress is already spent (confirmed: binary).
-                if (shipCount(r, s, e) >= s.options.maxShipsPerPlayer) {
-                    // No Goto for the ship limit (spec 06 §7 Q41).
+            const bool vessel = isShipOrBase(r.hull(d.hull).type);
+            if (vessel && shipCount(r, s, e) >= s.options.maxShipsPerPlayer) {
+                // At the ship limit nothing is built; the progress is already
+                // spent. Only the first item of the turn to meet it says so
+                // (confirmed: binary). No Goto for the ship limit (spec 06 §7 Q41).
+                if (!shipLimitReported)
                     logGoto(ctx.log(e, LogCategory::Construction, std::format("{} cannot build {}", where, d.name),
                                     "The empire has reached its limit on ships.", q.location, "AtMaxShips"),
                             LogGoto::None);
-                    return Outcome::Blocked;
-                }
+                shipLimitReported = true;
+                return Outcome::Blocked;
+            }
+            // Built at least once (spec 05 §2.3), marked before the ships are
+            // made or the units placed, so also for a unit item none of whose
+            // units finds room (spec 03 §4.1, confirmed: binary).
+            s.design(item.design).everBuilt = true;
+            if (vessel) {
                 const DesignId design = item.design;
                 const int64_t tonnage = designTonnage(r, d);
-                s.design(design).everBuilt = true;  // built at least once (spec 05 §2.3)
                 for (int k = 0; k < count; ++k) {
                     const Vehicle& v = movement::spawnVehicle(r, s, e, design, q.location, autoWaypoint);
                     ctx.log(e, LogCategory::Construction, std::format("{} completed", v.name), std::format("Built at {}.", where), q.location,
@@ -477,7 +485,7 @@ bool stillBuildable(const Rules& r, const GameState& s, EmpireId e, const QueueR
 // min(rate, cost - progress) of every resource, that is paid and the progress
 // grows by the whole rate; otherwise nothing happens. At most one completion,
 // and the overshoot is lost.
-Resources runQueue(TurnContext& ctx, EmpireId e, const QueueRef& q) {
+Resources runQueue(TurnContext& ctx, EmpireId e, const QueueRef& q, bool& shipLimitReported) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     ConstructionQueue* queue = liveQueue(s, q);
@@ -512,7 +520,7 @@ Resources runQueue(TurnContext& ctx, EmpireId e, const QueueRef& q) {
     const QueueItem done = item;
     item.spent = {};  // cleared before the item is built
     const int waypoint = queue->autoWaypoint;
-    const Outcome outcome = completeItem(ctx, e, q, done, waypoint);
+    const Outcome outcome = completeItem(ctx, e, q, done, waypoint, shipLimitReported);
     queue = liveQueue(s, q);  // spawning may move vehicles in memory
     if (!queue || queue->items.empty() || outcome == Outcome::Blocked) return use;  // blocked: stays, to be paid again
     if (outcome == Outcome::Done && queue->repeat && stillBuildable(r, s, e, q, done)) return use;
@@ -542,7 +550,8 @@ void runConstruction(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
     if (!livingEmpire(s, e)) return;
     Resources spent;
-    for (const QueueRef& q : empireQueues(ctx.rules, s, e)) spent += runQueue(ctx, e, q);
+    bool shipLimitReported = false;  // one flag across all the empire's queues (spec 02 §6.5, confirmed: binary)
+    for (const QueueRef& q : empireQueues(ctx.rules, s, e)) spent += runQueue(ctx, e, q, shipLimitReported);
     s.empire(e).economy.construction = spent;
     const int maxTurns = static_cast<int>(std::max<int64_t>(0, ctx.rules.setting("Maximum Emergency Build Turns", 10)));
     for (auto& c : s.colonies)

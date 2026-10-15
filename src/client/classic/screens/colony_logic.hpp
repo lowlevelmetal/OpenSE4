@@ -387,6 +387,10 @@ inline constexpr std::array<int, 14> kUnitAmounts{1, 5, 10, 15, 20, 25, 30, 35, 
 // binary): `name` is added when it is not empty, not in `types` yet, and the
 // list holds fewer than `limit`; otherwise nothing happens.
 bool canAddType(const std::vector<std::string>& types, const std::string& name, size_t limit);
+// Add Type of Select Queue Type (spec 02 §6.4, confirmed: binary): an empty
+// name, or one the empire's list already holds with letter case ignored, adds
+// nothing and says nothing.
+bool canAddQueueType(const std::vector<game::QueueType>& types, std::string_view name);
 inline constexpr size_t kMaxDesignTypes = 250;   // the original's limit
 inline constexpr size_t kMaxColonyTypes = 255;   // OpenSE4's: what the saved game's list holds
 

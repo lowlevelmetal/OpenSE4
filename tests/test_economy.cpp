@@ -718,6 +718,43 @@ TEST_CASE("economy: unpaid maintenance abandons whole vehicles, ships out of sup
     CHECK(vehiclesOf(s, kMe) == 2);
 }
 
+TEST_CASE("economy: a ship out of supply whose charge is 0 is no first choice; the entry is Misc (spec 02 §7, confirmed: binary)") {
+    auto r = tweakedRules([](ruleset::Ruleset& rs) {
+        setKey(rs, "Maintenance Cost Amt Per Dead", 1'000'000);  // one victim
+        setKey(rs, "Minimum Empire Minerals Generation", 0);
+        setKey(rs, "Minimum Empire Organics Generation", 0);
+        setKey(rs, "Minimum Empire Radioactives Generation", 0);
+        addFacility(rs, "Free Dock", {ability(AbilityKind::ReducedMaintenanceSystem, 100)});
+    });
+    GameState base = newGame(*r);
+    dropVehicles(base, kMe);
+    Colony& home = plainHome(*r, base, {"Free Dock"});
+    const DesignId ship = frigate(base, *r, kMe);
+    const Location homeLoc = locationOf(base.galaxy, home.planet);
+    const Location away{base.galaxy.object(freePlanet(base, homeLoc.system, false)).system, Sector{1, 1}};
+    const VehicleId free = addTestVehicle(base, *r, ship, homeLoc).id;   // out of supply, but pays nothing here
+    const VehicleId dry = addTestVehicle(base, *r, ship, away).id;       // out of supply and pays
+    for (int i = 0; i < 4; ++i) addTestVehicle(base, *r, ship, away).supply = 100;
+    base.vehicle(free)->supply = 0;
+    base.vehicle(dry)->supply = 0;
+    REQUIRE(economy::vehicleMaintenance(*r, base, *base.vehicle(free)).isZero());
+    for (uint64_t seed = 1; seed <= 8; ++seed) {
+        GameState s = base;
+        s.rng = Rng(seed);
+        s.empire(kMe).stockpile = {};
+        economyTurn(*r, s);
+        CHECK(s.vehicle(dry) == nullptr);
+        CHECK(s.vehicle(free) != nullptr);
+        const LogEntry* entry = nullptr;
+        for (const LogEntry& l : s.empire(kMe).log)
+            if (l.title == "Ship Abandoned") entry = &l;
+        REQUIRE(entry != nullptr);
+        CHECK(entry->category == LogCategory::Misc);
+        CHECK(entry->location == std::optional<Location>(away));
+        CHECK(entry->text.find("Maintenance Minister") != std::string::npos);
+    }
+}
+
 // ---- Construction ------------------------------------------------------------------------------------
 
 TEST_CASE("economy: construction rates from yards, population, race, culture and modes") {
@@ -982,6 +1019,52 @@ TEST_CASE("economy: ships appear at the yard, follow the queue's waypoint and re
     CHECK(home.queue.items[0].spent.isZero());
     CHECK(s.empire(kMe).economy.construction == Resources{160, 20, 20});
     CHECK(logged(s, kMe, "limit on ships"));
+}
+
+TEST_CASE("economy: the ship limit is logged once per empire and turn (spec 02 §6.5, confirmed: binary)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {"Test Space Yard"});
+    Colony& second = addColony(s, kMe, freePlanet(s, s.galaxy.object(home.planet).system, true), 1000);
+    second.facilities = {facilityIndex(r, "Test Space Yard")};
+    const DesignId ship = frigate(s, r, kMe);
+    QueueItem item;
+    item.design = ship;
+    home.queue.items.push_back(item);
+    second.queue.items.push_back(item);
+    s.options.maxShipsPerPlayer = shipCount(r, s, kMe);
+    s.empire(kMe).stockpile = {10000, 10000, 10000};
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);
+    // Both items are paid and stay; only the first says why.
+    CHECK(home.queue.items.size() == 1);
+    CHECK(second.queue.items.size() == 1);
+    CHECK(s.empire(kMe).economy.construction == Resources{320, 40, 40});
+    CHECK(std::count_if(s.empire(kMe).log.begin(), s.empire(kMe).log.end(),
+                        [](const LogEntry& l) { return l.text.find("limit on ships") != std::string::npos; }) == 1);
+    // The next turn says it once again.
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);
+    CHECK(logged(s, kMe, "limit on ships"));
+}
+
+TEST_CASE("economy: a unit design is marked built even when none of its units finds room (spec 03 §4.1, confirmed: binary)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {});
+    home.cargo.population = {{kMe, 1'000'000}};  // no room in the sector
+    const cmd::QueueTarget q{home.planet, {}};
+    const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    QueueItem item;
+    item.design = fighter;
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
+    CHECK_FALSE(s.design(fighter).everBuilt);
+    economyTurn(r, s);
+    CHECK(s.design(fighter).built == 0);
+    CHECK(s.design(fighter).everBuilt);
+    CHECK(home.queue.items.size() == 1);
 }
 
 TEST_CASE("economy: units go into cargo, one at a time, in the same sector only") {
@@ -1758,14 +1841,19 @@ TEST_CASE("economy: a colony whose people all die is removed and its planet lose
     CHECK(countMood(moods, "Homeworld Lost") == 0);
     CHECK(logged(s, kMe, "wiped out"));
 
-    // A colony of the first default colony type counts as a homeworld.
-    Colony& d = addColony(s, kMe, planet, 400);
-    d.colonyType = r.data().names.colonyTypes.front();
-    d.plagueLevel = 6;
-    ctx.moodEvents.clear();
-    economy::processPlanets(ctx, kMe);
-    CHECK(countMood(ctx.moodEvents, "Homeworld Lost") == 1);
-    CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 0);
+    // The colony type "Homeworld", the game's own built-in name as written,
+    // counts as a homeworld; the data file's first colony type does not
+    // (spec 02 §2, confirmed: binary).
+    for (const auto& [type, home] : {std::pair<std::string, bool>{"Homeworld", true}, {r.data().names.colonyTypes.front(), false}, {"homeworld", false}}) {
+        CAPTURE(type);
+        Colony& d = addColony(s, kMe, planet, 400);
+        d.colonyType = type;
+        d.plagueLevel = 6;
+        ctx.moodEvents.clear();
+        economy::processPlanets(ctx, kMe);
+        CHECK(countMood(ctx.moodEvents, "Homeworld Lost") == (home ? 1 : 0));
+        CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == (home ? 0 : 1));
+    }
 }
 
 TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
@@ -1819,12 +1907,13 @@ TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
 
 namespace {
 
-// A mood model in tenths of a percent, with room for large changes.
-std::unique_ptr<Rules> moodRules() {
-    return tweakedRules([](ruleset::Ruleset& rs) {
+// A mood model in tenths of a percent, with room for large changes (the limits
+// may be given).
+std::unique_ptr<Rules> moodRules(int maxPositive = 200, int maxNegative = -150) {
+    return tweakedRules([&](ruleset::Ruleset& rs) {
         auto& m = rs.happinessModels[0];
-        m.maxPositiveChange = 200;   // +20 % a turn at most
-        m.maxNegativeChange = -150;  // -15 %
+        m.maxPositiveChange = maxPositive;   // +20 % a turn at most
+        m.maxNegativeChange = maxNegative;   // -15 %
         m.triggers = {{"Any Ship Lost", 20},
                       {"Any Planet Colonized", 15},
                       {"Battle in System - Loss", 100},
@@ -1847,14 +1936,14 @@ std::unique_ptr<Rules> moodRules() {
 }
 
 struct MoodWorld {
-    std::unique_ptr<Rules> rules = moodRules();
-    GameState s = newGame(*rules);
+    std::unique_ptr<Rules> rules;
+    GameState s;
     Colony* home = nullptr;
     Colony* moon = nullptr;
     Colony* far = nullptr;
     SystemId sys;
 
-    MoodWorld() {
+    explicit MoodWorld(std::unique_ptr<Rules> withRules = moodRules()) : rules(std::move(withRules)), s(newGame(*rules)) {
         s.vehicles.clear();
         home = &plainHome(*rules, s, {});
         sys = s.galaxy.object(home->planet).system;
@@ -1939,6 +2028,109 @@ TEST_CASE("economy: happiness clamps, capitals, the Happiness characteristic and
     // A large negative change is limited to Max Negative Anger Change / 10.
     populationTurn(r, w.s, {{kMe, "Facility Constructed", w.s.galaxy.object(w.far->planet).system, w.far->planet, 5}});
     CHECK(w.far->anger == 43 - 15);
+}
+
+TEST_CASE("economy: a positive Max Negative Anger Change turns every calming change into anger (spec 02 §4, confirmed: binary)") {
+    MoodWorld w(moodRules(200, 50));  // +5 % as stored
+    const Rules& r = *w.rules;
+    populationTurn(r, w.s, {{kMe, "Facility Constructed", w.s.galaxy.object(w.far->planet).system, w.far->planet, 1}});
+    CHECK(w.far->anger == 45);   // a calming −5 % became +5 %
+    CHECK(w.home->anger == 40);  // no change at all stays none
+}
+
+TEST_CASE("economy: the Planetary Minister reports moods by cause, after the riots (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    const SystemId farSys = w.s.galaxy.object(w.far->planet).system;
+    w.moon->anger = 89;
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s,
+                   {{kMe, "New Treaty War", {}, {}, 1},                         // +50 %: empire-wide, reported
+                    {kMe, "Any Ship Lost", {}, {}, 11},                         // +22 %: empire-wide, reported
+                    {kMe, "Any Planet Colonized", {}, {}, 1},                   // +1.5 %: not
+                    {kMe, "Battle in System - Loss", w.sys, {}, 1},             // +10 % on home and on the moon
+                    {kMe, "Battle in Sector - Loss", w.sys, w.home->planet, 1}, // +3 % at home: 23 % in the system
+                    {kMe, "Facility Constructed", farSys, w.far->planet, 5}});  // −25 % in the far system
+    const auto& log = w.s.empire(kMe).log;
+    std::vector<std::string> rows;
+    for (const LogEntry& l : log)
+        if (l.title.starts_with("Population Growing") || l.title.starts_with("Riots on")) rows.push_back(l.title + " | " + l.text);
+    const std::string homeName = w.s.galaxy.system(w.sys).name, farName = w.s.galaxy.system(farSys).name;
+    REQUIRE(rows.size() == 5);
+    // Empire-wide reports first, in the causes' order, then the riot, then the
+    // systems in system order.
+    CHECK(rows[0] == "Population Growing Unhappy | The Planetary Minister reports that our people are growing unhappy because of the new war.");
+    CHECK(rows[1] == "Population Growing Unhappy | The Planetary Minister reports that our people are growing unhappy because of the loss of our ships.");
+    CHECK(rows[2].starts_with("Riots on " + w.s.galaxy.object(w.moon->planet).name));
+    const std::string unhappy = "Population Growing Unhappy | The Planetary Minister reports that the people of the " + homeName +
+                                " system are growing unhappy because of defeat in battle.";
+    const std::string happier = "Population Growing Happier | The Planetary Minister reports that the people of the " + farName +
+                                " system are growing happier because of the building of facilities.";
+    if (w.sys < farSys) {
+        CHECK(rows[3] == unhappy);
+        CHECK(rows[4] == happier);
+    } else {
+        CHECK(rows[3] == happier);
+        CHECK(rows[4] == unhappy);
+    }
+    for (const LogEntry& l : log) {
+        if (!l.title.starts_with("Population Growing")) continue;
+        CHECK(l.category == LogCategory::Politics);
+        CHECK(l.picture == (l.title.ends_with("Unhappy") ? "PopulationAngry" : "PopulationHappy"));
+        if (l.text.find("our people") != std::string::npos) {
+            CHECK_FALSE(l.location.has_value());
+            CHECK(l.target == LogGoto::None);
+        } else {
+            REQUIRE(l.location.has_value());
+            CHECK(l.target == LogGoto::Location);
+        }
+    }
+
+    // A system none of whose colonies changed its anger is not reported.
+    MoodWorld still(moodRules(0));  // no colony may get angrier
+    still.s.empire(kMe).log.clear();
+    populationTurn(*still.rules, still.s, {{kMe, "Battle in System - Loss", still.sys, {}, 3}});
+    CHECK(still.home->anger == 40);
+    CHECK_FALSE(logged(still.s, kMe, "Population Growing"));
+}
+
+TEST_CASE("economy: enemy ships in the system and in the sector are reported apart, in their order (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    const DesignId theirs = frigate(w.s, r, kThem, "Raider");
+    for (int i = 0; i < 11; ++i) addTestVehicle(w.s, r, theirs, locationOf(w.s.galaxy, w.home->planet));
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s);
+    // The home colony counts them in its sector (44 %), the moon in the system (22 %).
+    std::vector<std::string> rows;
+    for (const LogEntry& l : w.s.empire(kMe).log)
+        if (l.title.starts_with("Population Growing")) rows.push_back(l.text);
+    REQUIRE(rows.size() == 2);
+    for (const std::string& row : rows) CHECK(row.ends_with("because of enemy ships nearby."));
+}
+
+TEST_CASE("economy: in Team Mode new treaties change no mood (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    w.s.options.teamMode = true;
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s, {{kMe, "New Treaty War", {}, {}, 1}, {kMe, "Any Ship Lost", {}, {}, 3}});
+    CHECK(w.home->anger == 40 + 6);  // the ship losses alone
+    CHECK_FALSE(logged(w.s, kMe, "the new war"));
+    w.s.options.teamMode = false;
+    populationTurn(r, w.s, {{kMe, "New Treaty War", {}, {}, 1}});
+    CHECK(logged(w.s, kMe, "the new war"));
+}
+
+TEST_CASE("economy: a colony without people logs no riot (spec 02 §4, confirmed: binary)") {
+    MoodWorld w;
+    const Rules& r = *w.rules;
+    w.far->population.clear();
+    w.far->anger = 95;
+    w.s.empire(kMe).log.clear();
+    populationTurn(r, w.s);
+    CHECK(moodFromAnger(w.far->anger) == Mood::Rioting);
+    CHECK_FALSE(logged(w.s, kMe, "Riots on"));
 }
 
 TEST_CASE("economy: ships present count per ship; allies count as ours") {
@@ -2040,9 +2232,24 @@ TEST_CASE("economy: Emotionless races skip the update and sit at 35 after any ch
     CHECK(w.home->anger == 35);
     CHECK(w.moon->anger == 35);
     CHECK(w.far->anger == 25);
-    // It never riots and grows without a mood term.
-    w.far->anger = 95;
+    // Its growth has no mood term, but the riot tests read the anger band
+    // alone: a colony at 90 or more (kept through a change of owner) riots,
+    // with no output, growth or construction (spec 02 §4, confirmed: binary).
+    w.far->anger = 60;  // Angry: no −5 for an Emotionless race
     CHECK(economy::reproductionPercent(r, w.s, *w.far) == 10);
+    w.far->anger = 95;
+    CHECK(economy::reproductionPercent(r, w.s, *w.far) == 0);
+    w.far->facilities = {facilityIndex(r, "Test Mine")};
+    CHECK(economy::colonyOutput(r, w.s, *w.far).production.isZero());
+    CHECK(economy::constructionRate(r, w.s, kMe, cmd::QueueTarget{.planet = w.far->planet}).isZero());
+    // Its output follows the band's mood modifier like any other.
+    w.far->anger = 25;
+    const economy::ColonyOutput happy = economy::colonyOutput(r, w.s, *w.far);
+    w.far->anger = 60;
+    const economy::ColonyOutput angry = economy::colonyOutput(r, w.s, *w.far);
+    CHECK_FALSE(happy.production.isZero());
+    CHECK(happy.productionPercent[0] - angry.productionPercent[0] == 30);  // 110 % against 80 %
+    CHECK(economy::moodName(r, w.s, *w.far) == "Emotionless");
 }
 
 TEST_CASE("economy: riots stop output, growth and building, but never cause a rebellion") {
@@ -2085,7 +2292,9 @@ TEST_CASE("economy: a rebel planet founds a new computer empire and becomes its 
     CHECK_FALSE(s.empire(id).relation(kMe).contact);  // it meets the empires that detect it
     CHECK(s.empire(id).relation(kMe).treaty == Treaty::None);
     for (const Empire& e : s.empires) CHECK(e.relations.size() == s.empires.size());
-    CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 1);
+    // The former owner logs no happiness event for it (spec 02 §2, confirmed: binary).
+    CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 0);
+    CHECK(countMood(ctx.moodEvents, "Homeworld Lost") == 0);
     std::vector<EmpireOrders> none;
     processTurn(r, s, none);  // the new empire takes part in the next turn
 }

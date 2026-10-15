@@ -1534,7 +1534,9 @@ TEST_CASE("combat: bombardment can wipe out a colony; the planet stays on the ma
     CHECK(s.colony(planet) == nullptr);
     // The population died out (spec 02 §2): each value drops by `Planet Value Percent Loss After Owner Death`.
     for (size_t k = 0; k < 3; ++k) CHECK(s.galaxy.object(planet).value[k] == std::max(0, values[k] - 10));
-    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 1);
+    // A starting planet's colony type is "Homeworld" (spec 02 §2).
+    CHECK(moodCount(ctx, ar.b, "Homeworld Lost") == 1);
+    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 0);
     CHECK(moodCount(ctx, ar.b, "1M Population Killed") == 1);
     CHECK(moodCount(ctx, ar.a, "Battle in System - Win") == 1);
     REQUIRE(s.combats.size() == 1);
@@ -1933,7 +1935,7 @@ TEST_CASE("combat: ground combat captures a planet") {
     const Colony* after = s.colony(planet);
     REQUIRE(after != nullptr);
     CHECK(after->owner == ar.a);
-    CHECK_FALSE(after->homeworld);
+    CHECK(after->homeworld);  // a captured capital stays a capital (spec 02 §2, confirmed: binary)
     // The queue gets the clear of a treaty transfer: the items, On Hold, Repeat
     // Build and the waypoint go; emergency mode and its counter stay, so slow
     // mode carries over to the captor (spec 02 §6.4, confirmed: binary).
@@ -1951,9 +1953,10 @@ TEST_CASE("combat: ground combat captures a planet") {
     CHECK_FALSE(after->invader.valid());
     CHECK(after->militia == -1);
     CHECK(combat::invaders(r, s, *after).empty());
+    // The two capture events and no planet-lost event (spec 02 §2, confirmed: binary).
     CHECK(moodCount(ctx, ar.b, "Any Our Planet Captured") == 1);
-    CHECK(moodCount(ctx, ar.b, "Homeworld Lost") == 1);
-    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 1);
+    CHECK(moodCount(ctx, ar.b, "Homeworld Lost") == 0);
+    CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 0);
     CHECK(moodCount(ctx, ar.a, "Any Enemy Planet Captured") == 1);
     CHECK(std::any_of(s.empire(ar.a).log.begin(), s.empire(ar.a).log.end(), [](const LogEntry& l) { return l.category == LogCategory::Combat; }));
     // Both histories list the capture under the other empire, at the planet.
