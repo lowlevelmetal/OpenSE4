@@ -733,6 +733,7 @@ bool Dialog::close(bool enabled, const char* label) {
                      !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     if (clicked || key) {
         keep_ = false;
+        byKey_ = !clicked;
         audio().play("close");
     }
     return clicked || key;

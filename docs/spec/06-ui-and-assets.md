@@ -306,7 +306,7 @@ OpenSE4's own choices, (inferred):
 | Screen | Purpose | Reached from |
 |---|---|---|
 | Select Waypoint | Choose a waypoint as a destination. | Move To Waypoint; Set Construction Queue → Set Move To. |
-| Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. The vehicle list holds only vehicles in no fleet that may join one, cloaked ones too; the fleet list the fleets whose location is the sector, with their members there. Create Fleet asks for a name (OK, Cancel; "Alpha Fleet" and on) and makes an empty fleet; one still empty when the window closes is deleted. Rules in spec 03 §9 (confirmed: binary). Disband Fleet and Rename Fleet are OpenSE4's own. | Order F; Combat Simulator. |
+| Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. The vehicle list holds only vehicles in no fleet that may join one, cloaked ones too; the fleet list the fleets whose location is the sector, with their members there. Create Fleet asks for a name (OK, Cancel; "Alpha Fleet" and on) and makes an empty fleet. The Close button deletes the fleets left without a member as it closes the window; Esc and Enter close it without that step, so an empty fleet then stays (§3.4; corrected 2026-10-15, complete listing). Rules in spec 03 §9 (confirmed: binary). Disband Fleet and Rename Fleet are OpenSE4's own. | Order F; Combat Simulator. |
 | Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). Every holder with cargo space is listed, each with its cargo lines, a colony's population one line per race; holders with no cargo space are left out. The empire's options keep the step, Ten at first (spec 08 §3.6.7); loading from a planet quarantined by plague is refused in a message box. The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
 | Launch \ Recover Units | Two lists. Left, the carriers of the sector: the own colonies (also with nothing aboard) and the own ships and bases that can take part, each with "Can Launch:" and a line each for fighters, satellites, mines and drones (what it may still launch this turn against its rate), then the units it carries. Right, the own unit groups in space there. A click on a unit launches it from that carrier; a click on a group recovers it into the carrier selected on the left; each acts at once on exactly that holder, giving and running no order and logging nothing (spec 03 §12). Move One / Move Five / Move Ten / Move All, kept with the empire's options, Ten at first (spec 08 §3.6.7). A launch or recovery that cannot fully happen says why in a message box titled "Launch Warning" or "Recover Warning". Not available in simultaneous games. In a battle the same window opens in battle mode (§1.10.2, spec 04 §10.4) (confirmed: binary). | Order U; tactical combat orders. |
 | Location pick, then cargo-kind / unit-kind picker | Load, Drop, Launch Units Remotely and Recover Units Remotely: the sector is picked first; at the click a picker offers the kinds (Drop then asks its destination, §2.9), the same whatever the selection carries: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms for Load and Drop; Fighters, Satellites, Mines, Drones for Launch; Fighters, Satellites, Drones for Recover. A colony's Launch and Recover ask only the kind: the order is given at once at the colony (spec 03 §8, confirmed: binary). | Orders L, D, I, O. |
@@ -2741,7 +2741,7 @@ Every window opens modally. Keys each kind of window handles (confirmed: binary)
 
 | Window | Keys |
 |---|---|
-| Large dialogs (the 780-wide family: Log, Planets, Options and the rest) | Esc or Enter closes when the bottom button is Close; Esc closes when it is Cancel; otherwise no keys |
+| Large dialogs (the 780-wide family: Log, Planets, Options and the rest) | Esc or Enter closes when the bottom button is Close; Esc closes when it is Cancel; otherwise no keys. The keys close the window directly: only the bottom button runs the window's own closing step first, where it has one (below) |
 | Message boxes | Esc or Enter = OK. In Yes/No prompts Esc or Enter = **No**, Y = Yes, N = No. In a prompt offering Tactical and Strategic, T and S pick them |
 | Text prompts (Change Name and the like), the folder chooser, Create Fleet, galaxy-map notes | Esc cancels, Enter accepts (notes: saves the text) |
 | Game Menu | Esc = Close |
@@ -2754,6 +2754,16 @@ Every window opens modally. Keys each kind of window handles (confirmed: binary)
 | Intro | any key or click skips the opening logos |
 | TCP/IP host and player | Enter sends the chat line |
 | Selection pickers, check lists (Players, Scrap Facilities), Reorder lists, setup screens, ship and planet report pop-ups | no keys at all |
+
+**A large window's closing step** (confirmed: binary; 2026-10-15, complete listing). The bottom
+Close button of a large window runs the window's own closing step before closing it; Esc and
+Enter close the window without it. Two windows have such a step: Fleet Transfer, which deletes
+the fleets left without a member, and Cargo Transfer (a step of its own, not traced). So a fleet
+made with Create Fleet and left empty survives when Fleet Transfer is closed with Esc or Enter;
+the original disbands memberless fleets when a game is loaded. Since 2026-10-15 ours follows for
+Fleet Transfer: its Close button deletes the player's fleets with no member, Esc and Enter keep
+them (`Dialog::closedByKey`, `screens/fleet_transfer.cpp`); our Cargo Transfer has no closing
+step. Our turn processing deletes an empty fleet still left (OpenSE4's own, spec 03 §9).
 
 Discrepancies: the Readme calls the Ctrl+P/O/I/U family "Phase Replay". Our client binds
 every key of §3.1 and §3.2, rebindable in Settings → Controls, and Help → Hotkeys lists

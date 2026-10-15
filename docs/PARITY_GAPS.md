@@ -600,7 +600,8 @@ keys the client ignored followed the specs:
   buildable designs of the hull that are not obsolete, with picture, Name, Size and cost
   columns and the Design Report on a right-click; Abandon Planet is a colony order (kind 64
   imported and exported) carried out at once only in a turn-based game; Create Fleet makes an
-  empty "Alpha Fleet" (and on), deleted when the window closes empty, under minister control
+  empty "Alpha Fleet" (and on), deleted when the window's Close button closes it empty (since
+  2026-10-15 Esc and Enter keep it, as the original does), under minister control
   as new vehicles are; Fleet Transfer lists only vehicles that may join and the fleets whose
   location is the sector; Systems To Avoid toggles the avoid mark on every tab. OpenSE4's own
   in these windows: the Scrap window's Facilities tab and status line, the reason a picker
@@ -1008,10 +1009,12 @@ complete listing: the tags last until Shift+C or a sector's selection; the ship 
 from the last ship it selected itself, its "Stop once per location" table holding only its own
 stops; the fleet cycle goes by fleet number through the fleets that can still move, selecting
 the first such member; the colony cycle goes by planet name, letter case counting, and selects
-the colony's sector as a click does; Drop Cargo asks the kind of cargo before the destination. OpenSE4's additions there became options, off by default:
+the colony's sector as a click does; Drop Cargo asks the kind of cargo before the destination; Esc and Enter close a large window
+without its closing step, so Fleet Transfer then keeps an empty fleet. OpenSE4's additions there became options, off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
+| Fleet Transfer's empty fleets (`screens/fleet_transfer.cpp`, `GameState::tidyFleets`) | The Close button deletes the player's fleets with no member, Esc and Enter keep them, as the original does; turn processing deletes any still left (OpenSE4's own) | Kept until the game is loaded again, when memberless fleets are disbanded (turn processing inferred) | L |
 | Tags across selections (`MainWindow::selectVehicle`, `selectPlanet`, `taggedNote`) | The original's rule; a line over the report says the next order goes to the tagged group (ours, Q124). OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options) clears them when a ship or fleet button or a Goto selects an object in another sector | The ship and fleet buttons and the Gotos keep the tags; the next order goes to the tagged group | none (an option) |
 
 ## Computer player (spec 05 §7)

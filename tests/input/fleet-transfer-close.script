@@ -1,0 +1,46 @@
+# Fleet Transfer's closing step (spec 06 §3.4, spec 03 §9; the accuracy pass of 2026-10-15), on a
+# training game of our own (tests/input/learn-moves): turn-based, two attack ships at home.
+# - Create Fleet makes an empty fleet; closed with Enter (or Esc) the window skips its closing
+#   step, so the empty fleet stays and is listed when the window opens again;
+# - closed with its Close button, the window deletes the fleets it made that are still empty.
+# (docs/BUILDING.md "Input scripts")
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
+
+wait-lesson moves
+wait 5
+click tag:lesson:hide
+click sector:home
+wait-for item:report:ship
+click item:"California 0001*"
+wait 2
+# An empty fleet, and Enter: it stays. Its row is the window's third (the two ships on the left).
+key F
+wait-window fleet-transfer
+assert-absent item:##row in=fleet-transfer nth=3
+click tag:fleet-transfer:create-fleet
+click item:OK in="Create Fleet"
+wait-for item:##row in=fleet-transfer nth=3
+wait 3
+key Enter
+wait-closed fleet-transfer
+key F
+wait-window fleet-transfer
+wait-for item:##row in=fleet-transfer nth=3
+# Esc closes it the same way.
+wait 3
+key Escape
+wait-closed fleet-transfer
+key F
+wait-window fleet-transfer
+wait-for item:##row in=fleet-transfer nth=3
+# The Close button deletes it.
+click tag:fleet-transfer:close
+wait-closed fleet-transfer
+key F
+wait-window fleet-transfer
+wait 5
+assert-present item:##row in=fleet-transfer nth=2
+assert-absent item:##row in=fleet-transfer nth=3
+click tag:fleet-transfer:close
+wait-closed fleet-transfer

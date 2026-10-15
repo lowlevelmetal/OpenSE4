@@ -484,6 +484,10 @@ public:
     bool close();
     // The bottom button with another label (Cancel: Esc only) or dim (no keys).
     bool close(bool enabled, const char* label = "Close");
+    // The window was closed by Esc or Enter, not by its bottom button: the
+    // original then skips the window's own closing step (Fleet Transfer's
+    // deletion of the empty fleets it made; spec 06 §3.4, confirmed: binary).
+    bool closedByKey() const { return byKey_; }
     bool keepOpen() const { return keep_; }
     void requestClose() { keep_ = false; }
 
@@ -499,6 +503,7 @@ private:
     Rect rect_;
     bool visible_ = false;
     bool keep_ = true;
+    bool byKey_ = false;
     bool inChild_ = false;
     bool buttonsStarted_ = false;
     float buttonColumn_;
