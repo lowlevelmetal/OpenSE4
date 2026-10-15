@@ -2,6 +2,7 @@
 
 #include "net/auth.hpp"
 
+#include <algorithm>
 #include <format>
 
 #ifndef OPENSE4_VERSION
@@ -68,6 +69,34 @@ std::string describe(const Event& e) {
             return std::format("{} turn {}{}{}", tag, e.turn, e.text.empty() ? "" : ": ", e.text);
         default: return e.text.empty() ? tag : std::format("{} {}", tag, e.text);
     }
+}
+
+
+void OwnMoves::append(OwnMoves more) {
+    const size_t before = liveSteps.size();
+    for (game::MovementStep& st : more.steps) {
+        st.liveSteps += before;
+        steps.push_back(std::move(st));
+    }
+    for (game::LiveStep& st : more.liveSteps) liveSteps.push_back(std::move(st));
+}
+
+OwnMoves ownMovesOf(game::EmpireId e, std::span<const game::MovementStep> steps, std::span<const game::LiveStep> liveSteps) {
+    OwnMoves out;
+    // For each LiveStep of the call, how many of e's came before it.
+    std::vector<size_t> ownBefore(liveSteps.size() + 1, 0);
+    for (size_t i = 0; i < liveSteps.size(); ++i) {
+        ownBefore[i] = out.liveSteps.size();
+        if (liveSteps[i].empire == e) out.liveSteps.push_back(liveSteps[i]);
+    }
+    ownBefore[liveSteps.size()] = out.liveSteps.size();
+    for (const game::MovementStep& st : steps) {
+        if (st.owner != e) continue;
+        game::MovementStep mine = st;
+        mine.liveSteps = ownBefore[std::min(st.liveSteps, liveSteps.size())];
+        out.steps.push_back(std::move(mine));
+    }
+    return out;
 }
 
 } // namespace opense4::net

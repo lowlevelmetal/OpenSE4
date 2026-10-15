@@ -52,6 +52,7 @@
 #include "game/state.hpp"
 #include "game/tactical.hpp"
 #include "game/turn.hpp"
+#include "net/types.hpp"
 
 #include <expected>
 #include <filesystem>
@@ -79,6 +80,9 @@ public:
     // Returns a newly processed state when one has arrived (turn-based games:
     // also within a turn).
     virtual std::optional<game::GameState> pollState() = 0;
+    // Turn-based games: the player's own moves that came with the states
+    // pollState() returned (protocol 10), in order. Taking them forgets them.
+    virtual net::OwnMoves takeOwnMoves() { return {}; }
     virtual std::string status() const = 0;
 };
 

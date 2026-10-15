@@ -33,6 +33,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace opense4::net {
@@ -109,6 +110,10 @@ public:
     const game::GameState* state() const { return state_ ? &*state_ : nullptr; }
     game::GameState* mutableState() { return state_ ? &*state_ : nullptr; }
     game::EmpireId empire() const { return empire_; }
+    // Turn-based games: our own moves that came with the states received
+    // since the last call, in order (State::moves, protocol 10). Taking them
+    // forgets them.
+    OwnMoves takeMoves() { return std::exchange(moves_, {}); }
     // The host has stored our orders for the current turn.
     bool ordersAccepted() const { return ordersAccepted_; }
 
@@ -182,6 +187,7 @@ private:
     LobbyInfo lobby_;
     TurnStatus turnStatus_;
     std::optional<game::GameState> state_;
+    OwnMoves moves_;   // State::moves not taken yet
     game::EmpireId empire_;
     bool ordersAccepted_ = false;
     std::optional<game::EmpireOrders> lastOrders_;  // simultaneous: this turn's orders, sent again after a reconnect

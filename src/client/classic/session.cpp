@@ -999,6 +999,7 @@ void ClassicSession::poll() {
     const bool wasMine = myTurn();
     const uint32_t oldTurn = state_.turn;
     const size_t oldBattles = state_.combats.size();
+    keepOwnVehicles(state_);
     auto before = keepMoves_ ? std::make_shared<const game::GameState>(std::move(state_)) : nullptr;
     state_ = std::move(*s);
     ++revision_;
@@ -1011,6 +1012,14 @@ void ClassicSession::poll() {
     const bool starts = mine && (!wasMine || state_.turn != oldTurn);
     if (starts) beginTurn();  // our turn starts
     waiting_ = !mine;
+    // Our own moves the host carried out, for their animation (protocol 10):
+    // our commands', or our turn start's (spec 06 §2.4).
+    net::OwnMoves own = transport_->takeOwnMoves();
+    noteGone(own.steps);
+    callSteps_ = std::move(own.steps);
+    game::TurnResult carried;
+    carried.liveSteps = std::move(own.liveSteps);
+    queueMoves(carried, starts);
     // Our copy had our commands given, not carried out; at the start of our
     // turn our vehicles got their movement back first.
     movesBefore_ = before ? MovesBefore{std::move(before), starts, revision_} : MovesBefore{};
