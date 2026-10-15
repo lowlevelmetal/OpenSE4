@@ -608,7 +608,14 @@ Dialog::Dialog(const Painter& ui, const char* title, const Rect& rect, float but
     if (visible_) {
         drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_, contentFrame);
         // A window opened over another comes to the front with the keyboard (it is modal).
-        if (ImGui::IsWindowAppearing() && (ui.windowFlags & ImGuiWindowFlags_NoMouseInputs) == 0) ImGui::SetWindowFocus();
+        if (ImGui::IsWindowAppearing() && (ui.windowFlags & ImGuiWindowFlags_NoMouseInputs) == 0) {
+            ImGui::SetWindowFocus();
+            // Esc and Enter are the window's (close, spec 06 §3.4): Dear ImGui's
+            // keyboard cursor, shown by an Esc pressed in a window before,
+            // stays hidden until the player moves it (Tab, the arrows), so
+            // Enter does not press the item it would land on.
+            ImGui::SetNavCursorVisible(false);
+        }
     }
 }
 
