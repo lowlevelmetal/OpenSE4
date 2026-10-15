@@ -1,8 +1,27 @@
 =====
 UNIT TEST FIXTURE - original content written for opense4 tests.
+The keys a record leaves out take the values of a new strategy (spec 04
+section 16); this one spells out the ones the tests rely on.
 =====
 *BEGIN*
 Name                       := Test Cautious
 Primary Movement Strategy  := Optimal Range
+Secondary Movement Strategy := Point Blank
+Targeting Priority 1       := Has Weapons
+Targeting Priority 2       := Nearest
+Targeting Priority 3       := None
+Targeting Priority 4       := None
+Dont Fire On Colony Ships  := False
+Dont Fire On Planets       := False
+Dont Fire On Bases(No Weapons) := False
+Dont Fire On Ships(No Weapons) := False
+Dont Fire On Seekers(On Others) := False
+Break Formation Carriers   := False
+Break Formation Colony Ships := False
+Break Formation Fighters   := False
+Break Formation Satellites := False
+Break Formation Planets    := False
+Break Formation Transports := False
 Fighters Launch Group Amount := 5
+Damage Percent Per Ship    := 100
 *END*

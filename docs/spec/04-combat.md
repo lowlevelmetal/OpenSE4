@@ -1279,14 +1279,24 @@ Point Blank and Drone Attack.
 Launching and Formation. Damage holds the four `Damage Percent` settings and `Damage Until
 All Weapons Gone`. Launching holds two pick lists: Fighter Group Size (5, 8, 10, 15, 20, 30,
 40 or 50) and Drones Per Target (1, 2, 3, 5, 8, 10, 15 or 20). Add asks "Enter Strategy
-Name" and makes a new strategy from built-in values: fighters launched in groups of 5, 3
-drones per target, `Damage Percent Per Ship` 80 and the other three 100, `Damage Until All
-Weapons Gone` off, and Break Formation on for Carriers, Colony Ships, Fighters, Satellites,
-Planets, Transports, Seekers on us and Seekers on others, off for Bases, Ships, Mines, Bases
-(no weapons), Ships (no weapons) and Drones (spec 08 §3.6.13 order). The rest of its values
-are question 98. Since 2026-10-13 our client follows (`combat::newStrategyRecord`). Copy and
-Remove are OpenSE4's own buttons, and a value a data file gives that is not in a pick list
-shows as it is.
+Name" and makes a new strategy from built-in values (confirmed: binary; completed
+2026-10-14, complete listing, question 98): primary and secondary movement both Optimal
+Weapons Range; targeting priorities Most Damaged, Strongest, Nearest, Largest; Use Type
+Priority First off; type ranks Bases 2, Ships 1, Carriers 5, Colony Ships 6, Fighters 12,
+Satellites 7, Mines 14, Planets 3, Transports 9, Bases (No Weapons) 13, Ships (No Weapons)
+4, Seekers (On Us) 10, Seekers (On Others) 11, Drones 8; Dont Fire On on for Colony Ships,
+Planets, Bases (No Weapons), Ships (No Weapons) and Seekers (On Others), off for the rest;
+fighters launched in groups of 5, 3 drones per target, `Damage Percent Per Ship` 80 and
+the other three 100, `Damage Until All Weapons Gone` off, and Break Formation on for
+Carriers, Colony Ships, Fighters, Satellites, Planets, Transports, Seekers on us and
+Seekers on others, off for Bases, Ships, Mines, Bases (no weapons), Ships (no weapons) and
+Drones (spec 08 §3.6.13 order). The same values are the starting point for every key a
+strategy data file leaves out. Since 2026-10-14 ours follows (`combat::Strategy`,
+`combat::newStrategyRecord`); it used to start from neutral values of its own (secondary
+Point Blank, targeting Has Weapons then Nearest, no Dont Fire On, and for keys a file
+leaves out fighter groups of 10, ships skipped only at 100 % and no Break Formation).
+Copy and Remove are OpenSE4's own buttons, and a value a data file gives that is not in a
+pick list shows as it is.
 
 **How the computer gives out targets** (confirmed: binary). A computer piece chooses
 targets for all its weapons at once, when it plans its move (§16.1) and again each time
@@ -2391,3 +2401,14 @@ traced and are OpenSE4's choices until a session with the executable settles the
     Blank), targeting (Has Weapons, then Nearest), type priorities and Don't Fire On flags
     (none) of its own neutral defaults (`combat::Strategy`, inferred). To verify in the
     executable: the values the original's new strategy starts with for these.
+    **Answer** (confirmed: binary; 2026-10-14, complete listing): primary and secondary
+    movement are both Optimal Weapons Range; targeting priorities 1 to 4 are Most
+    Damaged, Strongest, Nearest, Largest; Use Type Priority First is off; the type ranks
+    are Bases 2, Ships 1, Carriers 5, Colony Ships 6, Fighters 12, Satellites 7, Mines 14,
+    Planets 3, Transports 9, Bases (No Weapons) 13, Ships (No Weapons) 4, Seekers (On Us)
+    10, Seekers (On Others) 11, Drones 8; Dont Fire On is on for Colony Ships, Planets,
+    Bases (No Weapons), Ships (No Weapons) and Seekers (On Others) and off for the rest.
+    The values already known stand. The same values are the starting point for any key a
+    strategy data file leaves out, where OpenSE4 also used fighter groups of 10, ships
+    skipped only at 100 % and no Break Formation (§16 "The Strategies window"). Since
+    2026-10-14 ours follows (`combat::Strategy`, `combat::newStrategyRecord`).

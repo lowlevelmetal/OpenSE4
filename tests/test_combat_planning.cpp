@@ -90,7 +90,7 @@ VehicleId spawnOn(const Rules& rules, GameState& s, DesignId d, Location where, 
 }
 
 void addStrategy(GameState& s, EmpireId e, std::string name, std::vector<std::pair<std::string, std::string>> settings) {
-    s.empire(e).strategies.push_back(ruleset::CombatStrategy{std::move(name), std::move(settings)});
+    s.empire(e).strategies.push_back(testStrategy(std::move(name), std::move(settings)));
 }
 
 } // namespace

@@ -51,6 +51,10 @@ game::VehicleId spawn(game::GameState& s, game::DesignId d, game::Location where
 // last (a ship without supply storage can never fire, spec 04 §6).
 game::DesignId frigate(game::GameState& s, game::EmpireId owner, std::string_view name, int engines,
                        std::initializer_list<std::string_view> extra, const game::Rules& r = combatRules());
+// A strategy record on the tests' plain base (targeting Has Weapons then
+// Nearest, nothing left out, no Break Formation, ships skipped only at 100 %,
+// fighters in groups of 10) with the given keys over it.
+ruleset::CombatStrategy testStrategy(std::string name, std::vector<std::pair<std::string, std::string>> settings);
 void useStrategy(game::GameState& s, game::EmpireId e, std::vector<std::pair<std::string, std::string>> settings);
 // Marks a vehicle as having moved in this turn from the sector (dx, dy) away.
 void arriveFrom(game::GameState& s, game::VehicleId id, int dx, int dy);

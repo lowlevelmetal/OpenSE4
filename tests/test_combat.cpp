@@ -138,13 +138,33 @@ TEST_CASE("combat: the Strategies window's Add makes the original's new strategy
         CHECK(st.breakFormation[static_cast<size_t>(on)]);
     for (C off : {C::Bases, C::Ships, C::Mines, C::BasesNoWeapons, C::ShipsNoWeapons, C::Drones})
         CHECK_FALSE(st.breakFormation[static_cast<size_t>(off)]);
-    // The rest are the neutral defaults, written out so the window shows them.
-    const combat::Strategy defaults;
-    CHECK(st.primary == defaults.primary);
-    CHECK(st.secondary == defaults.secondary);
-    CHECK(st.targeting == defaults.targeting);
-    CHECK(st.typePriority == defaults.typePriority);
-    for (bool dont : st.dontFireOn) CHECK_FALSE(dont);
+    // Its movement, targeting, type ranks and Dont Fire On flags (spec 04 §19.7 Q98, confirmed: binary).
+    CHECK(st.primary == combat::MoveStrategy::OptimalRange);
+    CHECK(st.secondary == combat::MoveStrategy::OptimalRange);
+    CHECK(st.targeting == std::array{combat::TargetKey::MostDamaged, combat::TargetKey::Strongest, combat::TargetKey::Nearest,
+                                     combat::TargetKey::Largest});
+    CHECK_FALSE(st.typePriorityFirst);
+    const std::vector<std::pair<C, int>> ranks{{C::Bases, 2},          {C::Ships, 1},           {C::Carriers, 5},    {C::ColonyShips, 6},
+                                               {C::Fighters, 12},      {C::Satellites, 7},      {C::Mines, 14},      {C::Planets, 3},
+                                               {C::Transports, 9},     {C::BasesNoWeapons, 13}, {C::ShipsNoWeapons, 4}, {C::SeekersOnUs, 10},
+                                               {C::SeekersOnOthers, 11}, {C::Drones, 8}};
+    for (const auto& [c, rank] : ranks) CHECK(st.typePriority[static_cast<size_t>(c)] == rank);
+    for (size_t c = 0; c < combat::kTargetCategories; ++c) {
+        const C cat = static_cast<C>(c);
+        const bool off = cat == C::ColonyShips || cat == C::Planets || cat == C::BasesNoWeapons || cat == C::ShipsNoWeapons || cat == C::SeekersOnOthers;
+        CHECK(st.dontFireOn[c] == off);
+    }
+    // The same values are what every key a record leaves out starts from.
+    const combat::Strategy empty = combat::parseStrategy({"Empty", {}});
+    CHECK(empty.primary == st.primary);
+    CHECK(empty.secondary == st.secondary);
+    CHECK(empty.targeting == st.targeting);
+    CHECK(empty.typePriority == st.typePriority);
+    CHECK(empty.dontFireOn == st.dontFireOn);
+    CHECK(empty.fighterLaunchGroup == 5);
+    CHECK(empty.damagePercentShip == 80);
+    for (C on : {C::Carriers, C::ColonyShips, C::Fighters, C::Satellites, C::Planets, C::Transports, C::SeekersOnUs, C::SeekersOnOthers})
+        CHECK(empty.breakFormation[static_cast<size_t>(on)]);
 }
 
 TEST_CASE("combat: settings come from Settings.txt with stock defaults") {
@@ -1816,7 +1836,7 @@ TEST_CASE("combat: kamikaze ships and drones ram") {
         GameState& s = ar.s;
         useStrategy(s, ar.a, {{"Primary Movement Strategy", "Don't Get Hurt"}});   // the carrier keeps away
         // Drones move by their strategies like any piece; Ram makes them ram (spec 04 §16.1).
-        s.empire(ar.a).strategies.push_back(ruleset::CombatStrategy{"Drone Attack", {{"Primary Movement Strategy", "Ram"}}});
+        s.empire(ar.a).strategies.push_back(testStrategy("Drone Attack", {{"Primary Movement Strategy", "Ram"}}));
         const DesignId drone = design(s, ar.a, "Dart", "Test Drone Hull", {"Test Engine", "Test Engine", "Test Warhead"});
         s.design(drone).strategy = 1;
         const VehicleId carrier = spawn(s, frigate(s, ar.a, "Drone Carrier", 1, {"CT Drone Bay", "CT Big Armor"}), ar.loc);

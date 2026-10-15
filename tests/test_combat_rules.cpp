@@ -836,10 +836,10 @@ TEST_CASE("combat rules: the simulator's sides keep their copied strategy lists;
     const Rules& r = combatRules();
     Arena ar = makeArena(19);
     GameState& s = ar.s;
-    s.empire(ar.a).strategies = {ruleset::CombatStrategy{"Mine A", {{"Primary Movement Strategy", "Optimal Weapons Range"}}},
-                                 ruleset::CombatStrategy{"Mine B", {{"Primary Movement Strategy", "Point Blank"}}}};
-    s.empire(ar.b).strategies = {ruleset::CombatStrategy{"Theirs A", {{"Primary Movement Strategy", "Ram"}}},
-                                 ruleset::CombatStrategy{"Theirs B", {{"Primary Movement Strategy", "Don't Get Hurt"}}}};
+    s.empire(ar.a).strategies = {testStrategy("Mine A", {{"Primary Movement Strategy", "Optimal Weapons Range"}}),
+                                 testStrategy("Mine B", {{"Primary Movement Strategy", "Point Blank"}})};
+    s.empire(ar.b).strategies = {testStrategy("Theirs A", {{"Primary Movement Strategy", "Ram"}}),
+                                 testStrategy("Theirs B", {{"Primary Movement Strategy", "Don't Get Hurt"}})};
     const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser", "Test Armor Plate"});
     const DesignId raider = frigate(s, ar.b, "Raider", 3, {"Test Laser", "Test Armor Plate"});
     s.design(raider).strategy = 1;

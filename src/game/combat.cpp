@@ -326,15 +326,17 @@ std::string_view identifier(MoveStrategy m) {
 }
 
 Strategy::Strategy() {
-    // Our own neutral engagement order for records that leave the keys out:
-    // armed warships and bases first, then planets and small craft, then the rest.
+    // The original's new strategy (spec 04 §16, §19.7 Q98, confirmed: binary).
     using C = TargetCategory;
     constexpr std::array<std::pair<C, int>, kTargetCategories> order{{
-        {C::Ships, 1}, {C::Bases, 2}, {C::Planets, 3}, {C::Drones, 4}, {C::Fighters, 5}, {C::SeekersOnUs, 6},
-        {C::Satellites, 7}, {C::Carriers, 8}, {C::Transports, 9}, {C::ColonyShips, 10}, {C::ShipsNoWeapons, 11},
-        {C::BasesNoWeapons, 12}, {C::SeekersOnOthers, 13}, {C::Mines, 14},
+        {C::Bases, 2}, {C::Ships, 1}, {C::Carriers, 5}, {C::ColonyShips, 6}, {C::Fighters, 12}, {C::Satellites, 7},
+        {C::Mines, 14}, {C::Planets, 3}, {C::Transports, 9}, {C::BasesNoWeapons, 13}, {C::ShipsNoWeapons, 4},
+        {C::SeekersOnUs, 10}, {C::SeekersOnOthers, 11}, {C::Drones, 8},
     }};
     for (const auto& [c, p] : order) typePriority[static_cast<size_t>(c)] = p;
+    for (C c : {C::ColonyShips, C::Planets, C::BasesNoWeapons, C::ShipsNoWeapons, C::SeekersOnOthers}) dontFireOn[static_cast<size_t>(c)] = true;
+    for (C c : {C::Carriers, C::ColonyShips, C::Fighters, C::Satellites, C::Planets, C::Transports, C::SeekersOnUs, C::SeekersOnOthers})
+        breakFormation[static_cast<size_t>(c)] = true;
 }
 
 Strategy parseStrategy(const ruleset::CombatStrategy& src) {
@@ -395,22 +397,21 @@ ruleset::CombatStrategy newStrategyRecord(std::string name) {
     add("Use Type Priority First", yesNo(defaults.typePriorityFirst));
     for (size_t c = 0; c < kTargetCategories; ++c)
         add(std::format("Type Priority {}", identifier(static_cast<TargetCategory>(c))), std::to_string(defaults.typePriority[c]));
-    for (size_t c = 0; c < kTargetCategories; ++c) add(std::format("Dont Fire On {}", identifier(static_cast<TargetCategory>(c))), "False");
-    add("Fighters Launch Group Amount", "5");
-    add("Drones Per Target", "3");
+    for (size_t c = 0; c < kTargetCategories; ++c)
+        add(std::format("Dont Fire On {}", identifier(static_cast<TargetCategory>(c))), yesNo(defaults.dontFireOn[c]));
+    add("Fighters Launch Group Amount", std::to_string(defaults.fighterLaunchGroup));
+    add("Drones Per Target", std::to_string(defaults.dronesPerTarget));
     using C = TargetCategory;
     for (size_t c = 0; c < kTargetCategories; ++c) {
         const auto cat = static_cast<C>(c);
         if (cat == C::SeekersOnUs || cat == C::SeekersOnOthers) continue;   // fixed in the original
-        const bool breaks = cat == C::Carriers || cat == C::ColonyShips || cat == C::Fighters || cat == C::Satellites || cat == C::Planets ||
-                            cat == C::Transports;
-        add(std::format("Break Formation {}", identifier(cat)), yesNo(breaks));
+        add(std::format("Break Formation {}", identifier(cat)), yesNo(defaults.breakFormation[c]));
     }
-    add("Damage Percent Per Ship", "80");
-    add("Damage Percent Per Planet", "100");
-    add("Damage Percent Per Fighter Group", "100");
-    add("Damage Percent Per Satellite Group", "100");
-    add("Damage Until All Weapons Gone", "False");
+    add("Damage Percent Per Ship", std::to_string(defaults.damagePercentShip));
+    add("Damage Percent Per Planet", std::to_string(defaults.damagePercentPlanet));
+    add("Damage Percent Per Fighter Group", std::to_string(defaults.damagePercentFighters));
+    add("Damage Percent Per Satellite Group", std::to_string(defaults.damagePercentSatellites));
+    add("Damage Until All Weapons Gone", yesNo(defaults.damageUntilWeaponsGone));
     return out;
 }
 

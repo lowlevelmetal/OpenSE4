@@ -234,8 +234,36 @@ DesignId frigate(GameState& s, EmpireId owner, std::string_view name, int engine
     return addDesign(s, std::move(d));
 }
 
+ruleset::CombatStrategy testStrategy(std::string name, std::vector<std::pair<std::string, std::string>> settings) {
+    // A key a record leaves out takes the original's new-strategy value (spec
+    // 04 §16), which leaves out planets and unarmed ships; the tests were
+    // written for this plainer base, which the given keys then override.
+    std::vector<std::pair<std::string, std::string>> all{
+        {"Secondary Movement Strategy", "Point Blank"},
+        {"Targeting Priority 1", "Has Weapons"},
+        {"Targeting Priority 2", "Nearest"},
+        {"Targeting Priority 3", "None"},
+        {"Targeting Priority 4", "None"},
+        {"Dont Fire On Colony Ships", "False"},
+        {"Dont Fire On Planets", "False"},
+        {"Dont Fire On Bases(No Weapons)", "False"},
+        {"Dont Fire On Ships(No Weapons)", "False"},
+        {"Dont Fire On Seekers(On Others)", "False"},
+        {"Break Formation Carriers", "False"},
+        {"Break Formation Colony Ships", "False"},
+        {"Break Formation Fighters", "False"},
+        {"Break Formation Satellites", "False"},
+        {"Break Formation Planets", "False"},
+        {"Break Formation Transports", "False"},
+        {"Fighters Launch Group Amount", "10"},
+        {"Damage Percent Per Ship", "100"},
+    };
+    for (auto& kv : settings) all.push_back(std::move(kv));
+    return ruleset::CombatStrategy{std::move(name), std::move(all)};
+}
+
 void useStrategy(GameState& s, EmpireId e, std::vector<std::pair<std::string, std::string>> settings) {
-    s.empire(e).strategies = {ruleset::CombatStrategy{"Test Plan", std::move(settings)}};
+    s.empire(e).strategies = {testStrategy("Test Plan", std::move(settings))};
 }
 
 // Marks a vehicle as having moved in this turn from the sector (dx, dy) away.
