@@ -66,7 +66,7 @@ turn-based game wrote neither)**.
 | `<name>_plr_<n>_stats.txt` | Player n's statistics, one text line per turn: player number, date counter, then about ten right-aligned numeric columns (score parts, production, research and the like). Feeds the Scores and Comparisons graphs. | No. Missing files only leave the graphs empty (inferred). |
 | `<name>_plr_<n>_events.txt` | Player n's dated history lines (the History window). | No (same). |
 | `<game>_Log.trn` | The movement log of the last turn (binary), for the movement replay; written by the turn processing, named after the game. | No. Without it the replay reports that it is unavailable **(confirmed: binary)**. |
-| `<name>_Combat.cmb`, `<game>_Combat.cmb` | The combat replays of the last turn (binary). | No. Only the Combat Replay button needs it. |
+| `<name>_Combat.cmb`, `<game>_Combat.cmb` | The combat replays (binary): in a turn-based game the battles whose turn is at least the current turn − 3, older ones dropped at the end of each game turn; in a simultaneous game the last turn's (spec 04 §17; confirmed: binary, corrected 2026-10-14). | No. Only the Combat Replay button needs it. |
 
 Import should read the game file only. Export may write the game file only; an empty
 `history\` simply means no graphs before the export date. Converting the statistics lines

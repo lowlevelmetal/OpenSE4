@@ -1700,8 +1700,14 @@ describes this effect).
 - **Combat replay.** A view-only playback from the log, advanced one combat turn at a
   time with Next. It records only piece movement, including forced moves, and weapon
   firings. It holds no damage or reload state. Hovering a piece shows its design, not
-  its damaged state. In simultaneous games only the latest turn's replay is available,
-  and the host sends it to the players.
+  its damaged state. In a turn-based game, at the end of each game turn the replay file
+  keeps the battles whose turn is at least the current turn − 3 and drops older ones
+  (confirmed: binary; added 2026-10-14, complete listing; the exact turn number at the
+  moment of pruning was not traced). Since 2026-10-14 ours keeps the battles of the game
+  turn just ended and the three before it (`endGameTurn`, `turn_based.cpp`; inferred: the
+  turn just ended is the current turn of that rule); it used to keep two game turns'. In
+  simultaneous games they are not pruned this way: only the latest turn's replay is
+  available, and the host sends it to the players.
 - **Weapons report.** Lists available weapons with size, reload and damage at ranges
   1–10 and 11–20. Filters: All, Direct Fire, Seeking, Point-Defense, Warhead, Only
   Latest. A mount selector shows the numbers as they would be with that mount. Seeker
