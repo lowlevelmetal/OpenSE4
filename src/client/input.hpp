@@ -93,7 +93,8 @@ public:
     // modifiers are reduced to one (oneModifier) before the key is looked up,
     // so Ctrl+Shift+A acts as Shift+A. A chord held as it is that `taken`
     // says some binding uses (OpenSE4's chords of two modifiers, such as
-    // Ctrl+Shift+N, and the mods' keys) is not reduced.
+    // Ctrl+Shift+N, and the mods' keys) is not reduced. With `repeat`, the
+    // system's repeats of a held key count too (systemKeyRepeated).
     bool pressedOneModifier(Action a, bool repeat, const std::function<bool(const KeyChord&)>& taken) const;
 
 private:
@@ -104,6 +105,16 @@ private:
 // Shift alone, else Alt alone, else Ctrl alone (spec 06 §3, confirmed:
 // binary). `key` is kept.
 KeyChord oneModifier(KeyChord held);
+
+// The system's key repeats: the key-down messages it sends again while a key
+// is held, at the rate the player's system sets. The shell notes each one it
+// passes on (noteSystemKeyRepeat) and forgets them at each frame's start
+// (clearSystemKeyRepeats); systemKeyRepeated says whether `key` repeated in
+// this frame's events. The original's main window acts on each of them
+// (docs/spec/06 §3, §7 Q117).
+void noteSystemKeyRepeat(ImGuiKey key);
+void clearSystemKeyRepeats();
+bool systemKeyRepeated(ImGuiKey key);
 
 // The chord pressed this frame, if any (for "press a key" capture).
 std::optional<KeyChord> capturePressedChord();

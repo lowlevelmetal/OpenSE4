@@ -176,6 +176,13 @@ public:
             ImGui::SetTooltip("The original's Designs window shows only the picture, name, size and components\n"
                               "of another empire's design. With this on, its owner, date, costs, movement,\n"
                               "shields, cargo space and supply capacity show too.");
+        // The original acts on every repeat of a held main-window key (spec 06 §3, §7 Q117).
+        changed |= lampToggle(ui, "Act once on held keys", &s.actOnceOnHeldKeys);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The original acts on every repeat of a key held down in the main window, so a\n"
+                              "held window key, order key or End Turn acts again and again. With this on, only\n"
+                              "the ship, fleet and colony keys and the movement log's single step repeat; any\n"
+                              "other key acts once however long it is held.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

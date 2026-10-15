@@ -1017,6 +1017,12 @@ details", off by default, kept with this computer's settings (`enemyDesignDetail
 an enemy design's owner (in place of the design type), date, costs, Movement, Shields, Cargo
 Space and Supply Capacity as well, which the original leaves out (§7 Q93).
 
+**OpenSE4's held keys option** (an OpenSE4 option, since 2026-10-15). "Act once on held keys",
+off by default, kept with this computer's settings (`actOnceOnHeldKeys`,
+`act_once_on_held_keys` in `classic_settings.toml`): on, a main-window key held down acts once,
+but for the selection cycles and the movement log's single step, which repeat; off, every key
+repeats as the original's do (§3, §7 Q117).
+
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
 in brackets.
@@ -2658,10 +2664,15 @@ included, with no repeat test anywhere, so holding Space keeps cycling through t
 holding Ctrl+I keeps stepping the movement log's days, and every other main-window key, End
 Turn too, acts again whenever no window is open and the main window is not busy (confirmed:
 binary; 2026-10-15, complete listing; §7 Q117). A window that opens at the turn's start then
-takes the following repeats (inferred). Our client differs: only the selection cycles (Space, Ctrl+N, Ctrl+B, Ctrl+F,
-Ctrl+D, Ctrl+C, Ctrl+X) and the movement log's single step repeat; a held window, order or
-End Turn key acts once, so that it never opens a window again, flips an order twice or ends
-several turns.
+takes the following repeats (inferred). The rate is the system's own key repeat, as the
+player's system sets it: the original reads no rate of its own. Since 2026-10-15 ours does the
+same: every main-window key acts again on each repeat the system sends while it is held
+(`systemKeyRepeated` in `client/input.hpp`, noted from SDL's repeated key-down events; that
+they come at the rate the original's messages would is inferred). OpenSE4's option "Act once on
+held keys" (§1.9, off by default) keeps the rule ours had until then: only the selection cycles
+(Space, Ctrl+N, Ctrl+B, Ctrl+F, Ctrl+D, Ctrl+C, Ctrl+X) and the movement log's single step
+repeat; a held window, order or End Turn key acts once, so that it never opens a window again,
+flips an order twice or ends several turns.
 
 ### 3.1 Main window: orders
 
@@ -6278,8 +6289,9 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      Ours repeats only the selection cycles and the movement log's single step (§3).
      **Answer** (confirmed: binary; 2026-10-15, complete listing): every one, End Turn too: the
      main window acts on every key-down message, repeats included, whenever no window is open
-     and it is not busy (§3). Ours keeps acting once for windows, orders and End Turn, a choice
-     of its own (§3, docs/PARITY_GAPS.md).
+     and it is not busy (§3). Since 2026-10-15 ours does the same, at the system's repeat rate
+     (inferred); acting once for windows, orders and End Turn, ours until then, is OpenSE4's
+     option "Act once on held keys" (§1.9).
 118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is
      picked; Cancel on the strategy picker that follows keeps it. Does the original keep the
      formation, or change nothing unless both are picked? **Answer** (confirmed: binary;

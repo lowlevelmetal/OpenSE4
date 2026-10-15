@@ -1,0 +1,43 @@
+# Held keys in the main window (spec 06 §3, §7 Q117; the accuracy pass of 2026-10-15), on a
+# training game of our own (tests/input/learn-moves): turn-based, two attack ships at home.
+# - The original acts on every repeat the system sends while a key is held: Ctrl+L held for one
+#   repeat flips the movement lines twice, and a held Space goes on through the ships.
+# - OpenSE4's option "Act once on held keys" (Options, OpenSE4): Ctrl+L then flips them once,
+#   whatever the repeats, while Space still repeats.
+# (docs/BUILDING.md "Input scripts")
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
+
+wait-lesson moves
+wait 5
+click tag:lesson:hide
+# Off at first; held for one repeat: on, then off again; a plain press: on.
+assert { not = { movement_lines = true } }
+key Ctrl+L held=1
+wait 3
+assert { not = { movement_lines = true } }
+key Ctrl+L
+wait 3
+assert { movement_lines = true }
+# Space held with one repeat: two ships, the second the cycle's next.
+key Space held=1
+wait 3
+assert { selected = "ship" }
+
+# Act once on held keys: one flip whatever the repeats.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+# The OpenSE4 rows at the list's foot.
+wheel item:"Display Ship Movement Lines" in=options -10
+wait-for item:"Act once on held keys" in=options
+click item:"Act once on held keys" in=options
+key Escape
+wait-closed options
+key Ctrl+L held=1
+wait 3
+assert { not = { movement_lines = true } }
+key Ctrl+L held=3
+wait 3
+assert { movement_lines = true }

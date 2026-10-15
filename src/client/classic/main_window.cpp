@@ -2340,11 +2340,15 @@ void MainWindow::hotkeys(UiContext& ui) {
     // Ctrl+Alt+digit (AltGr) Alt+digit; a chord some binding or mod key
     // uses as it is held stays itself (OpenSE4's own, such as Ctrl+Shift+N).
     auto taken = [&](const KeyChord& c) { return !chordUser(keys, appSettings().controls.modKeys, modActions(), c).empty(); };
-    auto pressed = [&](Action a) { return keys.pressedOneModifier(a, false, taken); };
-    // A held key repeats, as the original's key-down does for every key
-    // (spec 06 §3, §7 Q117, confirmed: binary): ours only for the selection
-    // cycles and the movement log's single step, so that a held key never
-    // opens a window again, flips an order twice or ends several turns.
+    // A held key repeats: the original acts on every key-down message, the
+    // system's repeats included, End Turn and the window and order keys too
+    // (spec 06 §3, §7 Q117, confirmed: binary); the repeats are the system's
+    // own (input.hpp systemKeyRepeated). OpenSE4's option "Act once on held
+    // keys" repeats only the selection cycles and the movement log's single
+    // step, so that a held key never opens a window again, flips an order
+    // twice or ends several turns.
+    const bool repeats = !settings().actOnceOnHeldKeys;
+    auto pressed = [&](Action a) { return keys.pressedOneModifier(a, repeats, taken); };
     auto pressedOrHeld = [&](Action a) { return keys.pressedOneModifier(a, true, taken); };
 
     // The four movement-log keys start the replay whatever their buttons show
@@ -2414,7 +2418,7 @@ void MainWindow::hotkeys(UiContext& ui) {
     // at a time, as for every main-window key.
     for (int digit = 0; digit < 10; ++digit) {
         const ImGuiKey key = static_cast<ImGuiKey>(ImGuiKey_0 + digit);
-        if (!ImGui::IsKeyPressed(key, false)) continue;
+        if (!ImGui::IsKeyPressed(key, false) && !(repeats && systemKeyRepeated(key))) continue;
         const KeyChord held{key, io.KeyCtrl, io.KeyShift, io.KeyAlt};
         const KeyChord one = taken(held) ? held : oneModifier(held);
         const bool ctrl = one.ctrl && !one.shift && !one.alt, alt = one.alt && !one.shift && !one.ctrl;

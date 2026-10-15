@@ -76,6 +76,11 @@ struct ClassicSettings {
     // another empire's design (spec 06 §7 Q93); with this on, also its owner,
     // date, costs and figures. Off by default.
     bool enemyDesignDetails = false;
+    // Options, under OpenSE4: "Act once on held keys". The original's main
+    // window acts on every repeat of a held key, End Turn and the window and
+    // order keys too (spec 06 §3, §7 Q117); with this on, only the selection
+    // cycles and the movement log's single step repeat. Off by default.
+    bool actOnceOnHeldKeys = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

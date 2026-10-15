@@ -184,6 +184,7 @@ TEST_CASE("input script: problems name the file and line") {
     CHECK(e[0] == "t.txt:1: unknown condition key 'planets'");
     e = problems("click tag:a\noptions --seed=1\n");
     CHECK(e[0] == "t.txt:2: 'options' come before the first step");
+    CHECK(problems("key Space held=0\n")[0].starts_with("t.txt:1: 'held=0': held= takes how many repeats"));
     e = problems("key Hyper+Q\n");
     CHECK(e[0].starts_with("t.txt:1: unknown key 'Hyper+Q'"));
     e = problems("click tag:a@x,y\n");
@@ -547,6 +548,22 @@ TEST_CASE("input script: keys with modifiers, and typing waits for a text field"
     CHECK_FALSE(events[4].shift);
     CHECK(events[5].key == ImGuiKey_LeftCtrl);
     CHECK_FALSE(events[5].ctrl);
+
+    // held=N: the system's repeats of the key, one a frame, before it goes up.
+    Player h(parse("key Space held=2\n"), "/tmp");
+    const auto held = play(h, probe);
+    REQUIRE(h.finished());
+    REQUIRE(held.size() == 4);
+    CHECK(held[0].kind == InputEvent::Kind::KeyDown);
+    CHECK_FALSE(held[0].repeat);
+    CHECK(held[0].decisive);
+    CHECK(held[1].kind == InputEvent::Kind::KeyDown);
+    CHECK(held[1].repeat);
+    CHECK_FALSE(held[1].decisive);
+    CHECK(held[2].repeat);
+    CHECK(held[3].kind == InputEvent::Kind::KeyUp);
+    CHECK(toSdlEvent(held[1], 7).key.repeat);
+    CHECK_FALSE(toSdlEvent(held[0], 7).key.repeat);
 
     Player q(parse("type \"Hé!\" timeout=5\n"), "/tmp");
     play(q, probe);

@@ -463,6 +463,17 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                 st.refused = true;
                 continue;
             }
+            if (!anyQuoted && st.op == Op::Key && w.starts_with("held=")) {
+                // held=N: the system's key-down repeats, N of them, one a frame, before the key goes up.
+                int64_t n = 0;
+                if (!parseInt(w.substr(5), n) || n < 1 || n > 600) {
+                    fail(std::format("'{}': held= takes how many repeats, 1 to 600", w));
+                    bad = true;
+                    break;
+                }
+                st.number = n;
+                continue;
+            }
             if (!anyQuoted && st.op == Op::Drag && w == "to") {
                 sawTo = true;
                 continue;

@@ -996,7 +996,6 @@ What remains different:
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Change Name on the unchanged name | Taken as no change | Refused as a name in use, the prompt asked again | none (a quirk not copied) |
-| Held keys (spec 06 §3, §7 Q117) | Only the selection cycles and the movement log's single step repeat (OpenSE4's choice, kept) | Every main-window key repeats while held, End Turn too (confirmed: binary, 2026-10-15) | L |
 | Set Patrol's end | Also Enter or a right click (OpenSE4's), Repeat on, a lone order kept as a plain move | Only a click on the object's own sector | none (an addition) |
 | View Orders | Editable (Move Up, Move Down, Delete Order, Clear Orders, Repeat), the current order first | Read-only, the list in place | none (an addition) |
 | Opening Set Construction Queue from Construction Queues | Marks the object changed only when something is changed there | Marks it as the window opens | L (which minister flags a switched player's copy carries) |
@@ -1014,13 +1013,14 @@ then keeps an empty fleet; the sector's list writes "<design> Class" under the p
 ships and bases only, and sorts its stellar objects by owner, then name in capitals; the empire
 pickers list the empires by name; an enemy design's detail stops after its size; Select
 Directory opens a folder as soon as a mouse button is pressed on it; the main window counts one
-modifier key at a time. What remains different, and OpenSE4's additions that became options,
+modifier key at a time, and every key repeats while held. What remains different, and OpenSE4's additions that became options,
 off by default:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Fleet Transfer's empty fleets (`screens/fleet_transfer.cpp`, `GameState::tidyFleets`) | The Close button deletes the player's fleets with no member, Esc and Enter keep them, as the original does; turn processing deletes any still left (OpenSE4's own) | Kept until the game is loaded again, when memberless fleets are disbanded (turn processing inferred) | L |
 | An enemy design's detail (`screens/designs.cpp`) | The picture, name, Size and components, as the original's; OpenSE4's option "Show enemy designs' details" (Options) adds the owner, date, costs and figures | Only the picture, name, Size and components | none (an option) |
+| Held keys (spec 06 §3, §7 Q117; `MainWindow::hotkeys`, `systemKeyRepeated`) | Every main-window key repeats while held, End Turn too, at the system's repeat rate, as the original; OpenSE4's option "Act once on held keys" (Options) repeats only the selection cycles and the movement log's single step | Every key repeats on the system's key-down messages | none (an option) |
 | Tags across selections (`MainWindow::selectVehicle`, `selectPlanet`, `taggedNote`) | The original's rule; a line over the report says the next order goes to the tagged group (ours, Q124). OpenSE4's option "Clear tags when selecting a ship elsewhere" (Options) clears them when a ship or fleet button or a Goto selects an object in another sector | The ship and fleet buttons and the Gotos keep the tags; the next order goes to the tagged group | none (an option) |
 
 ## Computer player (spec 05 §7)
