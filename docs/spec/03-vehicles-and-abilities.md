@@ -1499,14 +1499,28 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   orders (below). A vehicle in a fleet cannot be mothballed, scrapped, analyzed or retrofitted,
   because the Scrap window does not list it (§15, §19 Q74).
 - **Create Fleet** (Fleet Transfer) asks for the name in a box with OK and Cancel. It offers
-  "<letter> Fleet" with the Greek letters Alpha to Kappa for the empire's number of fleets plus
-  one, going up past names in use, and two words past ten (OpenSE4 writes "Alpha Alpha Fleet"
-  for the 11th, "Alpha Beta Fleet" for the 12th, and so on to "Kappa Kappa Fleet", then
-  "Fleet N", inferred). The typed name is not checked. The fleet is created **empty** at the
+  the n-th default name, n being the empire's count of fleets ever created plus one, going up
+  past names already in use (confirmed: binary; corrected 2026-10-14, complete listing):
+  - The count rises by one for every fleet the empire creates; disbanding a fleet never lowers
+    it, and it is saved (spec 08 §3.6.12). So after three fleets were made and two disbanded,
+    the next one is still "Delta Fleet".
+  - The name is built from the ten Greek words Alpha to Kappa. Up to 10 it is the word for n
+    and " Fleet". For 11 to 100 it is the word for n div 10, a space, the word for n − 10 and
+    " Fleet". Only words 1 to 10 exist; any other number gives an empty word. So the 11th to
+    19th are "Alpha Alpha Fleet" to "Alpha Iota Fleet", the 20th is "Beta Kappa Fleet", and
+    from the 21st the second word is empty: "Beta  Fleet", with two spaces. Names in use are
+    skipped, so the next one is "Gamma  Fleet" (the 30th), and so on.
+  - Above 100 three words are used the same way (inferred for ours: the word for n div 100,
+    the word for (n − 100) div 10 and the word for n − 100; §19 Q87).
+
+  The typed name is not checked. The fleet is created **empty** at the
   window's sector, with the first formation and the first strategy, and under minister control
   when the empire's "new vehicles use ministers" option is on; the player then clicks vehicles
   into it. A fleet still empty when the window closes is deleted. Our engine follows this since
-  2026-10-13 (`cmd::CreateFleet` with no members and a `location`, `defaultFleetName`); an empty
+  2026-10-13 (`cmd::CreateFleet` with no members and a `location`, `defaultFleetName`), and the
+  default names since 2026-10-14 (`Empire::fleetsCreated`, save format 11; before, the names
+  started from the empire's current number of fleets and paired the words in order, "Beta
+  Alpha Fleet" for the 21st, and an old game reads its fleet count as the fleets created); an empty
   fleet survives the tidying that disbands a fleet with no member at its location, and turn
   processing deletes any left (OpenSE4's own, for a window that never closed).
   `cmd::CreateFleet` with members, which the computer players and scripts use, is OpenSE4's;
@@ -3012,3 +3026,10 @@ questions of ours:
     (Drop), and at most one Drop Cargo box for a colonization, when its population or one of
     its unit kinds found no room at all (inferred; `movement_util.cpp` `loadCargo`,
     `dropCargo`, `movement_upkeep.cpp` `unloadColonyShip`).
+87. **Default fleet names past the 100th (§9).** The original builds names above 100 from
+    three Greek words "the same way" as the two-word names (the word for n div 10 and the word
+    for n − 10, empty outside 1 to 10). Which numbers give the three words? OpenSE4 uses the
+    word for n div 100, the word for (n − 100) div 10 and the word for n − 100, so most of
+    those names have empty words and are skipped once in use (inferred; `defaultFleetName`
+    in `commands.cpp`, which gives up after 100,000 names and writes "Fleet N", its own
+    guard).

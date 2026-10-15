@@ -569,8 +569,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x43e9c312f41d793full;
-    constexpr size_t kGoldenSize = 1984;
+    constexpr uint64_t kGoldenChecksum = 0x1a68732ef9b66d6full;
+    constexpr size_t kGoldenSize = 1988;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -587,9 +587,17 @@ TEST_CASE("serialize: checksums are stable") {
 
 namespace {
 
+// What format 11 added (the accuracy pass, serialize.hpp): a game saved in an
+// older format counts each empire's fleets as the fleets it created.
+void dropFormat11(GameState& g) {
+    for (Empire& e : g.empires)
+        e.fleetsCreated = static_cast<uint32_t>(std::count_if(g.fleets.begin(), g.fleets.end(), [&](const Fleet& f) { return f.owner == e.id; }));
+}
+
 // What format 10 added (the REA parity audit, serialize.hpp): a game saved in
-// an older format loads without it.
+// an older format loads without it, nor with what format 11 added.
 void dropFormat10(GameState& g) {
+    dropFormat11(g);
     for (Empire& e : g.empires) {
         e.statistics.clear();
         e.economy.partners.clear();
@@ -821,6 +829,34 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the victory years in 
     serial::write(wholePayload, whole, 9);
     CHECK(payload == wholePayload);
     CHECK(stateChecksum(*before) == stateChecksum(whole));
+}
+
+// Format 11 added the fleets each empire ever created (Empire::fleetsCreated,
+// spec 03 §9): the next default fleet name counts from it. Games saved in
+// format 10 (OpenSE4 0.13 and 0.14) still load, counting the fleets they have.
+TEST_CASE("serialize: format 10 games load; format 11 keeps the count of fleets created") {
+    GameState g = busyGame();
+    REQUIRE_FALSE(g.empires.empty());
+    g.empires[0].fleetsCreated = 7;   // more than it has: some were disbanded
+    auto now = deserializeState(serializeState(g));
+    REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
+    CHECK(now->empires[0].fleetsCreated == 7);
+    CHECK(stateChecksum(*now) == stateChecksum(g));
+
+    // The same game as format 10 wrote it: no count, version 10 in the envelope.
+    const std::vector<uint8_t> current = serializeState(g);
+    const std::string magic(current.begin(), current.begin() + 8);
+    std::vector<uint8_t> payload;
+    serial::write(payload, g, 10);
+    std::vector<uint8_t> old = wrapEnvelope(magic, payload);
+    old[8] = 10;
+    CHECK(payload.size() + 4 * g.empires.size() == payloadOf(current).size());
+    auto before = deserializeState(old);
+    REQUIRE_MESSAGE(before.has_value(), (before ? std::string{} : before.error()));
+    GameState ten = g;
+    dropFormat11(ten);
+    for (size_t i = 0; i < g.empires.size(); ++i) CHECK(before->empires[i].fleetsCreated == ten.empires[i].fleetsCreated);
+    CHECK(stateChecksum(*before) == stateChecksum(ten));
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------

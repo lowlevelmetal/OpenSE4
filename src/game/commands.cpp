@@ -352,6 +352,7 @@ struct Applier {
             f.location = c.location;
             f.minister = emp().ministersForNewVehicles;
             s.addFleet(std::move(f));
+            ++emp().fleetsCreated;   // every fleet made counts, whatever becomes of it (spec 03 §9)
             return {};
         }
         const Vehicle* first = ownVehicle(s, e, c.members.front());
@@ -372,6 +373,7 @@ struct Applier {
         f.leader = c.members.front();
         f.location = where;  // the fleet's own record of where it is (spec 03 §9)
         const FleetId id = s.addFleet(std::move(f)).id;
+        ++emp().fleetsCreated;
         // Joining a fleet clears the vehicle's list (spec 03 §9, §19 Q65).
         for (VehicleId v : c.members) {
             Vehicle& member = *s.vehicle(v);
@@ -1543,20 +1545,30 @@ bool spaceObjectNameInUse(const GameState& s, std::string_view name) {
 }
 
 std::string defaultFleetName(const GameState& s, EmpireId empire) {
+    // The n-th name (spec 03 §9, confirmed: binary): the Greek word for n up
+    // to 10; for 11 to 100 the word for n div 10, a space and the word for
+    // n - 10; only words 1 to 10 exist and any other number gives an empty
+    // word, so the 20th is "Beta Kappa Fleet" and the 21st "Beta  Fleet" with
+    // two spaces. Above 100 three words the same way: the word for n div 100,
+    // the word for (n - 100) div 10 and the word for n - 100 (inferred).
     static constexpr std::array<std::string_view, 10> kLetters{"Alpha", "Beta", "Gamma", "Delta", "Epsilon",
                                                                "Zeta",  "Eta",  "Theta", "Iota",  "Kappa"};
-    auto nameOf = [](size_t n) -> std::string {
-        if (n <= kLetters.size()) return std::format("{} Fleet", kLetters[n - 1]);
-        if (n <= kLetters.size() * (kLetters.size() + 1))
-            return std::format("{} {} Fleet", kLetters[(n - 1) / kLetters.size() - 1], kLetters[(n - 1) % kLetters.size()]);
-        return std::format("Fleet {}", n);
+    auto word = [](uint64_t k) -> std::string_view { return k >= 1 && k <= kLetters.size() ? kLetters[k - 1] : std::string_view{}; };
+    auto nameOf = [&](uint64_t n) -> std::string {
+        if (n <= 10) return std::format("{} Fleet", word(n));
+        if (n <= 100) return std::format("{} {} Fleet", word(n / 10), word(n - 10));
+        return std::format("{} {} {} Fleet", word(n / 100), word((n - 100) / 10), word(n - 100));
     };
     auto inUse = [&](const std::string& name) {
         return std::any_of(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == empire && f.name == name; });
     };
-    size_t n = static_cast<size_t>(std::count_if(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == empire; })) + 1;
-    while (inUse(nameOf(n))) ++n;
-    return nameOf(n);
+    // From the empire's count of fleets ever created plus one, moving on past
+    // names in use (confirmed: binary). OpenSE4 stops looking after 100,000
+    // names and numbers the fleet instead (its own guard).
+    const uint64_t created = empire.valid() && empire.index() < s.empires.size() ? s.empire(empire).fleetsCreated : 0;
+    for (uint64_t n = created + 1; n <= created + 100'000; ++n)
+        if (const std::string name = nameOf(n); !inUse(name)) return name;
+    return std::format("Fleet {}", created + 1);
 }
 
 Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {

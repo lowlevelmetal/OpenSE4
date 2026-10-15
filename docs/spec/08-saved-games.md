@@ -800,7 +800,7 @@ date, outcome per empire from the entry kinds), which is what the anger rules re
 | word | Strategy | Position in the owner's strategy list | `strategy` = value − 1 |
 | bool | Minister control | | `minister` |
 | word | Chosen leader | Object position, 0 none | `leader` |
-| word (after the list) | Fleets ever created | Only for the next default fleet name ("Alpha Fleet"...) **(observed: 1 after the first fleet)** | none; export the list length |
+| word (after the list) | Fleets ever created | Rises by one with every fleet the empire creates and never falls when one is disbanded; the next default fleet name counts from it plus one (spec 03 §9) **(observed: 1 after the first fleet; confirmed: binary, from version 1.05)** | `Empire::fleetsCreated` both ways (since 2026-10-14, save format 11; before, OpenSE4 exported the list length) |
 
 - A slot whose name is empty and whose system and sector are 0 is a free slot: skip it on
   import, keep it on export so that fleet numbers do not move.

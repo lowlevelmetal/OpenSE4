@@ -525,6 +525,12 @@ struct Empire {
     // for the turns it was not visible (save format 10).
     std::vector<StatisticsRow> statistics;
     int experience = 0;
+    // Fleets the empire has ever created (spec 03 §9, spec 08 §3.6.12,
+    // confirmed: binary): rises by one with every fleet made, never falls
+    // when one is disbanded; the next default fleet name starts from it plus
+    // one (defaultFleetName). Save format 11; an older game reads its fleet
+    // count.
+    uint32_t fleetsCreated = 0;
 
     // Computer player state (spec 05 §7).
     int aiState = 0;

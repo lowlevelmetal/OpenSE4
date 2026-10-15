@@ -903,6 +903,7 @@ private:
     void fleets() {
         for (size_t e = 0; e < in_.empires.size(); ++e) {
             const EmpireRecord& in = in_.empires[e];
+            if (e < s_.empires.size()) s_.empires[e].fleetsCreated = in.fleetsCreated;   // the fleets ever created, for the next default name (§3.6.12)
             for (size_t k = 0; k < in.fleets.size(); ++k) {
                 const FleetRecord& f = in.fleets[k];
                 if (f.name.empty() && f.system == 0 && f.sector == 0) continue;   // a free slot

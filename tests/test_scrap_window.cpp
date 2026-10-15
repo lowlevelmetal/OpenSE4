@@ -686,14 +686,17 @@ TEST_CASE("fleet transfer: Create Fleet makes an empty fleet with a Greek name; 
     for (const Fleet& f : s.fleets) CHECK_FALSE(f.members.empty());
 }
 
-TEST_CASE("fleet transfer: the default names go Alpha to Kappa, then two letters") {
+TEST_CASE("fleet transfer: the default names go Alpha to Kappa, then two words built as the original builds them") {
+    // Spec 03 §9 (confirmed: binary): the n-th name is the word for n div 10
+    // and the word for n - 10; past the 20th the second word is empty, and
+    // names in use are skipped.
     const Rules& r = engineRules();
     GameState s = newGame(r, true);
     const Location home = homeOf(s, kMe);
     const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine"});
     addTestVehicle(s, r, plain, home);
     std::vector<std::string> names;
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < 23; ++i) {
         REQUIRE(apply(r, s, kMe, cmd::CreateFleet{{}, {}, home}).ok);
         names.push_back(s.fleets.back().name);
     }
@@ -701,4 +704,27 @@ TEST_CASE("fleet transfer: the default names go Alpha to Kappa, then two letters
     CHECK(names[9] == "Kappa Fleet");
     CHECK(names[10] == "Alpha Alpha Fleet");
     CHECK(names[11] == "Alpha Beta Fleet");
+    CHECK(names[18] == "Alpha Iota Fleet");
+    CHECK(names[19] == "Beta Kappa Fleet");
+    CHECK(names[20] == "Beta  Fleet");    // the 21st: an empty second word, two spaces
+    CHECK(names[21] == "Gamma  Fleet");   // the 22nd to 29th are "Beta  Fleet" again: in use, so the 30th
+    CHECK(names[22] == "Delta  Fleet");
+    CHECK(s.empire(kMe).fleetsCreated == 23);
+}
+
+TEST_CASE("fleet transfer: the default name counts every fleet ever created, disbanded ones too") {
+    // Spec 03 §9 (confirmed: binary): three fleets made and two disbanded,
+    // the next is still "Delta Fleet".
+    const Rules& r = engineRules();
+    GameState s = newGame(r, true);
+    const Location home = homeOf(s, kMe);
+    const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine"});
+    const VehicleId ship = addTestVehicle(s, r, plain, home).id;
+    for (int i = 0; i < 3; ++i) REQUIRE(apply(r, s, kMe, cmd::CreateFleet{{}, {}, home}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::JoinFleet{s.fleets.front().id, ship}).ok);
+    for (const FleetId id : {s.fleets[1].id, s.fleets[2].id}) REQUIRE(apply(r, s, kMe, cmd::DisbandFleet{id}).ok);
+    s.tidyFleets(false);
+    REQUIRE(std::count_if(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == kMe; }) == 1);
+    CHECK(s.empire(kMe).fleetsCreated == 3);
+    CHECK(defaultFleetName(s, kMe) == "Delta Fleet");
 }
