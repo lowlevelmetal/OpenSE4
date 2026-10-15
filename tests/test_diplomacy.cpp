@@ -272,16 +272,17 @@ TEST_CASE("diplomacy: refusals, counter-proposals and forged acceptances") {
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::NonAggression);
 
-    // An acceptance of something never proposed changes nothing.
+    // An Accept Treaty enacts the treaty it names, proposed or not (spec 05
+    // §3.4, confirmed: binary); here a minister's, which no window checks.
     nextTurn(s);
     DiplomaticMessage forged;
     forged.to = kA;
     forged.type = MessageType::AcceptTreaty;
     forged.treaty = Treaty::Partnership;
     forged.inReplyTo = MessageId{12345u};
-    REQUIRE(apply(politicsRules(), s, kB, cmd::SendMessage{forged}).ok);
+    REQUIRE(apply(politicsRules(), s, kB, cmd::SendMessage{forged, true}).ok);
     diplomacy::deliverMessages(ctx);
-    CHECK(s.empire(kA).relation(kB).treaty == Treaty::NonAggression);
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::Partnership);
 }
 
 TEST_CASE("diplomacy: break treaty and declare war are immediate") {
@@ -307,8 +308,9 @@ TEST_CASE("diplomacy: break treaty and declare war are immediate") {
     CHECK_FALSE(hasMood(ctx, kB, "New Treaty War"));
     CHECK(hasLog(s, kA, "War Declared"));
 
-    // Breaking a war is not a way to make peace. The player's window offers
-    // Break Treaty only from Non-Aggression up (spec 06 §4.2).
+    // The player's window offers Break Treaty only from Non-Aggression up
+    // (spec 06 §4.2), but a Break Treaty processed at War ends the war: both
+    // sides go to None (spec 05 §3.2, confirmed: binary).
     nextTurn(s);
     DiplomaticMessage breakWar;
     breakWar.to = kA;
@@ -316,7 +318,8 @@ TEST_CASE("diplomacy: break treaty and declare war are immediate") {
     CHECK(apply(politicsRules(), s, kB, cmd::SendMessage{breakWar}).error == "There is no treaty to break");
     sendUnchecked(s, kB, kA, MessageType::BreakTreaty);
     diplomacy::deliverMessages(ctx);
-    CHECK(s.empire(kA).relation(kB).treaty == Treaty::War);
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::None);
+    CHECK(s.empire(kB).relation(kA).treaty == Treaty::None);
 }
 
 TEST_CASE("diplomacy: subjugation breaks the subject's other treaties") {

@@ -129,14 +129,18 @@ DiplomaticMessage* repliedTo(GameState& s, const DiplomaticMessage& reply, std::
     return o;
 }
 
-void acceptTreaty(TurnContext& ctx, const DiplomaticMessage& proposal) {
-    // The proposer is the master of a Subjugation/Protectorate unless the
-    // proposal names the dominant side in `thirdEmpire` (inferred).
-    EmpireId master = proposal.from;
-    if (proposal.thirdEmpire == proposal.from || proposal.thirdEmpire == proposal.to) master = proposal.thirdEmpire;
-    // An accepted proposal makes no treaty entry: its "Message" entry is all
-    // (spec 06 §7 Q70, confirmed: binary).
-    signTreaty(ctx, proposal.from, proposal.to, proposal.treaty, master == proposal.from, TreatyEntry::None);
+// An Accept Treaty message enacts the treaty it names between its sender
+// and its recipient; nothing checks that the recipient proposed it (spec 05
+// §3.4, confirmed: binary). The window fills it from the proposal it
+// answers (cmd::AnswerMessage). The recipient, who proposed it, is the
+// master of a Subjugation or Protectorate (§3.2), unless the message names
+// the dominant side in `thirdEmpire` (OpenSE4's, inferred). An accepted
+// proposal makes no treaty entry: its "Message" entry is all (spec 06 §7
+// Q70, confirmed: binary).
+void acceptTreaty(TurnContext& ctx, const DiplomaticMessage& accept) {
+    EmpireId master = accept.to;
+    if (accept.thirdEmpire == accept.from || accept.thirdEmpire == accept.to) master = accept.thirdEmpire;
+    signTreaty(ctx, accept.to, accept.from, accept.treaty, master == accept.to, TreatyEntry::None);
 }
 
 // Carries out an accepted trade, gift or tribute (spec 06 §7 Q70, spec 05
@@ -204,9 +208,7 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
         if (LogEntry* entry = logGoto(ctx.log(m.to, LogCategory::Politics, "Message", text, std::nullopt, logpicture::race(m.from)), LogGoto::Empires))
             entry->message = m.id;
     };
-    const DiplomaticMessage* answered = findMessage(s, m.inReplyTo);
-    const bool package = m.type == MessageType::AcceptTrade || m.type == MessageType::AcceptGift ||
-                         (m.type == MessageType::AcceptDemand && answered && answered->type == MessageType::CounterTrade);
+    const bool package = m.type == MessageType::AcceptTrade || m.type == MessageType::AcceptGift;
     if (!package) messageEntry();
 
     // A counter-proposal answers the message it counters.
@@ -215,7 +217,8 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
 
     switch (m.type) {
         case MessageType::AcceptTreaty:
-            if (const DiplomaticMessage* o = repliedTo(s, m, {MessageType::ProposeTreaty, MessageType::CounterTreaty})) acceptTreaty(ctx, *o);
+            repliedTo(s, m, {MessageType::ProposeTreaty, MessageType::CounterTreaty});  // bookkeeping only
+            acceptTreaty(ctx, m);
             break;
         case MessageType::AcceptTrade:
             if (const DiplomaticMessage* o = repliedTo(s, m, {MessageType::ProposeTrade, MessageType::CounterTrade})) {
@@ -230,28 +233,25 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
             }
             break;
         case MessageType::AcceptDemand:
-            // Answering a counter-proposal produces an Accept Demand reply.
-            if (DiplomaticMessage* o = repliedTo(s, m, {MessageType::CounterTreaty, MessageType::CounterTrade})) {
-                const DiplomaticMessage copy = *o;
-                if (copy.type == MessageType::CounterTreaty) acceptTreaty(ctx, copy);
-                else acceptPackage(ctx, copy);
-            } else {
-                repliedTo(s, m, {MessageType::DemandGift, MessageType::DemandTribute, MessageType::DemandSurrender,
-                                 MessageType::DemandRemoveShips, MessageType::DemandRemoveColonies, MessageType::DemandLeavePlanet,
-                                 MessageType::RequestStopHostilities, MessageType::RequestBreakTreaty, MessageType::RequestDeclareWar,
-                                 MessageType::RequestMakePeace, MessageType::RequestSupport, MessageType::RequestAttackEmpire,
-                                 MessageType::RequestAttackPlanet, MessageType::DemandStopEspionage, MessageType::DemandStopSabotage,
-                                 MessageType::DemandStopAttacks, MessageType::General});
-            }
+            // Nothing is carried out: only the AI acts on a demand it accepts
+            // (spec 05 §3.4, §7.4). A counter-proposal is accepted with Accept
+            // Treaty or Accept Trade.
+            repliedTo(s, m, {MessageType::DemandGift, MessageType::DemandTribute, MessageType::DemandSurrender, MessageType::DemandRemoveShips,
+                             MessageType::DemandRemoveColonies, MessageType::DemandLeavePlanet, MessageType::RequestStopHostilities,
+                             MessageType::RequestBreakTreaty, MessageType::RequestDeclareWar, MessageType::RequestMakePeace,
+                             MessageType::RequestSupport, MessageType::RequestAttackEmpire, MessageType::RequestAttackPlanet,
+                             MessageType::DemandStopEspionage, MessageType::DemandStopSabotage, MessageType::DemandStopAttacks,
+                             MessageType::General});
             break;
         case MessageType::RefuseTreaty: repliedTo(s, m, {MessageType::ProposeTreaty, MessageType::CounterTreaty}); break;
         case MessageType::RefuseTrade: repliedTo(s, m, {MessageType::ProposeTrade, MessageType::CounterTrade}); break;
         case MessageType::RefuseGift: repliedTo(s, m, {MessageType::Gift, MessageType::Tribute}); break;
-        case MessageType::BreakTreaty: {
-            const Treaty current = s.empire(m.from).relation(m.to).treaty;
-            if (current != Treaty::War && current != Treaty::None) setTreaty(ctx, m.from, m.to, Treaty::None);
+        case MessageType::BreakTreaty:
+            // Both sides go to None whatever the treaty, War included: only
+            // the window keeps a player from sending it below Non-Aggression
+            // (spec 05 §3.2, confirmed: binary).
+            setTreaty(ctx, m.from, m.to, Treaty::None);
             break;
-        }
         case MessageType::DeclareWar: declareWar(ctx, m.from, m.to); break;
         case MessageType::Surrender:
             // With Allow Surrender off a Surrender message does nothing at all (spec 05 §7.4, confirmed: binary).

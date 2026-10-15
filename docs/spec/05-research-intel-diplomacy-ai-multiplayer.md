@@ -494,7 +494,13 @@ up the trade chain [M].
 - **Consistency check** (confirmed: binary): at each empire's treaty step (§8), if the two
   sides of a pair record different treaties, both are reset to None.
 - **Break Treaty** sets both sides to None; **Declare War** sets both to War, whatever the
-  current treaty (confirmed: binary).
+  current treaty (confirmed: binary). A Break Treaty processed at War ends the war (corrected
+  2026-10-14, complete listing): only the Communicate window keeps a player from sending it
+  below Non-Aggression (§3.4); a computer player's or a network player's message is not
+  checked. Since 2026-10-14 ours follows (`diplomacy.cpp` message processing); the engine
+  still refuses a human player's Break Treaty below Non-Aggression in the command, as the
+  window does (`diplomacy::playerMessageProblem`). Until then ours ignored a Break Treaty at
+  War.
 - **Combat** (confirmed: binary, spec 04 §2): two empires fight when their treaty is below
   Non-Aggression (War, Non-Intercourse, None or no contact). Non-Aggression and every better
   treaty, Subjugation and Protectorate included, never fight. Allies never fire on each other,
@@ -540,9 +546,9 @@ up the trade chain [M].
   OpenSE4's earlier choice, which stopped a subject's treaties with third empires when they
   were set.
 - **OpenSE4 choices** [I]:
-  - A Treaty package item makes the receiver the master unless it names the giver.
-  - Break Treaty does not end a war (the window offers it only from Non-Aggression up,
-    §3.4).
+  - A Treaty package item makes the receiver the master unless it names the giver. The
+    original always makes the receiver the master (confirmed: binary), so ours matches by
+    default; naming the giver is our extension.
 
 ### 3.3 Trade and tariffs
 
@@ -701,10 +707,16 @@ up the trade chain [M].
 - **Log categories**: Construction, Research, Intelligence, Events, Politics, Combat, Misc.
 - **Log lifetime** (confirmed: binary): at the end of each empire's turn processing its log
   keeps only the entries of the last turn; the history window keeps the long record.
+- **Accept Treaty** (confirmed: binary): the treaty named in the Accept Treaty message
+  itself is enacted between its sender and its recipient at once; nothing checks that the
+  recipient proposed it, and no date, window or offer type is tested. The window fills the
+  treaty from the newest proposal, so through the window the result is the same. A
+  counter-proposal is accepted with Accept Treaty or Accept Trade; an Accept Demand carries
+  nothing out. Since 2026-10-14 ours follows (`diplomacy.cpp` message processing, `acceptTreaty`;
+  `cmd::AnswerMessage` fills the treaty from the proposal answered). Until then ours enacted
+  only a proposal the recipient really sent (an extension against forged network messages),
+  and an Accept Demand reply to a counter-proposal applied the counter.
 - **OpenSE4 choices** [I]:
-  - Replies are checked against the message they answer: an acceptance only works for a
-    proposal the recipient really sent. Accepting a counter-proposal (an Accept Demand
-    reply) applies the counter.
   - Messages are kept 10 turns after sending, then dropped, together with any message
     whose sender or recipient is gone.
   - The history record (an extension, open question 30): each empire keeps its own dated

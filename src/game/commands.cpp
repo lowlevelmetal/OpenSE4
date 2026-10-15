@@ -1102,7 +1102,11 @@ struct Applier {
         reply.sentTurn = s.turn;
         reply.inReplyTo = it->id;
         reply.text = c.text;
+        // An Accept Treaty enacts the treaty it names (spec 05 §3.4,
+        // confirmed: binary): the window fills it from the proposal, with the
+        // dominant side a proposal may name (OpenSE4's).
         reply.treaty = it->treaty;
+        if (it->type == MessageType::ProposeTreaty || it->type == MessageType::CounterTreaty) reply.thirdEmpire = it->thirdEmpire;
         reply.offer = it->request;  // what they asked us for is what we now give
         reply.request = it->offer;
         switch (it->type) {

@@ -253,18 +253,11 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     const uint32_t before = date - 1;
     // History: the political messages dated the turn before (spec 05 §3.4),
     // by the date of their political entry (DiplomaticMessage::dated).
-    auto findMessage = [&](MessageId id) -> const DiplomaticMessage* {
-        for (const DiplomaticMessage& m : s.messages)
-            if (m.id == id) return &m;
-        return nullptr;
-    };
     for (const DiplomaticMessage& m : s.messages) {
         if (!m.delivered || m.dated != before || (m.from != e && m.to != e)) continue;
         const EmpireId other = m.from == e ? m.to : m.from;
-        const DiplomaticMessage* answered = findMessage(m.inReplyTo);
-        const bool acceptsTreaty = m.type == MessageType::AcceptTreaty ||
-                                   (m.type == MessageType::AcceptDemand && answered && answered->type == MessageType::CounterTreaty);
-        if (acceptsTreaty && answered) out.history.push_back(historyLine(before, other, std::format("{} established", displayName(answered->treaty))));
+        // An Accept Treaty names the treaty it enacts (spec 05 §3.4).
+        if (m.type == MessageType::AcceptTreaty) out.history.push_back(historyLine(before, other, std::format("{} established", displayName(m.treaty))));
         else if (m.type == MessageType::BreakTreaty) out.history.push_back(historyLine(before, other, "Treaty broken"));
         else if (m.type == MessageType::DeclareWar) out.history.push_back(historyLine(before, other, "War declared"));
     }

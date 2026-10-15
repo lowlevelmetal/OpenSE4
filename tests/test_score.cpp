@@ -469,7 +469,7 @@ TEST_CASE("score: a human player's statistics, history and log text files") {
         return m.id;
     };
     const MessageId proposal = message(kA, kB, MessageType::ProposeTreaty, 4, Treaty::TradeAlliance);
-    message(kB, kA, MessageType::AcceptTreaty, 5, Treaty::None, proposal);
+    message(kB, kA, MessageType::AcceptTreaty, 5, Treaty::TradeAlliance, proposal);  // it names the treaty it enacts
     message(kC, kA, MessageType::DeclareWar, 5);
     message(kA, kC, MessageType::BreakTreaty, 6);  // dated now: next time
     message(kB, kC, MessageType::DeclareWar, 5);    // not ours
