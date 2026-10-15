@@ -162,6 +162,11 @@ public:
         heading(ui, "OpenSE4");
         changed |= movementSpeedRow(ui, s);
         changed |= shipMovementRows(ui, s);
+        changed |= lampToggle(ui, "Game Setup's Save To File saves the designs", &s.setupSavesDesigns);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Off, as in the original: Save To File on Game Setup's Players page writes no design, whatever is\n"
+                              "answered to Save Designs. On: Yes keeps the empire's designs in OpenSE4's empire file. The file\n"
+                              "for Space Empires IV written there never holds designs; Save Empire during a game saves them.");
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

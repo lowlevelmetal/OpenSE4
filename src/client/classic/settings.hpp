@@ -64,6 +64,12 @@ struct ClassicSettings {
     // summary at its end, in place of its empty weapon grid (Combat Replay
     // Options; the original has no such list, spec 06 §7 Q39). Off by default.
     bool replayEvents = false;
+    // Game Setup's Save To File keeps the empire's designs in OpenSE4's
+    // empire file when Save Designs is answered Yes (Options, under OpenSE4).
+    // The original's never saves them there, whatever the answer (spec 08
+    // §11.1 Q26, confirmed: binary), so it is off by default, and the
+    // original's empire file (.emp) written from Game Setup never holds any.
+    bool setupSavesDesigns = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

@@ -1713,7 +1713,15 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     selects the designs by the empire's present place in the list, while designs that Add
     Existing brought keep the key they were added with; after a Remove the two can differ,
     so the original may save another empire's designs (inferred). OpenSE4 keeps each listed
-    empire's designs with the empire and saves those.
+    empire's designs with the empire and saves those. **Answer** (confirmed: binary,
+    2026-10-14, complete listing): Save To File asks "Save Designs" and then writes the
+    designs whose owner is the empire's place in the list (1 to 20), but Game Setup holds its
+    designs under keys from 100 up, so it never writes a design, whatever the answer. The Game
+    Menu's Save Empire during a game does save the player's designs. Since 2026-10-14 ours
+    follows by default: the question is asked, and the empire file holds no design, OpenSE4's
+    and the original's alike; the OpenSE4 option "Game Setup's Save To File saves the
+    designs" (Options, per computer, off by default) keeps them in OpenSE4's file on Yes, never
+    in the original's (`screens/setup.cpp` `saveToFile`, `ClassicSettings::setupSavesDesigns`).
 27. **The game seed after a loaded or generated map.** After Load Map or Generate Map Now,
     Begin Game makes no quadrant; which seed the game then keeps is not known (spec 01).
 28. **Map files of a finite-resources game (§14).** A planet's values are written as they
@@ -2017,7 +2025,8 @@ Save To File (Players page) and the Game Menu's Save Empire **(confirmed: binary
 4. An error shows a message that the empire could not be saved.
 
 The Game Menu saves the empire of the player whose turn it is. The copy Save To File writes
-always has computer control off (§13.2).
+always has computer control off (§13.2), and holds no design, whatever the answer to Save
+Designs (§11.1 Q26, confirmed: binary).
 
 **Network** (context only; OpenSE4 replaces it): a TCP/IP player's Game Setup writes the
 player's empire with its designs in this format to `temp\CurrEmp.dat` and sends it; the host
@@ -2066,7 +2075,9 @@ the lobby; a failure shows "Empire Load Error".
   Game Menu's Save Empire ask "Save Designs" first, write OpenSE4's own empire file with
   computer control off, and offer *Save for SE IV*, which writes the empire as a `.emp` file
   into a folder of the player's (by default the user's `empires` folder), its file name in
-  lower case.
+  lower case. Save To File writes no design into either file, as the original (§11.1 Q26),
+  unless the OpenSE4 option "Game Setup's Save To File saves the designs" is on; then a Yes
+  keeps them in OpenSE4's file only. The Game Menu's Save Empire saves them on Yes.
 - **Our client differs:** OpenSE4 keeps only the hash of an imported password, of its
   trimmed lower-case text, so Edit (an exact comparison of what is typed) accepts it typed
   in lower case; Save for SE IV lower-cases the file name, not the folder (folder names can
