@@ -101,8 +101,9 @@ Example: an armor area appears once Chemistry reaches level 1.
 
 **Ancient ruins** (confirmed: binary): colonizing a planet with `Ancient Ruins` (Value1 = N)
 gives N advances. For each advance the game rolls an area uniformly among all tech areas,
-up to 1,000 times, until it finds one that is researchable (above); that area gains exactly
-one level. The ability is then removed from the planet. `Ancient Ruins Unique` makes its
+up to 1,001 times, until it finds one that is researchable (above); that area gains exactly
+one level, but only when it was found within the first 999 rolls: a find on the 1,000th or
+1,001st roll is thrown away (corrected 2026-10-14, complete listing; spec 03 §3.3). The ability is then removed from the planet. `Ancient Ruins Unique` makes its
 unique area visible to the colonizing empire and is removed too.
 
 ### 1.3 Level cost

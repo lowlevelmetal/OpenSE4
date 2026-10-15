@@ -185,6 +185,9 @@ void destroyVehicle(TurnContext& ctx, Vehicle& v) {
     if (v.count <= 0) return;
     noteVehicleLost(ctx, v, "event");
     for (const UnitStack& st : groupStacks(v)) ctx.state.design(st.design).lost += st.count;   // every unit of a group
+    // The units a destroyed ship or base carries are lost too, each stack's
+    // full count (spec 04 §15, confirmed: binary).
+    for (const UnitStack& st : v.cargo.units) ctx.state.design(st.design).lost += st.count;
     v.count = 0;
     v.mixed.clear();
     ctx.mood(v.owner, "Any Ship Lost");

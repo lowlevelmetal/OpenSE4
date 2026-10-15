@@ -424,7 +424,7 @@ type, none = defined but unused.
 | `Destroy Black Hole` / `Create Black Hole` | C | – | – | As above, for black holes. |
 | `Stop Planet Destroyer` / `Stop Star Destroyer` / `Stop Nebulae Creator` / `Stop Black Hole Creator` / `Stop Open Warp Point` / `Stop Close Warp Point` | F | – | – | Blocks that manipulation in the whole system, whoever owns the blocking object; `Stop Planet Destroyer` protects only its sector (§8) (confirmed: binary). |
 | `Component Destroyed On Use` | C | – | – | The component becomes destroyed after its use ability fires. |
-| `Ancient Ruins` | S | count | – | When the planet is colonized, N = the planet's largest V1. If N > 0: N times, one research area is drawn at random (up to 1000 draws) among areas whose requirements the colonizing empire meets, that it may research and that are below their maximum level, and it gains one level; then this ability is removed from the planet. `Ancient Ruins Unique` is then not applied and stays on the planet (confirmed: binary). |
+| `Ancient Ruins` | S | count | – | When the planet is colonized, N = the planet's largest V1. If N > 0, the owner first gets the log entry "Ruins Discovered", category Misc, and then N times one research area is drawn at random among all areas, up to 1,001 draws, until one comes up whose requirements the colonizing empire meets, that it may research and that is below its maximum level; it gains one level only when it came up within the first 999 draws, so a find on the 1,000th or 1,001st draw is thrown away. Then this ability is removed from the planet. `Ancient Ruins Unique` is then not applied and stays on the planet (confirmed: binary; corrected 2026-10-14, complete listing: the draws were given as up to 1,000, every find counting). Since 2026-10-14 ours follows (`research::grantRandomAdvances`, `movement_upkeep.cpp` `grantRuins`); before, it made 1,000 draws and wrote a Research entry "Ancient ruins found on <planet>". |
 | `Ancient Ruins Unique` | S | tech id | – | When the planet is colonized and it has no `Ancient Ruins` above 0: the unique area V1 is added to the colonizing empire's unique areas, every research area with that unique id that is not at its maximum level gains one level (requirements are not checked), and this ability is removed from the planet (confirmed: binary). |
 | `Combat Best Experience` | C | – | – | In combat, uses the highest experience among the owner's combatants. |
 | `Combat Movement` | C | MP | – | Extra movement in combat only. Largest value on the vehicle (§3.2). |
@@ -649,7 +649,9 @@ that were there and a ship hit during another empire's player turn alike. Nothin
 steps already made: a ship of speed 6 that made two steps (4 left) and comes out of a battle
 with a maximum of 3 has 3 left and can use them at once. An ordinary step lowers the MP left by
 1 and recomputes nothing. The MP left are set to the maximum at the start of the owner's turn
-(§6.3). Unspent MP do not carry over (confirmed: binary; §19 Q85). The maximum is found in
+(§6.3). Unspent MP do not carry over (confirmed: binary; §19 Q85). Only ships and bases are
+capped this way: a unit group's recompute sets its maximum and leaves its movement left alone
+(§12; confirmed: binary, 2026-10-14). The maximum is found in
 these steps (confirmed: binary), where L is the ship's ability list (§3.1: hull plus components
 not destroyed; empty when mothballed):
 
@@ -692,7 +694,8 @@ Consequences worth stating:
   to the MP left without a ceiling, so they can then exceed the maximum, until the next
   recompute (a component lost, a resupply on a step, a cloak...) throws away what is above it
   (confirmed: binary).
-- Units (fighters, drones) in space use their own movement rules (§12).
+- Units (fighters, drones) in space use their own movement rules (§12); their movement left
+  is never cut when their maximum drops.
 
 ### 6.2 Grid, paths and warp points
 
@@ -826,7 +829,9 @@ over a **30-day** month (confirmed: binary):
    fails. So a Move To that arrives, a Load Cargo and a Drop Cargo can all happen in one action,
    and an object that acts on day 1 only runs all of its orders that need no movement then.
    MP are not spent in this mode: after the action the vehicle's MP is put back to its value
-   before the action, unless its maximum fell below that value during the action; then it keeps
+   before the action, unless (for a ship or base; a unit group's movement is never cut, §12,
+   so it always gets its points back, inferred) its maximum fell below that value during the
+   action; then it keeps
    what the action left (0 after a step) and gains nothing on the following days. It still acts
    while its counter holds a whole unit (speeds above 30, Emergency Energy), each time with 1 MP
    again, so it can take one more step per such action, and then stops for the rest of the turn
@@ -945,7 +950,7 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   destination in the same run while MP last, although the lists are already empty, so nothing is
   left of it for a later turn if MP run out first; in a simultaneous game the action ends
   there.
-- If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1), whoever's
+- If a ship's or base's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1), whoever's
   turn it is; the steps it already made do not count (§19 Q85). In a simultaneous game a drop during the vehicle's own action (supply running out on its step, for
   example) stops it once its counter has no whole unit left (§6.3 step 4), and a drop between
   its actions slows it (§6.3).
@@ -1186,7 +1191,7 @@ sector is elsewhere) plus the action.
 
 | Order (hotkey) | Parameters | Behaviour |
 |---|---|---|
-| Move To (M) | sector, in any known system | Paths and warps as needed (§6.2). Done on arrival; waits when out of MP; fails on an invalid destination or a blocked path. |
+| Move To (M) | sector, in any known system | Paths and warps as needed (§6.2). Done on arrival; waits when out of MP; fails on an invalid destination or a blocked path. One run of the order takes at most 51 steps (a warp jump counts as one): after the 51st the Move To counts as done, even if the group has not arrived, and the next order runs. This holds for Move To Waypoint and the patrol's moves too, and matters only in a turn-based game with more than 51 movement points (stacked Emergency Energy, modded hulls) (confirmed: binary). Since 2026-10-14 ours follows (`movement.cpp` `moveTo`, `kMoveRunSteps`); before, a run had no limit. |
 | Move To Waypoint (Ctrl 1–9, 0) | waypoint | The waypoint is looked up when the order runs; if it has been deleted the order fails (§8.1). |
 | Set Waypoint (Alt 1–9, 0) | sector | Empire-level. Defines a waypoint (§8.1): the key asks for a sector, which the next click on the system panel gives (spec 06 §3.1). |
 | Attack (A) | target | In turn-based games (except for drones) it becomes Move To the sector the target is in when the order is given (added even when the group is already there) plus an Attack. The stored Attack names no target and no place: it attacks wherever the group stands when it runs, which costs 1 MP and one move's supply and starts combat at once; with no MP left it is removed doing nothing. It decloaks nobody (§6.4). In simultaneous games, and for drones, it becomes a pursuit: on each action the group moves toward the target's current sector, warping as needed. Once there, a group holding a drone whose own first order pursues an object in that sector attacks: its cloaked drones decloak, then 1 MP and one move's supply (the battle itself comes from the day's combat check, §6.3, or at once in a turn-based game). A group with no such drone just waits there, spending neither MP nor supply. The order stays either way. The pursuit is done when the target no longer exists (or its slot holds another object), belongs to the attacker's owner, or is a planet without a colony; there is no visibility test. In a battle, a drone group's target is the object its first order pursues (§12). A drone given a warp point as target gets Move To plus Warp instead (confirmed: binary). |
@@ -1213,7 +1218,7 @@ sector is elsewhere) plus the action.
 | Sweep Mines (Ctrl M) | — | Runs the whole mine encounter of the current sector again (sweeping, then the remaining hostile mines strike the group, §12), then, if the group survived, costs 1 MP (if any is left) and one move's supply. Always done (confirmed: binary). |
 | Add / Remove Tagged Minefield (Ctrl T / Ctrl R) | sector | Empire-level. |
 | Use Component (Ctrl Z) | component position | Given through a picker; in a turn-based game it first clears the list. Only the acting group's first member uses the part (rules below the table). A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap (the next recompute of the maximum throws away what is left above it, §6.1); in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
-| Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15) (confirmed: binary). |
+| Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15). Each run destroys only the first member of the group, when that member can self-destruct (for a fleet its member at the fleet's location that comes first in object order, as for Scrap), and the order is done either way, saying nothing when nobody could; companions keep their own order and carry it out on their next action (confirmed: binary; corrected 2026-10-14, complete listing). The window gives each vehicle its own order, so the end result is the same. Since 2026-10-14 ours follows (`movement.cpp` `selfDestruct`); before, every member that could was destroyed at once. |
 | Stellar Manipulation (B) | action | See below. |
 | Scrap / Analyze / Mothball (G) | — | §15. |
 | Change Name (N) | text | A vehicle, fleet or colony cannot take a name that some space object of the game has, exactly and case counting: a ship, base or unit group, a planet, star, warp point or other stellar object, of any empire, its own included; fleets' names are not compared. The prompt then says the name is in use and asks again (spec 06 §1.3) (confirmed: binary). Our engine takes the object's own name again as no change instead of refusing it (OpenSE4's choice). A design keeps the rule of §4.1. |
@@ -1709,7 +1714,10 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
     plus cloak supply when cloaked. No racial scaling applies to upkeep.
   - Per-move cost = Σ over designs of (the design's per-move cost × count), then the racial
     `Supply Cost` percentage, rounded.
-  - Group MP = the lowest design speed in the group, or 1 at zero supply.
+  - Group MP = the lowest design speed in the group, or 1 at zero supply. A recompute sets
+    this maximum and never cuts the group's movement left, so a group that runs out of
+    supply mid-turn keeps its movement (confirmed: binary, 2026-10-14; ours since then,
+    `capMovement` caps ships and bases only).
 - **Resupply:** a fighter group is refilled when it shares a sector with a colonized planet that has
   a `Supply Generation` facility, owned by the same empire or by one whose treaty allows depot
   use. Drones can never be resupplied. Satellites and mines have no supply at all (maximum 0, no
@@ -1890,15 +1898,20 @@ A button is lit only when every selected vehicle passes its test (the window is 
   is done. If it fails, the order counts as done all the same: it leaves the list (with Repeat
   on, it goes to the end), the orders behind it run, and the list is never cleared. Only
   Mothball, Unmothball and Retrofit report a failure, each with one log entry: the Mothball
-  minister's "Cannot Unmothball" says that there are not enough resources or that no space
-  yard is present. Scrap, Analyze and Fire On say nothing. Analyze, Mothball, Unmothball,
+  minister's "Cannot Mothball" or "Cannot Unmothball" (category Misc; the latter says that
+  there are not enough resources or that no space yard is present), and "Retrofit Problem"
+  (category Construction). Scrap, Analyze and Fire On say nothing. A Mothball order that
+  succeeds logs "Ship Mothballed" (Misc); a Retrofit that succeeds logs "Vehicle Retrofit"
+  (Construction) (confirmed: binary, 2026-10-14). Analyze, Mothball, Unmothball,
   Retrofit and Fire On act on the acting vehicle only, even when it heads an ad-hoc group
   (§8), so each vehicle carries out its own order.
 - **The Scrap order** scraps one vehicle, the first of the group that carries it out: the
   acting vehicle, or for a fleet member its fleet's member at the fleet's location that comes
   first in object order, whichever member holds the order. The test is the order's: an own
   working space yard in that vehicle's sector and no cloak (not the window's fleet test). The
-  refund is the one above, and the owner gets a "Vehicle Scrapped" log entry. When the acting
+  refund is the one above, and the owner gets a "Vehicle Scrapped" log entry, or "Group
+  Scrapped" for a unit group, a Construction entry from the Scrap Minister (confirmed:
+  binary, 2026-10-14). When the acting
   vehicle itself was scrapped the run counts as failed and the lists of the members left at
   the fleet's location are cleared (Repeat off); otherwise the order leaves every member's list
   there and the member that held it stays in the fleet. Only the Scrap minister's orders put
@@ -2012,14 +2025,26 @@ OpenSE4's own choices, (inferred):
 - Computer players' and ministers' Retrofit goes through the same command, so in a
   simultaneous game it too becomes the vehicle's only order. How the original's ministers
   carry it out is open. Their Scrap is the minister's order of spec 05 §7.5.
-- Scrap and Self-Destruct count each living unit of a unit group in "Number Scrapped".
-- A self-destructed vehicle still gets its "destroyed" Misc entry, but raises no "ship lost"
-  mood (it is not lost). A Self-Destruct order nobody in the group can carry out counts as
-  done, like the window's other orders, and says nothing.
-- "Vehicle Scrapped" is a Construction entry naming the vehicle and its sector in our words,
-  written for a unit group too and in a turn-based game's window as well. "Cannot Mothball"
-  and "Cannot Retrofit" are our titles for those two failures (Construction entries with the
-  reason in our words), "Cannot Unmothball" the original's.
+- The words of the entries below are ours; their titles and categories are the original's.
+
+Settled from the complete listing on 2026-10-14 (confirmed: binary; §19 Q78, Q84):
+- Scrap and Self-Destruct count each living unit of a unit group in "Number Scrapped", and
+  self-destruct raises no happiness event.
+- A self-destructed vehicle writes "Vehicle Self-Destructed", or "Group Self-Destructed" for
+  a group, a Construction entry from the Demolition Minister. Which unit groups are "groups"
+  is (inferred): as for Fire On, satellite groups and minefields; a drone group is a vehicle.
+  A Self-Destruct order nobody in the group can carry out counts as done and says nothing.
+- "Vehicle Scrapped" and "Group Scrapped" are Construction entries from the Scrap Minister.
+  That a turn-based game's window writes them too, as an order does, is (inferred).
+- A failed Mothball or Unmothball order writes "Cannot Mothball" or "Cannot Unmothball",
+  Misc; a failed Retrofit "Retrofit Problem", Construction; a Mothball carried out as an order
+  "Ship Mothballed", Misc (not when the window carries it out at once); a Retrofit "Vehicle
+  Retrofit", Construction (ours also when the window carries it out at once, inferred).
+
+Since 2026-10-14 ours follows these (`scrap.cpp`, `movement.cpp` `scrapWindowAction`,
+`cannot`): before, a self-destruct wrote "<name> destroyed" (Misc), a unit group's scrapping
+"Vehicle Scrapped", the failures "Cannot Mothball" and "Cannot Retrofit" as Construction
+entries, a successful Mothball order nothing, and a retrofit "<name> retrofitted to <design>".
 
 ---
 
@@ -2733,6 +2758,12 @@ marked (inferred) in the code.
       game's window) or, carried out as an order, writes the Mothball minister's "Cannot
       Unmothball" entry. Our engine follows this since 2026-10-13 (§15).
 
+    **Answer** to the second and third points (confirmed: binary, 2026-10-14): a
+    self-destructed unit group counts each living unit in "Number Scrapped", and
+    self-destruct raises no happiness event; its entry is "Vehicle Self-Destructed" or
+    "Group Self-Destructed", Construction, from the Demolition Minister (§15). The first
+    point (the ministers' Scrap and Retrofit) is spec 05's.
+
 **Players' reports on v0.8.1 (2026-10-04).** The Colonize picker is spec 06 §7 Q100 (with the
 rules in §8); this one is ours:
 
@@ -2897,6 +2928,23 @@ fleet's row in the sector list is spec 06 §7 Q110.
       entry: title and category (OpenSE4: "<planet> abandoned", Misc).
     - The Scrap window's Order By Class: OpenSE4 sorts by design name, then by vehicle name.
       And what Status shows with nothing selected (OpenSE4: "-").
+
+    **Answer** (confirmed: binary, 2026-10-14):
+    - Create Fleet's default name: §9 (the n-th name built from the Greek words by
+      division; from the 21st fleet the second word is empty).
+    - "Vehicle Scrapped", or "Group Scrapped" for a unit group, is a Construction entry from
+      the Scrap Minister (§15).
+    - A failed Mothball or Unmothball order writes "Cannot Mothball" or "Cannot Unmothball",
+      category Misc; a failed Retrofit "Retrofit Problem", Construction. A successful Mothball
+      order writes "Ship Mothballed" (Misc) when it is not carried out live, a successful
+      Retrofit "Vehicle Retrofit" (Construction) (§15).
+    - A Self-Destruct order nobody in the group can carry out says nothing.
+    - Abandon Planet works the refund percentage out once, before the first facility goes, as
+      OpenSE4 does; the entry is "Planet Abandoned", category Misc (spec 02 §5).
+    - Left open: the Order By Class sort key, and what Status shows with nothing selected.
+
+    Since 2026-10-14 ours follows (`scrap.cpp`, `movement.cpp` `cannot`, `abandon`); the
+    texts are ours.
 85. **Movement left after a battle (GitHub issue #13).** "Ships damaged in combat can display as
     having more than their maximum movement after combat." "I went to move the ship which
     displayed 4 / 3, and it changed to 0 / 3 movement and queued it for the next turn instead of
@@ -2947,8 +2995,10 @@ fleet's row in the sector list is spec 06 §7 Q110.
     everything, hence "0 / 3" and the waiting Move To. `TurnMoves` is now unused and its list
     always empty; it stays in the saved game so that the format does not change. Simultaneous
     games did not change: their daily cap (§6.3) already gave the same results. Our client shows
-    the Movement line as "3/6" since then, without the gauge. Open: unit groups (fighters,
-    drones) were not checked in the executable; OpenSE4 caps them the same way (inferred).
+    the Movement line as "3/6" since then, without the gauge. Unit groups (fighters, drones)
+    are never capped: a group's recompute sets its maximum and leaves the movement left
+    alone (confirmed: binary; corrected 2026-10-14, complete listing: OpenSE4 capped them
+    the same way, inferred). Since 2026-10-14 ours caps ships and bases only (`capMovement`).
 
 **The accuracy pass of 2026-10-14** (the rules settled from the complete listing) left these
 questions of ours:

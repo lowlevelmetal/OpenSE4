@@ -3739,6 +3739,11 @@ void Battle::finish() {
             own.lost.push_back(p.name);
             ++own.shipsLost;
             ++s_.design(p.unit.design).lost;
+            // The units still in its cargo are lost with it, each stack's full
+            // count, as the ship's own loss is counted (spec 04 §15, confirmed:
+            // binary). Units killed in the cargo during the battle were counted
+            // as they died (cargoHit) and are no longer in the stacks.
+            for (const UnitStack& st : p.unit.cargo.units) s_.design(st.design).lost += st.count;
         } else if (p.captured && p.owner != p.startOwner) {
             own.taken.push_back(p.name);
             ++own.shipsLost;

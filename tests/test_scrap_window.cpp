@@ -435,8 +435,9 @@ TEST_CASE("scrap window: a simultaneous order is tested again when it acts; a fa
 
 TEST_CASE("scrap window: failed Mothball, Unmothball and Retrofit orders are reported and count as done") {
     // Spec 03 §15 (confirmed: binary): the Mothball minister's "Cannot
-    // Unmothball" (not enough resources, or no space yard); the titles of the
-    // other two are ours. A Self-Destruct nobody can carry out counts as done.
+    // Unmothball" (not enough resources, or no space yard) and "Cannot
+    // Mothball", Misc entries, and "Retrofit Problem", a Construction one. A
+    // Self-Destruct nobody can carry out counts as done.
     const Rules& r = engineRules();
     GameState s = newGame(r, true);
     const Location home = homeOf(s, kMe);
@@ -468,7 +469,11 @@ TEST_CASE("scrap window: failed Mothball, Unmothball and Retrofit orders are rep
     for (VehicleId id : {sleeper, mothball, refit}) CHECK(s.vehicle(id)->orders.empty());
     CHECK(entries(s, kMe, "Cannot Unmothball") == 1);
     CHECK(entries(s, kMe, "Cannot Mothball") == 1);
-    CHECK(entries(s, kMe, "Cannot Retrofit") == 1);
+    CHECK(entries(s, kMe, "Retrofit Problem") == 1);
+    for (const LogEntry& l : s.empire(kMe).log) {
+        if (l.title == "Cannot Mothball" || l.title == "Cannot Unmothball") CHECK(l.category == LogCategory::Misc);
+        if (l.title == "Retrofit Problem") CHECK(l.category == LogCategory::Construction);
+    }
     // A Self-Destruct order nobody can carry out leaves the list too, silently.
     const VehicleId plainShip = addTestVehicle(s, r, plain, home).id;
     s.vehicle(plainShip)->orders = {Order{OrderKind::SelfDestruct, home}};

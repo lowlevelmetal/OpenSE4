@@ -92,9 +92,13 @@ void scrapVehicle(TurnContext& ctx, Vehicle& v) {
     // Damage does not lower the value and cargo is lost (spec 03 §15).
     s.empire(v.owner).stockpile += scrapRefund(ctx.rules, s, v);
     perDesign(ctx.rules, s, v, [&](DesignId d, int n) { s.design(d).scrapped += n; });
-    // "Vehicle Scrapped" (spec 03 §15, spec 05 §19 Q74, confirmed: binary); the text is ours.
-    ctx.log(v.owner, LogCategory::Construction, "Vehicle Scrapped", std::format("{} was scrapped in {}.", v.name, sectorText(s, v.location)),
-            v.location, logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
+    // "Vehicle Scrapped", or "Group Scrapped" for a unit group, a
+    // Construction entry from the Scrap Minister (spec 03 §15, spec 05 §19
+    // Q74, confirmed: binary); the words are ours.
+    const bool group = isUnitType(vehicleType(ctx.rules, s, v));
+    ctx.log(v.owner, LogCategory::Construction, group ? "Group Scrapped" : "Vehicle Scrapped",
+            std::format("The Scrap Minister reports that {} was scrapped in {}.", v.name, sectorText(s, v.location)), v.location,
+            logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
     removeVehicle(v);
 }
 
@@ -134,8 +138,16 @@ void unmothballVehicle(TurnContext& ctx, Vehicle& v) {
 void selfDestructVehicle(TurnContext& ctx, Vehicle& v) {
     GameState& s = ctx.state;
     perDesign(ctx.rules, s, v, [&](DesignId d, int n) { s.design(d).scrapped += n; });
-    ctx.log(v.owner, LogCategory::Misc, std::format("{} destroyed", v.name), "It self-destructed.", v.location,
-            logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
+    // "Vehicle Self-Destructed" or "Group Self-Destructed", a Construction
+    // entry from the Demolition Minister, with no mood (spec 03 §15,
+    // confirmed: binary). As Fire On's entries do, a satellite group or a
+    // minefield is a group and a drone group a vehicle (inferred); the words
+    // are ours.
+    const VehicleType type = vehicleType(ctx.rules, s, v);
+    const bool group = type == VehicleType::Fighter || type == VehicleType::Satellite || type == VehicleType::Mine;
+    ctx.log(v.owner, LogCategory::Construction, group ? "Group Self-Destructed" : "Vehicle Self-Destructed",
+            std::format("The Demolition Minister reports that {} in {} has destroyed itself.", v.name, sectorText(s, v.location)), v.location,
+            logpicture::unitGroup(type, v.owner, v.design));
     removeVehicle(v);
 }
 
@@ -375,8 +387,11 @@ void retrofitVehicle(TurnContext& ctx, Vehicle& v, DesignId to) {
     v.movement = std::min(v.movement, vehicleMaxMovement(r, s, v));
     if (vehicleHasUnlimitedSupply(r, s, v)) v.supply = kUnlimitedSupply;
     else v.supply = std::clamp<int64_t>(v.supply, 0, vehicleSupplyCapacity(r, s, v));
-    ctx.log(v.owner, LogCategory::Construction, std::format("{} retrofitted to {}", v.name, name), {}, v.location,
-            logpicture::unitGroup(vehicleType(r, s, v), v.owner, v.design));
+    // "Vehicle Retrofit", a Construction entry (spec 03 §15, confirmed:
+    // binary); the words are ours.
+    ctx.log(v.owner, LogCategory::Construction, "Vehicle Retrofit",
+            std::format("The Retrofit Minister reports that {} in {} has been retrofitted to the {} design.", v.name, sectorText(s, v.location), name),
+            v.location, logpicture::unitGroup(vehicleType(r, s, v), v.owner, v.design));
 }
 
 } // namespace opense4::game

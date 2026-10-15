@@ -1213,8 +1213,16 @@ command exists). The only ways to disengage are:
   constructed − lost − scrapped). There is no kill counter. A vehicle that self-destructs
   counts as scrapped, not lost, and so does a colony ship that founds a colony (spec 03 §8;
   confirmed: binary, 2026-10-14). Units killed count as lost for their design as they die, and
-  so do units jettisoned from cargo (spec 03 §8). Since 2026-10-14 ours counts the colony
-  ship (`movement_upkeep.cpp` `colonize`); before, it stayed In Service for good.
+  so do units jettisoned from cargo (spec 03 §8). When a ship or base is destroyed by damage
+  (a battle outside the simulator, mines, storms, warp turbulence, events), the units still in
+  its cargo count in Number Lost for their designs too, each stack's full count, with the
+  ship's own loss and its "Ship Lost in System" event; units that a lost cargo part took
+  with it earlier (§9.4) are not counted (confirmed: binary, 2026-10-14; that every path of
+  ours reaches the rule is inferred: `Battle::finish` in `combat_space.cpp`, the mine strike
+  in `combat.cpp`, `hurt` in `movement_util.cpp`, `destroyVehicle` in `events.cpp`). Since
+  2026-10-14 ours counts the colony ship (`movement_upkeep.cpp` `colonize`) and the carried
+  units; before, the colony ship stayed In Service for good and only the ship's own design
+  counted.
   Enemy tonnage destroyed, credited when a piece is destroyed:
   - the value is the victim's hull `Tonnage` for a ship or base; for a unit group, hull
     `Tonnage` × every unit it had in the battle (killed ones included), credited only when

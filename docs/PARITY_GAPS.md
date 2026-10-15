@@ -283,6 +283,17 @@ The accuracy pass of 2026-10-14 (spec 03 settled from the complete listing) clos
   `unloadColonyShip`, `grantRuins`).
 - **Failed orders** say nothing, as in the original, except those it reports (spec 03 §8
   "Where the player reads why").
+- **Statistics**: the units a ship or base carries count as lost when it is destroyed by
+  damage (spec 04 §15).
+- **Movement**: a unit group's movement left is never cut when its maximum drops
+  (`capMovement`); one run of a Move To takes at most 51 steps (`moveTo`).
+- **Ruins** draw up to 1,001 times and grant only a find within the first 999
+  (`research::grantRandomAdvances`).
+- **Self-Destruct** destroys the group's first member only, each run (`selfDestruct`).
+- **Log entries**: "Vehicle Self-Destructed" / "Group Self-Destructed" and "Vehicle Scrapped"
+  / "Group Scrapped" (Construction), "Cannot Mothball" and "Cannot Unmothball" (Misc), "Ship
+  Mothballed" (Misc), "Retrofit Problem" and "Vehicle Retrofit" (Construction), "Planet
+  Abandoned" (Misc), with our own words (`scrap.cpp`, `movement.cpp`).
 
 What stays different, as an option:
 

@@ -9,7 +9,9 @@
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
+#include "game/movement_internal.hpp"
 #include "game/orders.hpp"
+#include "game/research.hpp"
 #include "game/turn.hpp"
 
 #include <doctest/doctest.h>
@@ -315,4 +317,156 @@ TEST_CASE("vehicle rules: colonization unloads the ship by the Drop Cargo rules,
     // What found no room is lost; the player whose turn it is got the Drop Cargo box.
     REQUIRE(ctx.messages.size() == 1);
     CHECK(ctx.messages[0].title == "Drop Cargo");
+}
+
+// ---- Statistics, movement and self-destruct (findings 11-15, 19) -------------------------------------
+
+TEST_CASE("vehicle rules: the units a ship carries count as lost when mines or a storm destroy it") {
+    const movement::CombatHooks real = movement::defaultCombatHooks();
+    // The hold is the hull's, so no part lost on the way cuts the cargo
+    // before the ship goes (spec 04 §9.4).
+    ruleset::Ruleset rs = mvtest::buildRuleset();
+    for (ruleset::VehicleSize& h : rs.vehicleSizes)
+        if (h.name == "Test Frigate") h.abilities.push_back(mvtest::ab(AbilityKind::CargoStorage, 100));
+    rs.reindex();
+    const Rules r{std::move(rs)};
+    World w(r);
+    const SystemId a = w.system("A");
+    const DesignId wasp = w.design(kA, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Mv Fighter Tank"});
+    const DesignId hauler = w.ship(kA, "Hauler", 2);
+    // Mines: a field of heavy warheads strikes the ship entering.
+    for (int i = 0; i < 20; ++i) w.spawn(w.design(kB, std::format("Mine {}", i), "Mv Mine Hull", {"Test Warhead"}), at(a, 1, 6));
+    const VehicleId ship = w.spawn(hauler, at(a, 0, 6));
+    fuel(w, ship);
+    const DesignId shipDesign = w.v(ship).design;
+    w.v(ship).cargo.units = {{wasp, 2}};
+    w.order(ship, moveTo(a, 1, 6));
+    w.move(real);
+    REQUIRE(w.s.vehicle(ship) == nullptr);
+    CHECK(w.s.design(shipDesign).lost == 1);
+    CHECK(w.s.design(wasp).lost == 2);   // its cargo's units, each stack's full count
+
+    // A storm through the combat damage routine (spec 03 §6.2).
+    TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+    const VehicleId other = w.spawn(hauler, at(a, 5, 5));
+    w.v(other).cargo.units = {{wasp, 1}};
+    REQUIRE(movement::detail::hurt(ctx, other, 1'000'000, "A storm."));
+    CHECK(w.s.design(wasp).lost == 3);
+}
+
+TEST_CASE("vehicle rules: a unit group's movement left is never cut when its maximum drops; a ship's is") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId wasp = w.design(kA, "Wasp", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
+    const VehicleId group = w.spawn(wasp, at(a, 5, 5));
+    const int full = vehicleMaxMovement(r, w.s, w.v(group));
+    REQUIRE(full > 1);
+    w.v(group).movement = full;
+    w.v(group).supply = 0;   // out of supply: the maximum is 1
+    REQUIRE(vehicleMaxMovement(r, w.s, w.v(group)) == 1);
+    movement::capMovement(r, w.s, w.v(group));
+    CHECK(w.v(group).movement == full);
+    const VehicleId ship = w.spawn(w.ship(kA, "Ship", 4), at(a, 5, 5));
+    w.v(ship).movement = 4;
+    w.v(ship).supply = 0;
+    movement::capMovement(r, w.s, w.v(ship));
+    CHECK(w.v(ship).movement == 1);
+}
+
+TEST_CASE("vehicle rules: one run of a Move To takes at most 51 steps and then counts as done") {
+    World w;
+    w.s.options.simultaneous = false;
+    // Five systems in a row, linked edge to edge: 12 steps across each and a warp between.
+    std::vector<SystemId> chain;
+    for (int i = 0; i < 5; ++i) chain.push_back(w.system(std::format("S{}", i), i * 5, 0));
+    for (int i = 0; i + 1 < 5; ++i) w.link(chain[size_t(i)], {12, 6}, chain[size_t(i) + 1], {0, 6});
+    w.exploreAll(kA);
+    const VehicleId fast = w.spawn(w.ship(kA, "Comet", 70), at(chain[0], 0, 6));
+    fuel(w, fast);
+    REQUIRE(vehicleMaxMovement(w.rules(), w.s, w.v(fast)) >= 60);
+    w.order(fast, moveTo(chain[4], 12, 6));   // 4 × 13 + 12 = 64 steps away
+    const int before = vehicleMaxMovement(w.rules(), w.s, w.v(fast));
+    runLiveTurn(w, kA);
+    // The 51st step (the fourth warp point, 3 × 13 + 12) ended the Move To:
+    // done although not there, with movement left over.
+    CHECK(w.v(fast).orders.empty());
+    CHECK(w.v(fast).location == at(chain[3], 12, 6));
+    CHECK(w.v(fast).movement == before - 51);
+}
+
+TEST_CASE("vehicle rules: Self-Destruct destroys the group's first member only; the order is done either way") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId bomb = w.ship(kA, "Bomb", 2, {"Test Self Destruct"});
+    const VehicleId one = w.spawn(bomb, at(a, 2, 2));
+    const VehicleId two = w.spawn(bomb, at(a, 2, 2));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {two, one}}).ok);
+    for (VehicleId id : {one, two}) w.v(id).orders = {Order{OrderKind::SelfDestruct}};
+    w.move();
+    // The first in object order goes; the fleet's lists move on, the other stays.
+    CHECK(w.s.vehicle(one) == nullptr);
+    REQUIRE(w.s.vehicle(two));
+    CHECK(w.v(two).orders.empty());
+    CHECK(w.s.design(bomb).scrapped == 1);
+    // "Vehicle Self-Destructed", a Construction entry, no mood (spec 03 §15).
+    const auto entry = std::find_if(w.s.empire(kA).log.begin(), w.s.empire(kA).log.end(),
+                                    [](const LogEntry& l) { return l.title == "Vehicle Self-Destructed"; });
+    REQUIRE(entry != w.s.empire(kA).log.end());
+    CHECK(entry->category == LogCategory::Construction);
+    // A satellite group is a group.
+    const VehicleId sat = w.spawn(w.design(kA, "Sat", "Test Satellite Hull", {"Test Satellite Gun"}), at(a, 4, 4));
+    w.order(sat, Order{OrderKind::SelfDestruct});
+    w.move();
+    CHECK(w.s.vehicle(sat) == nullptr);
+    CHECK(std::any_of(w.s.empire(kA).log.begin(), w.s.empire(kA).log.end(), [](const LogEntry& l) { return l.title == "Group Self-Destructed"; }));
+}
+
+TEST_CASE("vehicle rules: ruins grant an advance only when a researchable area comes within the first 999 of 1,001 draws") {
+    ruleset::Ruleset rs = mvtest::buildRuleset();
+    for (ruleset::TechArea& t : rs.techAreas) t.maxLevel = 0;   // nothing else can be researched
+    for (int i = 0; i < 999; ++i) {
+        ruleset::TechArea filler;
+        filler.name = std::format("Filler {}", i);
+        filler.maxLevel = 0;
+        rs.techAreas.push_back(filler);
+    }
+    ruleset::TechArea target;
+    target.name = "Target Lore";
+    target.maxLevel = 5;
+    target.levelCost = 1000;
+    rs.techAreas.push_back(target);
+    rs.reindex();
+    const Rules r{std::move(rs)};
+    const uint64_t areas = r.data().techAreas.size();
+    const ruleset::TechAreaId targetId{static_cast<uint32_t>(areas - 1)};
+    // The draw on which the target first comes up for a seed (0: not within 1,001).
+    auto firstHit = [&](uint64_t seed) {
+        Rng probe(seed);
+        for (int draw = 1; draw <= research::kRuinsDraws; ++draw)
+            if (probe.below(areas) == targetId.value) return draw;
+        return 0;
+    };
+    std::optional<uint64_t> early, late, never;
+    for (uint64_t seed = 1; seed < 400'000 && (!early || !late || !never); ++seed) {
+        const int hit = firstHit(seed);
+        if (hit >= 1 && hit <= 999 && !early) early = seed;
+        else if ((hit == 1000 || hit == 1001) && !late) late = seed;
+        else if (hit == 0 && !never) never = seed;
+    }
+    REQUIRE(early);
+    REQUIRE(late);
+    REQUIRE(never);
+    World w(r);
+    auto grantWith = [&](uint64_t seed) {
+        w.s.empire(kA).techLevels.assign(areas, 0);
+        TurnContext ctx{r, w.s, {}, {}, {}};
+        Rng rng(seed);
+        research::grantRandomAdvances(ctx, kA, 1, rng, "ruins");
+        return w.s.empire(kA).techLevel(targetId);
+    };
+    CHECK(grantWith(*early) == 1);
+    CHECK(grantWith(*late) == 0);    // found on the 1,000th or 1,001st draw: thrown away
+    CHECK(grantWith(*never) == 0);
 }

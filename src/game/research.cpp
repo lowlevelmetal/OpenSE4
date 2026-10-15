@@ -288,13 +288,14 @@ void grantRandomAdvances(TurnContext& ctx, EmpireId e, int count, Rng& rng, std:
     const size_t areas = r.data().techAreas.size();
     if (areas == 0 || !e.valid() || e.index() >= ctx.state.empires.size()) return;
     for (int n = 0; n < count; ++n) {
-        // Up to 1,000 uniform draws among all areas until one is researchable
-        // (spec 05 §1.2, confirmed: binary).
-        for (int draw = 0; draw < kRuinsDraws; ++draw) {
+        // Up to 1,001 uniform draws among all areas until one is researchable;
+        // only a find within the first 999 gains its level, one on the 1,000th
+        // or 1,001st is thrown away (spec 05 §1.2, confirmed: binary).
+        for (int draw = 1; draw <= kRuinsDraws; ++draw) {
             const TechAreaId a{static_cast<uint32_t>(rng.below(areas))};
             const Empire& emp = ctx.state.empire(e);
             if (!isResearchable(r, ctx.state, emp, a)) continue;
-            grantLevel(ctx, e, a, emp.techLevel(a) + 1, source);
+            if (draw <= kRuinsGrantDraws) grantLevel(ctx, e, a, emp.techLevel(a) + 1, source);
             break;
         }
     }

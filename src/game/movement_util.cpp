@@ -167,6 +167,9 @@ bool hurt(TurnContext& ctx, VehicleId id, int amount, std::string_view cause) {
     const int count = v->count;
     if (!damageVehicle(ctx.rules, ctx.state, *v, amount)) return false;
     v->count = count;  // restored so vehicleLost records it
+    // A ship or base destroyed by damage loses the units it carries too: each
+    // stack's full count is lost for its design (spec 04 §15, confirmed: binary).
+    for (const UnitStack& st : v->cargo.units) ctx.state.design(st.design).lost += st.count;
     vehicleLost(ctx, *v, cause);
     return true;
 }
@@ -1069,7 +1072,10 @@ void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v) {
 }
 
 void capMovement(const Rules& r, const GameState& s, Vehicle& v) {
-    if (alive(v)) v.movement = std::min(v.movement, std::max(0, detail::turnMovement(r, s, v)));
+    // Only ships and bases: a unit group's recompute sets its maximum (the
+    // slowest unit design's speed, or 1 at 0 supply) and leaves the movement
+    // left alone (spec 03 §6.1, §19 Q85, confirmed: binary).
+    if (alive(v) && detail::isShipOrBase(vehicleType(r, s, v))) v.movement = std::min(v.movement, std::max(0, detail::turnMovement(r, s, v)));
 }
 
 Vehicle& spawnVehicle(const Rules& r, GameState& s, EmpireId owner, DesignId design, Location where, int autoWaypoint) {

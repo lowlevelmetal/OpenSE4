@@ -349,12 +349,13 @@ private:
     // ---- Days and actions --------------------------------------------------------------------------
 
     // Before anyone acts: a maximum lowered between actions (combat damage) caps
-    // the movement points; then every ship, base and unit group with movement
-    // left adds its speed / 30 (spec 03 §6.1, §6.3).
+    // the movement points of a ship or base (a unit group's are never cut,
+    // capMovement); then every ship, base and unit group with movement left
+    // adds its speed / 30 (spec 03 §6.1, §6.3).
     void newDay() {
         acted_.clear();
         for (Vehicle& v : s_.vehicles)
-            if (alive(v)) v.movement = std::min(v.movement, turnMovement(r_, s_, v));
+            if (alive(v)) capMovement(r_, s_, v);
         std::vector<std::pair<VehicleId, int>> gains;
         for (const Vehicle& v : s_.vehicles)
             if (alive(v) && v.movement > 0) gains.emplace_back(v.id, daySpeed(v));
@@ -380,13 +381,17 @@ private:
     // points come back (spec 03 §6.3 step 4).
     void action(ActorRef ref) {
         Group last;
+        moveRun_ = {};      // each action is a run of its own (moveTo)
+        moveRunSteps_ = 0;
         act(ref, last);
         for (const auto& [id, before] : actionMovement_) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
             // A maximum that fell below the points during the action keeps what
             // the action left, which stops the vehicle for the turn (§6.3, §6.4).
-            const int max = turnMovement(r_, s_, *v);
+            // A unit group's movement is never cut when its maximum drops
+            // (capMovement), so it gets its points back (inferred).
+            const int max = isShipOrBase(vehicleType(r_, s_, *v)) ? turnMovement(r_, s_, *v) : INT_MAX;
             v->movement = max < before ? std::min(v->movement, max) : before;
         }
         actionMovement_.clear();
@@ -956,13 +961,31 @@ private:
         return where(g) == goal ? Travel::Reached : Travel::Moved;
     }
 
-    // A Move To is done on the step that arrives (§8).
+    // A Move To is done on the step that arrives (§8). One run of a Move To
+    // (of Move To Waypoint and a patrol's moves alike) takes at most 51 steps:
+    // the 51st ends it, and the order then counts as done even if the group
+    // has not arrived (spec 03 §6.3, §8, confirmed: binary). Only a turn-based
+    // run can take that many; a simultaneous action takes one step.
     Exec moveTo(Group& g, const Order& o, Location goal) {
+        const RunKey key{g.actor.valid() ? g.actor : g.lead, o};
+        if (!(moveRun_ == key)) {
+            moveRun_ = key;
+            moveRunSteps_ = 0;
+        }
         const Travel t = travel(g, goal);
         if (t == Travel::Reached) return Exec::MovedDone;
         if (t == Travel::Encounter) return encounter(g, o, where(g) == goal);
+        if (t == Travel::Moved && ++moveRunSteps_ >= kMoveRunSteps) return Exec::MovedDone;
         return afterTravel(g, o, t);
     }
+
+    // The Move To being run and the steps it has taken in this run (moveTo).
+    static constexpr int kMoveRunSteps = 51;
+    struct RunKey {
+        VehicleId actor;
+        Order order;
+        bool operator==(const RunKey&) const = default;
+    };
 
     // Asked: turn-based games, the player is asked before the group enters (spec 03 §6.2).
     enum class Step { Moved, Stale, Blocked, Asked, NoWarp };
@@ -1267,8 +1290,9 @@ private:
         c->anger = kNewColonyAnger;
         const bool gone = c->facilities.empty();
         if (gone) s_.colonies[g.planet.index()].reset();
+        // "Planet Abandoned", Misc (spec 02 §5, spec 03 §15, confirmed: binary); the words are ours.
         if (!live_)
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{} abandoned", planet),
+            ctx_.log(g.owner, LogCategory::Misc, "Planet Abandoned",
                      std::format("The Planet Minister reports that our people have left {} in the {} system.{}", planet,
                                  s_.galaxy.system(here.system).name, scrap ? " Its facilities were scrapped first." : ""),
                      here, logpicture::planet(g.planet));
@@ -1846,19 +1870,25 @@ private:
         return Exec::Done;
     }
 
-    // Self-Destruct (spec 03 §8, §15): every member that can is destroyed,
-    // counting as scrapped, not lost (spec 04 §15). Like the Scrap window's
-    // other orders it counts as done when nobody can (confirmed: binary), and
-    // says nothing then (inferred).
+    // Self-Destruct (spec 03 §8, §15, confirmed: binary): each run destroys
+    // only the group's first member, when it can self-destruct, counting it
+    // as scrapped, not lost (spec 04 §15), and the order is done either way,
+    // saying nothing when nobody could. The first member is the acting
+    // vehicle, or for a fleet its member at the fleet's location that comes
+    // first in object order, as for Scrap and Use Component. Companions keep
+    // their own order and carry it out on their next action.
     Exec selfDestruct(Group& g, Order&) {
-        bool any = false;
-        for (VehicleId id : std::vector<VehicleId>(g.members)) {
-            Vehicle* v = s_.vehicle(id);
-            if (!v || !alive(*v) || !canSelfDestruct(r_, s_, *v)) continue;
-            carryOutScrapAction(ctx_, *v, ScrapAction::SelfDestruct);
-            any = true;
+        VehicleId first = g.actor;
+        if (const Fleet* f = !g.tagged && g.fleet.valid() ? s_.fleet(g.fleet) : nullptr) {
+            const std::vector<VehicleId> members = fleetGroup(s_, *f);
+            if (!members.empty())
+                first = *std::min_element(members.begin(), members.end(), [&](VehicleId a, VehicleId b) {
+                    return objectOrderKey(*s_.vehicle(a)) < objectOrderKey(*s_.vehicle(b));
+                });
         }
-        if (!any) return Exec::Done;
+        Vehicle* v = s_.vehicle(first);
+        if (!v || !alive(*v) || !canSelfDestruct(r_, s_, *v)) return Exec::Done;
+        carryOutScrapAction(ctx_, *v, ScrapAction::SelfDestruct);
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
@@ -1880,18 +1910,27 @@ private:
             return Exec::Done;
         }
         carryOutScrapAction(ctx_, *v, a, o.design);
+        // A Mothball order carried out during the turn (not live) is reported
+        // as "Ship Mothballed", Misc (spec 03 §15, confirmed: binary); the
+        // words are ours.
+        if (a == ScrapAction::Mothball && !live_)
+            if (const Vehicle* done = s_.vehicle(g.actor))
+                ctx_.log(done->owner, LogCategory::Misc, "Ship Mothballed",
+                         std::format("The Mothball Minister reports that {} in {} has been mothballed.", done->name, sectorName(done->location)),
+                         done->location, logpicture::vehicle(r_, s_, *done));
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
 
     // A Mothball, Unmothball or Retrofit order that could not be carried
-    // out: one entry from the minister in charge, "Cannot Unmothball" for an
-    // unmothballing (spec 03 §15, confirmed: binary); the other two titles,
-    // the category and the text are ours (inferred).
+    // out: one entry from the minister in charge (spec 03 §15, confirmed:
+    // binary): "Cannot Mothball" or "Cannot Unmothball", Misc, from the
+    // Mothball Minister; "Retrofit Problem", Construction, for a retrofit.
+    // The words are ours.
     void cannot(const Vehicle& v, ScrapAction a, const std::string& why) {
         const bool retrofit = a == ScrapAction::Retrofit;
-        const std::string_view title = a == ScrapAction::Mothball ? "Cannot Mothball" : retrofit ? "Cannot Retrofit" : "Cannot Unmothball";
-        ctx_.log(v.owner, LogCategory::Construction, std::string(title),
+        const std::string_view title = a == ScrapAction::Mothball ? "Cannot Mothball" : retrofit ? "Retrofit Problem" : "Cannot Unmothball";
+        ctx_.log(v.owner, retrofit ? LogCategory::Construction : LogCategory::Misc, std::string(title),
                  std::format("The {} Minister reports that {} in {} could not be {}: {}.", retrofit ? "Retrofit" : "Mothball", v.name,
                              sectorName(v.location), a == ScrapAction::Mothball ? "mothballed" : retrofit ? "retrofitted" : "unmothballed",
                              lowerFirst(why)),
@@ -2174,6 +2213,8 @@ private:
             ctx_.liveSteps.push_back(LiveStep{c->owner, {}, {}, ref.planet, locationOf(s_.galaxy, ref.planet), false});
         int completed = 0;  // orders that left the head of the list, chained ones included
         carried_.reset();
+        moveRun_ = {};      // a new run of the group's orders: a Move To's steps count afresh
+        moveRunSteps_ = 0;
         struct EndRun {
             std::optional<Order>& carried;
             ~EndRun() { carried.reset(); }  // a carried Move To lasts for this run only
@@ -2356,6 +2397,8 @@ private:
     // Turn-based: a Move To whose lists the Ship Orders options emptied after
     // a warp transit; it goes on stepping in this run only (spec 03 §6.4, §19 Q77).
     std::optional<Order> carried_;
+    RunKey moveRun_;                                    // the Move To of the run (moveTo); reset with each run
+    int moveRunSteps_ = 0;                              // its steps so far in the run
     std::vector<VehicleId> recloak_;                    // turn-based: decloaked by the Ship Cloaking minister for an Attack
     bool pursuing_ = false;                             // the steps being made are an Attack pursuit's
     UnitBudget budget_;

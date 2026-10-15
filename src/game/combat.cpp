@@ -1279,6 +1279,8 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                         ++kills;
                         ++lost[victim.id.value];
                         ++s.design(victim.design).lost;
+                        // Its cargo's units are lost with it, each stack's full count (spec 04 §15, confirmed: binary).
+                        for (const UnitStack& st : victim.cargo.units) s.design(st.design).lost += st.count;
                         s.design(mineDesign).enemyTonnageDestroyed += designTonnage(r, s.design(victim.design));
                         victim.count = 0;
                         victim.mixed.clear();
