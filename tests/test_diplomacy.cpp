@@ -546,6 +546,7 @@ TEST_CASE("diplomacy: trades move resources, technology, ships, charts and conta
     TurnContext ctx = context(s);
     const auto beams = techArea(r, "Test Beams");
     s.empire(kA).techLevels[beams.index()] = 4;
+    const int beamsB = s.empire(kB).techLevel(beams);
     s.empire(kA).stockpile = {5000, 5000, 5000};
     s.empire(kB).stockpile = {5000, 5000, 5000};
     VehicleId scout;
@@ -570,7 +571,8 @@ TEST_CASE("diplomacy: trades move resources, technology, ships, charts and conta
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).stockpile == Resources{4000, 5500, 5000});
     CHECK(s.empire(kB).stockpile == Resources{6000, 4500, 5000});
-    CHECK(s.empire(kB).techLevel(beams) == 4);
+    // A technology item gives exactly one level (spec 05 §1.5, confirmed: binary).
+    CHECK(s.empire(kB).techLevel(beams) == beamsB + 1);
     CHECK(s.vehicle(scout)->owner == kB);
     CHECK(s.empire(kB).hasExplored(homeA));
     CHECK(diplomacy::inContact(s, kB, kC));
@@ -620,14 +622,46 @@ TEST_CASE("diplomacy: placeholders, missing items, limits") {
     s.options.allowTechTrades = false;
     const auto armor = techArea(r, "Test Armor");
     s.empire(kA).techLevels[armor.index()] = 5;
+    const int armorB = s.empire(kB).techLevel(armor);
     id = send(s, kA, kB, MessageType::Gift, Treaty::None, {tech(armor)});
     diplomacy::deliverMessages(ctx);
     nextTurn(s);
     answer(s, kB, id, true);
     diplomacy::deliverMessages(ctx);
-    CHECK(s.empire(kB).techLevel(armor) == 5);
+    CHECK(s.empire(kB).techLevel(armor) == armorB + 1);
     CHECK(diplomacy::isPlaceholder(tech({})));
     CHECK_FALSE(diplomacy::isPlaceholder(resources(1, 2, 3)));
+}
+
+TEST_CASE("diplomacy: a technology item gives one level, only in an area the receiver can see (spec 05 §1.5)") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    const auto physics = techArea(r, "Test Physics");
+    const auto missiles = techArea(r, "Test Missiles");  // needs Test Physics 2
+    const auto armor = techArea(r, "Test Armor");
+    s.empire(kA).techLevels[physics.index()] = 3;
+    s.empire(kA).techLevels[missiles.index()] = 4;
+    s.empire(kA).techLevels[armor.index()] = 6;
+    s.empire(kB).techLevels[physics.index()] = 1;
+    s.empire(kB).techLevels[missiles.index()] = 0;
+    s.empire(kB).techLevels[armor.index()] = 6;
+    diplomacy::executePackage(ctx, kA, kB, std::vector<PackageItem>{tech(missiles), tech(armor), tech(physics)});
+    // Missiles: B does not meet its requirement, so nothing; armor: B is not
+    // behind; physics: one level, not the giver's 3.
+    CHECK(s.empire(kB).techLevel(missiles) == 0);
+    CHECK(s.empire(kB).techLevel(armor) == 6);
+    CHECK(s.empire(kB).techLevel(physics) == 2);
+    CHECK(hasLog(s, kB, "New Tech Level"));
+    int useless = 0;
+    for (const LogEntry& l : s.empire(kB).log)
+        if (l.title == "Technology Received" && (l.text.ends_with("cannot make use of it yet.") || l.text.ends_with("no more advanced than ours.")))
+            ++useless;
+    CHECK(useless == 2);
+    // Now that B meets the requirement, Missiles gives one level too.
+    diplomacy::executePackage(ctx, kA, kB, std::vector<PackageItem>{tech(missiles)});
+    CHECK(s.empire(kB).techLevel(missiles) == 1);
 }
 
 TEST_CASE("diplomacy: surrender and independence") {
@@ -1067,7 +1101,7 @@ TEST_CASE("diplomacy: a completed package logs one entry per item, receiver firs
     const LogEntry* useless = findLog(s, kA, "Technology Received");
     REQUIRE(useless);
     CHECK(useless->target == LogGoto::Research);
-    CHECK(useless->text.find("nothing") != std::string::npos);
+    CHECK(useless->text.ends_with("It is no more advanced than ours."));
     CHECK(std::binary_search(s.empire(kA).claimedSystems.begin(), s.empire(kA).claimedSystems.end(), homeB));
     CHECK(s.empire(kB).claimedSystems.empty());
     // The charts: explored, no warp links copied; Goto the system, no sector.

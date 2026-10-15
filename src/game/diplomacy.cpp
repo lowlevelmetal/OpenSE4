@@ -597,19 +597,23 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
             }
             case PackageItem::Kind::Technology: {
                 if (!item.tech.valid() || item.tech.index() >= r.data().techAreas.size()) break;
-                // No game option is tested here (Allow Technology Gifts
-                // included). The data is of no use when the receiver cannot
-                // gain a level in the area (its racial and unique checks) or
-                // the giver is not ahead of it.
+                // Exactly one level, and only in an area the receiver can see
+                // (its requirements met, allowed in the game, its racial and
+                // unique checks) where the giver is ahead of it; otherwise the
+                // data is of no use. No game option is tested here (spec 05
+                // §1.5, confirmed: binary).
                 const std::string& area = r.tech(item.tech).name;
-                const int level = std::min(s.empire(giver).techLevel(item.tech), r.tech(item.tech).maxLevel);
-                const bool useful = research::canGainLevel(r, s, s.empire(receiver), item.tech) && level > s.empire(receiver).techLevel(item.tech);
-                entry(receiver, "Technology Received",
-                      std::format("The {} has sent us its data on {}.{}", giverName, area, useful ? "" : " It teaches us nothing we can use."),
-                      LogGoto::Research);
+                const Empire& taker = s.empire(receiver);
+                const int level = taker.techLevel(item.tech);
+                const bool visible = research::canGainLevel(r, s, taker, item.tech) && r.meets(taker, r.tech(item.tech).requirements);
+                const bool ahead = s.empire(giver).techLevel(item.tech) > level;
+                const std::string_view why = !visible ? " Our scientists cannot make use of it yet."
+                                             : !ahead ? " It is no more advanced than ours."
+                                                      : "";
+                entry(receiver, "Technology Received", std::format("The {} has sent us its data on {}.{}", giverName, area, why), LogGoto::Research);
                 entry(giver, "Technology Transfered", std::format("We have sent the {} our data on {}.", receiverName, area), LogGoto::Research);
                 // A level gained then makes its usual Research entries.
-                research::grantLevel(ctx, receiver, item.tech, level, "trade");
+                if (visible && ahead) research::grantLevel(ctx, receiver, item.tech, level + 1, "trade");
                 break;
             }
             case PackageItem::Kind::Planet: {

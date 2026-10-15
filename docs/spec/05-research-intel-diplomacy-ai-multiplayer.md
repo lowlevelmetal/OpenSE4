@@ -167,9 +167,17 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
   the new items. Tech changes come from research, gifts, trades, theft, ruins, surrender,
   Analyze and the Medium/High start.
 - **Other sources**:
-  - A Technology item in a gift, tribute or trade package gives the giver's level. It
-    helps only when the receiver's level is lower. Setup options "Allow Gifts/Tributes" and
-    "Allow Technology Gifts/Tributes/Trades" can forbid it [M].
+  - A Technology item in a gift, tribute or trade package gives the receiver **exactly one
+    level** in that area (confirmed: binary; corrected 2026-10-14, complete listing: this
+    said earlier that it gave the giver's level). The level comes only when the area is
+    visible to the receiver (its requirements are met, it is allowed in the game, and its
+    racial and unique checks pass) and the receiver's level is below the giver's; otherwise
+    nothing is gained and the receiver is told the data is of no use (it cannot understand
+    it, or it is no more advanced). The level is gained as by research, with the usual "New
+    Tech Level" entries. No game option is tested when the package is carried out; "Allow
+    Technology Gifts/Tributes/Trades" only dims the Select Package window's Technology tab
+    (§3.4). Since 2026-10-14 ours follows (`diplomacy::executePackage`); until then the
+    receiver jumped to the giver's level in one step, requirements unmet or not.
   - Subjugation does **not** pass technology to the master in the original, despite the
     treaty description; the master only sees the subject's designs (§3.2) (confirmed:
     binary).
