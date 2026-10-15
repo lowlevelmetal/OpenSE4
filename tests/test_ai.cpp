@@ -720,8 +720,18 @@ TEST_CASE("ai: the explorers: attack ships and well-loaded carriers, fit, suppli
     s.vehicle(plain)->status = VehicleStatus::Normal;
     s.vehicle(plain)->orders = {ai::detail::moveOrder(home)};
     CHECK_FALSE(explores(plain));
-    s.vehicle(plain)->orders = {ai::detail::seekOrder(home)};  // a Seek first: planned again
-    CHECK(explores(plain));
+    // A Seek first: planned again, its orders behind that Seek, which runs first
+    // (confirmed: binary, spec 05 question 87).
+    s.vehicle(plain)->orders = {ai::detail::seekOrder(home)};
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        ai::detail::planExploration(p);
+        const std::vector<Order>& o = p.st.vehicle(plain)->orders;
+        REQUIRE(o.size() >= 2);
+        CHECK(o.front() == ai::detail::seekOrder(home));
+        CHECK(o[1].kind == OrderKind::Seek);
+        CHECK(o[1].location != home);
+    }
     s.vehicle(plain)->orders.clear();
     REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {plain}}).ok);
     CHECK_FALSE(explores(plain));
@@ -6791,12 +6801,22 @@ TEST_CASE("ai: every patroller heads for our least populated colony, and the dut
     }
     CHECK(kamikazeSent);
     CHECK(baseSent);
-    // A ship an earlier minister of the pass gave orders keeps them (inferred, question 87).
-    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
-    p.busy.insert(a);
-    ai::detail::planPatrol(p);
-    CHECK(p.st.vehicle(a)->orders.empty());
-    CHECK(p.st.vehicle(b)->orders == std::vector<Order>{ai::detail::seekOrder(small)});
+    // A Seek an earlier minister of the pass gave (confirmed: binary, question
+    // 87): the Patrol minister takes only ships with an empty list, so leaves
+    // it; the Attack minister takes the ship and puts its orders behind it.
+    const Order earlier = ai::detail::seekOrder(small);
+    s.vehicle(a)->orders = {earlier};
+    std::optional<std::vector<Order>> appended;
+    for (uint64_t salt = 1; salt < 40 && !appended; ++salt) {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, salt);
+        ai::detail::planPatrol(p);
+        CHECK(p.st.vehicle(a)->orders == std::vector<Order>{earlier});
+        CHECK(p.st.vehicle(b)->orders == std::vector<Order>{ai::detail::seekOrder(small)});
+        ai::detail::planAttack(p);
+        if (p.st.vehicle(a)->orders.size() > 1) appended = p.st.vehicle(a)->orders;
+    }
+    REQUIRE(appended);
+    CHECK(*appended == std::vector<Order>{earlier, ai::detail::seekOrder(target)});
 }
 
 TEST_CASE("ai: a fleet carrying troops takes the last Drop Troops strategy; nothing changes when there is none") {

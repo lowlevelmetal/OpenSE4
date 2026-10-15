@@ -1545,8 +1545,14 @@ By commit (the same seeds; each step adds the rules of one commit to the one bef
   explorers' orders. In 24 scratch games with the fleet rules alone that kept our computers
   in Exploration in 92 % of turns 1–25 (the original 80 %, the rule as followed 81 %), gave
   them 0.15 bases at turn 100 (the original 0.6, the rule as followed 0.56) and 4.4 % of
-  turns 51–100 in Infrastructure (the original 11 %, the rule as followed 10.9 %). Our
-  engine leaves the orders of the same pass alone.
+  turns 51–100 in Infrastructure (the original 11 %, the rule as followed 10.9 %). The
+  original's Patrol minister takes only ships with an empty list, so it never does this
+  (confirmed: binary, spec 05 question 87); the Defense, Attack and Exploration ministers
+  put their orders behind a Seek of the same pass, which ours do since the same day. On
+  seeds 1–12 that changed little against the rules above: Exploration in turns 1–25 79 →
+  82 % (the original 80 %), Infrastructure in turns 51–100 8.4 → 10.6 % (11 %), attack
+  ships in fleets 72 → 74 % (74–78 %), ships at turn 100 16.2 → 17.1 (17.4), battles 27.4 →
+  24.9; colonies, bases and Defend (Short Term) unchanged.
 
 ## Session 5: more windows side by side, and generated galaxies (2026-10-03)
 

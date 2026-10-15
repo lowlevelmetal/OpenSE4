@@ -215,14 +215,15 @@ bool takesDuty(Planner& p, const Vehicle& v, Duty duty) {
     return false;
 }
 
-// Free for those ministers (spec 05 §7.5, confirmed: binary): our own, outside
-// fleets, with no orders or a Seek first. A ship that an earlier minister of
-// the same pass gave orders keeps them, and mothballed vehicles are left out
-// (both inferred, question 87: read literally, the Patrol minister would
-// replace the explorers' Seeks of the same pass).
-bool freeForMinisters(const Planner& p, const Vehicle& v) {
-    if (v.owner != p.id || v.count <= 0 || v.fleet.valid() || v.status == VehicleStatus::Mothballed || p.busy.contains(v.id)) return false;
-    return v.orders.empty() || v.orders.front().kind == OrderKind::Seek;
+// The ships the Defense and Attack ministers may take (spec 05 §7.5,
+// confirmed: binary, question 87): our own, outside fleets, with no orders or
+// a Seek first, a Seek an earlier minister of the same pass gave included.
+// They append their orders behind it (appendOrders). The Patrol minister
+// takes only a ship whose list is empty, so never one an earlier minister of
+// the pass ordered. Mothballed vehicles are left out (inferred).
+bool freeForMinisters(const Planner& p, const Vehicle& v, bool emptyListOnly = false) {
+    if (v.owner != p.id || v.count <= 0 || v.fleet.valid() || v.status == VehicleStatus::Mothballed) return false;
+    return v.orders.empty() || (!emptyListOnly && v.orders.front().kind == OrderKind::Seek);
 }
 
 // A fleet's strength (spec 05 §7.5, the attack routine and the Defend (Short
@@ -726,7 +727,8 @@ void planFleets(Planner& p) {
 // Defend (Short Term) (and Defend (Long Term), never reached) while the
 // empire has no active fleet. Each of its ships (takesDuty: the attack ships
 // and Defense Ships) goes through the defence routine, the weakest threat
-// first, and adds its rating without the + 1 to the entry it takes.
+// first, and adds its rating without the + 1 to the entry it takes; its
+// orders go behind any Seek the ship holds.
 void planDefense(Planner& p) {
     if (!p.on(Minister::Defense) || anyFleet(p)) return;
     if (p.state != AiState::DefendShortTerm && p.state != AiState::DefendLongTerm) return;
@@ -734,32 +736,32 @@ void planDefense(Planner& p) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || !freeForMinisters(p, *v) || !takesDuty(p, *v, Duty::Defense)) continue;
         auto orders = defenceRoutine(p, v->location, false, vehicleRating(p.r, p.st, *v));
-        if (!orders.empty()) p.setOrders(id, std::move(orders));
+        if (!orders.empty()) appendOrders(p, id, std::move(orders));
     }
 }
 
 // The Attack minister (spec 05 §7.5 *Attack*, confirmed: binary): only while
 // there are attack candidates and the empire has no active fleet. Each of its
 // ships goes through the attack routine and adds its rating to the candidate
-// it takes.
+// it takes; its orders go behind any Seek the ship holds (a defender's).
 void planAttack(Planner& p) {
     if (!p.on(Minister::Attack) || anyFleet(p) || p.sit.candidates.empty()) return;
     for (VehicleId id : p.ownVehicles(Minister::Attack)) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || !freeForMinisters(p, *v) || !takesDuty(p, *v, Duty::Attack)) continue;
         auto orders = attackDispatch(p, v->location, vehicleRating(p.r, p.st, *v));
-        if (!orders.empty()) p.setOrders(id, std::move(orders));
+        if (!orders.empty()) appendOrders(p, id, std::move(orders));
     }
 }
 
 // The Patrol minister (spec 05 §7.5 *Patrol*, confirmed: binary): each of its
-// ships outside fleets heads for the patrol target with a Seek; one already
-// there gets no order.
+// ships outside fleets whose order list is empty heads for the patrol target
+// with a Seek; one already there gets no order.
 void planPatrol(Planner& p) {
     if (!p.on(Minister::Patrol)) return;
     for (VehicleId id : p.ownVehicles(Minister::Patrol)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || !freeForMinisters(p, *v) || !takesDuty(p, *v, Duty::Patrol)) continue;
+        if (!v || !freeForMinisters(p, *v, true) || !takesDuty(p, *v, Duty::Patrol)) continue;
         const std::optional<Location> at = patrolTarget(p);
         if (!at) return;
         if (v->location == *at) {
