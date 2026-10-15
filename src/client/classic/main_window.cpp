@@ -1750,8 +1750,10 @@ void MainWindow::reportPanel(UiContext& ui) {
             if (picture)
                 dl->AddImage(ImTextureRef(static_cast<ImTextureID>(picture.tex.value)), rowMin, {rowMin.x + ui.px(36), rowMin.y + ui.px(36)},
                              {picture.uv.min.x, picture.uv.min.y}, {picture.uv.max.x, picture.uv.max.y});
+            dl->PushClipRect(rowMin, ImGui::GetItemRectMax(), true);
             dl->AddText({rowMin.x + ui.px(40), rowMin.y + ui.px(1)}, IM_COL32_WHITE, name.c_str());
             if (!classLine.empty()) dl->AddText({rowMin.x + ui.px(46), rowMin.y + ui.px(16)}, IM_COL32_WHITE, classLine.c_str());
+            dl->PopClipRect();
             return std::pair{clicked, rowMin};
         };
         const std::vector<game::ObjectId> objects = shownStellarObjects(ui.rules(), s, me, at.system, at.sector);
