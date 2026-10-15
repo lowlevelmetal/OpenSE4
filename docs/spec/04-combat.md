@@ -1357,19 +1357,30 @@ is launched), and again only for a planet's piece when it is set up again after 
 
 - **Strength** of a ship or base: let W be the sum, over its intact weapon components of
   any kind, of each one's largest damage at ranges 1 to 20 with its mount, and A its total
-  `Boarding Attack` from intact parts. If W + A is above 0 its strength is W + A + S ÷ 2
-  (truncated), S being the total `Shield Generation`, `Phased Shield Generation` and
+  `Boarding Attack` from intact parts. If W + A is above 0 its strength is W + A + S ÷ 2,
+  S being the total `Shield Generation`, `Phased Shield Generation` and
   `Planet - Shield Generation` of its intact parts; otherwise 0. Each fighter in its cargo
   then adds its design's rating, the sum over the design's weapons of each one's largest
-  damage at ranges 1 to 20. A ship without supplies has the whole divided by 5
-  (truncated). A mothballed ship counts 0 (inferred).
+  damage at ranges 1 to 20. A ship without supplies has the whole divided by 5. A
+  mothballed ship has no abilities, so its A and S are 0, but its intact
+  weapons and carried fighters count, ÷ 5 without supplies (confirmed: binary; corrected
+  2026-10-15; ours counted it 0).
 - A fighter group's strength is the number of weapon components on its units (units ×
   weapons each), divided by 5 without supplies; a satellite or drone group's is the same
   count, never divided.
 - A planet's strength is the rating of the units in its cargo (count × design rating) and,
-  when that is above 0, the colony's total `Planet - Shield Generation` ÷ 5 added;
+  when that is above 0, the colony's total `Planet - Shield Generation` ÷ 5 added, only
+  the shield total being divided and never the supply divisor (confirmed: binary;
+  2026-10-15);
   otherwise 0.
 - A seeker's strength is 0.
+- **Exact values** (confirmed: binary; 2026-10-15). Nothing is truncated or rounded: the
+  original keeps strength in floating point. Ten times every strength is a whole number
+  (a ship's 10W + 10A + 5S + 10 × its fighters' rating, a fifth of that without
+  supplies; a planet's 10 × cargo + 2 × shield; a unit group's 10 × its weapon count, or
+  2 × it for a fighter group without supplies), and comparing these gives the original's
+  order. Since 2026-10-15 ours keeps ten times the strength (`Battle::strengthOf`); it
+  used to truncate each division and divide a planet's cargo with its shields.
 - **The weapons flag.** A ship or base has weapons when its design has a weapon component
   of any kind, point-defense and warheads included, destroyed ones too; a mothballed ship
   has none. A unit group has weapons when its units' designs carry weapon components, a

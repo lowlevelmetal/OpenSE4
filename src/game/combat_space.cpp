@@ -930,43 +930,50 @@ int64_t weaponComponents(const Rules& r, const Design& d) {
 } // namespace
 
 // Strength for Strongest and Weakest (spec 04 §16, confirmed: binary; added
-// 2026-10-14, complete listing), worked out when the piece enters:
+// 2026-10-14, complete listing), worked out when the piece enters, and kept
+// as ten times its value: the original's exact fractions (shields ÷ 2,
+// planetary shields ÷ 5, ÷ 5 without supplies) are then whole numbers, and
+// comparing them gives its order.
 //   - a ship or base: W, its intact weapons' (any kind) largest damage at
 //     ranges 1 to 20 with mounts, summed, and A, its Boarding Attack; W + A +
-//     its shield generation ÷ 2 when W + A is above 0, else 0; then each
+//     its shield generation S ÷ 2 when W + A is above 0, else 0; then each
 //     fighter in its cargo adds its design's rating; without supplies the
-//     whole is divided by 5;
+//     whole is divided by 5. A mothballed ship has no abilities (A and S are
+//     0), but its weapons and fighters count;
 //   - a fighter group: its weapon components (units × weapons each), ÷ 5
 //     without supplies; a satellite or drone group: the same count, never
 //     divided;
 //   - a planet: its cargo's rating (count × design rating) and, when that is
-//     above 0, the colony's Planet - Shield Generation ÷ 5;
+//     above 0, the colony's Planet - Shield Generation ÷ 5 (never the supply
+//     divisor), else 0;
 //   - a seeker: 0.
 int64_t Battle::strengthOf(int i) const {
     const Piece& p = pieces_[i];
     switch (p.kind) {
         case Kind::Vehicle: {
-            if (p.mothballed) return 0;   // (inferred) a mothballed ship has no weapons and no abilities
             const Design& d = s_.design(p.unit.design);
             int64_t w = 0;
             for (size_t e = 0; e < d.entries.size(); ++e)
                 if (r_.component(d.entries[e].component).isWeapon() && entryIntact(r_, s_, p.unit, e)) w += bestDamageInRange(r_, d.entries[e]);
-            const int64_t a = detail::componentSum(r_, s_, p.unit, AbilityKind::BoardingAttack);
-            const int64_t shields = detail::componentSum(r_, s_, p.unit, AbilityKind::ShieldGeneration) +
-                                    detail::componentSum(r_, s_, p.unit, AbilityKind::PhasedShieldGeneration) +
-                                    detail::componentSum(r_, s_, p.unit, AbilityKind::PlanetShieldGeneration);
-            int64_t strength = w + a > 0 ? w + a + shields / 2 : 0;
+            int64_t a = 0, shields = 0;
+            if (!p.mothballed) {
+                a = detail::componentSum(r_, s_, p.unit, AbilityKind::BoardingAttack);
+                shields = detail::componentSum(r_, s_, p.unit, AbilityKind::ShieldGeneration) +
+                          detail::componentSum(r_, s_, p.unit, AbilityKind::PhasedShieldGeneration) +
+                          detail::componentSum(r_, s_, p.unit, AbilityKind::PlanetShieldGeneration);
+            }
+            int64_t tenths = w + a > 0 ? 10 * (w + a) + 5 * shields : 0;
             for (const UnitStack& st : p.unit.cargo.units) {
                 const Design& u = s_.design(st.design);
-                if (st.count > 0 && r_.hull(u.hull).type == VehicleType::Fighter) strength += int64_t{st.count} * designRating(r_, u);
+                if (st.count > 0 && r_.hull(u.hull).type == VehicleType::Fighter) tenths += 10 * int64_t{st.count} * designRating(r_, u);
             }
-            return hasSupply(i) ? strength : strength / 5;
+            return hasSupply(i) ? tenths : tenths / 5;   // exact: every term is a multiple of 5
         }
         case Kind::UnitGroup: {
             int64_t n = 0;
             for (const UnitStack& st : p.stacks)
                 if (st.count > 0) n += int64_t{st.count} * weaponComponents(r_, s_.design(st.design));
-            return p.vtype == VehicleType::Fighter && !hasSupply(i) ? n / 5 : n;
+            return p.vtype == VehicleType::Fighter && !hasSupply(i) ? 2 * n : 10 * n;
         }
         case Kind::Planet: {
             int64_t total = 0;
@@ -975,7 +982,7 @@ int64_t Battle::strengthOf(int i) const {
             if (total <= 0) return 0;
             int64_t planetShield = 0;
             for (uint32_t f : p.facilities) planetShield += sumValue1(r_.facilityAbilities(f), AbilityKind::PlanetShieldGeneration);
-            return total + planetShield / 5;
+            return 10 * total + 2 * planetShield;
         }
         default: return 0;
     }

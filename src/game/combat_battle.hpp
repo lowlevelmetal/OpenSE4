@@ -93,7 +93,7 @@ struct Piece {
     // confirmed: binary): its strength for Strongest and Weakest, and whether
     // it has weapons, for Has Weapons, Does Not Have Weapons and the armed and
     // unarmed categories. Damage taken changes neither.
-    int64_t strength = 0;
+    int64_t strength = 0;             // ten times the strength, a whole number (strengthOf)
     bool hasWeapons = false;
     TargetCategory category = TargetCategory::Ships;
     // Its combat movement allowance this combat turn, as Fastest and Slowest

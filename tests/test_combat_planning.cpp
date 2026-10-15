@@ -252,6 +252,7 @@ TEST_CASE("planning: of two equal best candidates the later piece comes first; t
 }
 
 TEST_CASE("planning: strength and the weapons flag are set when a piece enters the battle") {
+    // Strength is kept as ten times its value (spec 04 §16).
     Bench k(makeArena());
     GameState& s = k.ar.s;
     // W 10 (the gun's best) + shields 20 ÷ 2.
@@ -270,18 +271,46 @@ TEST_CASE("planning: strength and the weapons flag are set when a piece enters t
     const VehicleId gunboat = spawn(s, frigate(s, k.ar.a, "Gunboat", 1, {"CT Gun"}), k.ar.loc);
     Battle& b = k.start();
     auto piece = [&](VehicleId v) -> const combat::detail::Piece& { return b.pieces()[static_cast<size_t>(k.at(v))]; };
-    CHECK(piece(shielded).strength == 20);
-    CHECK(piece(dry).strength == 4);
-    CHECK(piece(boarder).strength == 20);
+    CHECK(piece(shielded).strength == 200);
+    CHECK(piece(dry).strength == 40);
+    CHECK(piece(boarder).strength == 200);
     CHECK_FALSE(piece(boarder).hasWeapons);
     CHECK(piece(boarder).category == combat::TargetCategory::ShipsNoWeapons);
-    CHECK(piece(rammer).strength == 60);
+    CHECK(piece(rammer).strength == 600);
     CHECK(piece(rammer).hasWeapons);
     CHECK(piece(rammer).category == combat::TargetCategory::Ships);
     CHECK(piece(broken).strength == 0);
     CHECK(piece(broken).hasWeapons);
     CHECK(piece(broken).category == combat::TargetCategory::Ships);
-    CHECK(piece(gunboat).strength == 10);
+    CHECK(piece(gunboat).strength == 100);
+}
+
+TEST_CASE("planning: a mothballed ship's weapons count in its strength; a planet's shields add a fifth") {
+    // Spec 04 §16 (confirmed: binary; 2026-10-15): a mothballed ship has no
+    // abilities (no boarding attack, no shields) and no weapons flag, but its
+    // intact weapons count; a planet's strength is its cargo's rating and its
+    // Planet - Shield Generation ÷ 5, never the whole ÷ 5.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    ar.loc = locationOf(s.galaxy, hw.planet);
+    const DesignId platform = design(s, ar.b, "Bastion", "CT Platform Hull", {"CT Platform Gun", "CT Platform Gun", "CT Platform Core"});
+    hw.cargo.units = {{platform, 3}};   // a rating of 30 each
+    const auto& facilities = combatRules().data().facilities;
+    const auto shield = std::find_if(facilities.begin(), facilities.end(), [](const ruleset::Facility& f) { return f.name == "Test Planet Shield"; });
+    REQUIRE(shield != facilities.end());
+    hw.facilities = {static_cast<uint32_t>(shield - facilities.begin())};   // Planet - Shield Generation 100
+    const VehicleId sleeper = spawn(s, frigate(s, ar.b, "Sleeper", 1, {"CT Gun", "CT Phased Shield", "Test Boarding Party"}), ar.loc);
+    s.vehicle(sleeper)->status = VehicleStatus::Mothballed;
+    const VehicleId gunboat = spawn(s, frigate(s, ar.a, "Gunboat", 1, {"CT Gun"}), ar.loc);
+    Bench k(std::move(ar));
+    Battle& b = k.start();
+    const combat::detail::Piece& planet = b.pieces()[static_cast<size_t>(k.planet(hw.planet))];
+    CHECK(planet.strength == 10 * 90 + 2 * 100);   // 110
+    const combat::detail::Piece& ship = b.pieces()[static_cast<size_t>(k.at(sleeper))];
+    CHECK(ship.strength == 100);                   // the gun's 10 only
+    CHECK_FALSE(ship.hasWeapons);
+    (void)gunboat;
 }
 
 TEST_CASE("planning: the targeting keys measure aim distance, full hit points, the pool, the allowance and damage since entry") {
