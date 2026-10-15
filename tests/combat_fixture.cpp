@@ -238,25 +238,26 @@ ruleset::CombatStrategy testStrategy(std::string name, std::vector<std::pair<std
     // A key a record leaves out takes the original's new-strategy value (spec
     // 04 §16), which leaves out planets and unarmed ships; the tests were
     // written for this plainer base, which the given keys then override.
+    // (In an order of our own: the keys mean the same in any order.)
     std::vector<std::pair<std::string, std::string>> all{
-        {"Secondary Movement Strategy", "Point Blank"},
-        {"Targeting Priority 1", "Has Weapons"},
-        {"Targeting Priority 2", "Nearest"},
-        {"Targeting Priority 3", "None"},
         {"Targeting Priority 4", "None"},
-        {"Dont Fire On Colony Ships", "False"},
         {"Dont Fire On Planets", "False"},
-        {"Dont Fire On Bases(No Weapons)", "False"},
-        {"Dont Fire On Ships(No Weapons)", "False"},
-        {"Dont Fire On Seekers(On Others)", "False"},
-        {"Break Formation Carriers", "False"},
-        {"Break Formation Colony Ships", "False"},
-        {"Break Formation Fighters", "False"},
-        {"Break Formation Satellites", "False"},
-        {"Break Formation Planets", "False"},
+        {"Targeting Priority 1", "Has Weapons"},
         {"Break Formation Transports", "False"},
-        {"Fighters Launch Group Amount", "10"},
         {"Damage Percent Per Ship", "100"},
+        {"Targeting Priority 3", "None"},
+        {"Dont Fire On Ships(No Weapons)", "False"},
+        {"Break Formation Planets", "False"},
+        {"Secondary Movement Strategy", "Point Blank"},
+        {"Dont Fire On Seekers(On Others)", "False"},
+        {"Break Formation Fighters", "False"},
+        {"Targeting Priority 2", "Nearest"},
+        {"Dont Fire On Colony Ships", "False"},
+        {"Break Formation Satellites", "False"},
+        {"Fighters Launch Group Amount", "10"},
+        {"Dont Fire On Bases(No Weapons)", "False"},
+        {"Break Formation Colony Ships", "False"},
+        {"Break Formation Carriers", "False"},
     };
     for (auto& kv : settings) all.push_back(std::move(kv));
     return ruleset::CombatStrategy{std::move(name), std::move(all)};
