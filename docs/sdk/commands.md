@@ -713,7 +713,8 @@ project added again starts from nothing.
 
 Sends a diplomatic message. The engine gives it its id, sender and date.
 A human player's message is refused when the original's Communicate window
-would not send it: a request about a third empire must name an empire it has
+would not send it: at most one message to an empire a turn (every message
+counts toward it); a request about a third empire must name an empire it has
 met; a proposal names a treaty from Non-Intercourse to Partnership, and a
 subjugated race proposes none; Break Treaty needs Non-Aggression or better; a
 trade has items on both sides and no "Any" item on the side it gives; a gift

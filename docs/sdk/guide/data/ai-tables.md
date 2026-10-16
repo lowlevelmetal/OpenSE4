@@ -164,7 +164,7 @@ these two tests). A Mega Evil Empire and Team Mode change T further (spec 05 §7
 | `Accept Treaty Minimum Time From Last Treaty` | For Trade and Research Alliance, Military Alliance and Partnership the Accept threshold is set to −1 until the current treaty is this old (the later terms still add to it, so such offers are usually refused). | Turns |
 | `Accept Treaty Score Percent To Accept Subjugation Treaty`, `... Protectorate Treaty` | Those treaties are accepted only when P is at least this. | Percent |
 | `Highest Allowed Treaty` | Never proposes or accepts anything better. | A treaty name |
-| `Turns Since Last War Before Friendly Treaty` | Refuses treaties until this long after the last war (for proposals only when a human is involved). | Turns |
+| `Turns Since Last War Before Friendly Treaty` | Refuses every treaty, Non-Intercourse included, until this long after the last war, so a computer player at war accepts none; its own proposals wait for it only when a human is involved. | Turns |
 | `Propose Treaty Percent Chance Per Turn` | The chance of a proposal in a turn; tripled while there is a Mega Evil Empire other than X. | Percent |
 | `Propose Treaty Type Count`, `Propose Treaty Type <N>`, `Propose Treaty Type <N> Anger Level Below Computed` | The treaties it may propose, in file order. An entry qualifies when it is better than the current treaty, not above the highest allowed, and anger ≤ T − its level; the **last** qualifying entry is sent. | Count; treaty names; anger points |
 | `Score Percent For Demanding Tone`, `Score Percent To Pleading Tone` | Its messages take a demanding tone when P is at most the first, a pleading one when P is at least the second (demands it starts itself are always neutral). | Percent |
@@ -352,7 +352,7 @@ is not sent at all: a war declaration then declares nothing but still sets the a
 
 | Pool | Used for |
 |---|---|
-| `Send <message>` | The text of every message of that type it sends: proposals, answers, gifts, demands, declarations |
+| `Send <message>` | The text of every message of that type it sends: proposals, answers, gifts, demands, declarations. The refusal of a trade asking for what it cannot give uses one of three built-in lines instead |
 | `Response Friend <message>`, `Response Enemy <message>` | The General message it answers an acknowledgement with (accepted or refused treaties and trades, gifts and tributes, war, a broken treaty, surrender, independence) and the refusal of a gift, tribute or surrender request |
 | `Response Friend YES <demand>`, `Response Friend NO <demand>`, `Response Enemy YES <demand>`, `Response Enemy NO <demand>` | Its acceptance or refusal of the demands from `Remove your ships from system` to `Stop attacks in system` |
 | `Mega Evil Declarations` | Its declaration of war on the Mega Evil Empire |

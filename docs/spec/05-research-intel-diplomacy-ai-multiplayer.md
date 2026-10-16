@@ -1758,6 +1758,13 @@ anger ≥ T.
   political message from X of any type, dated after the date − 2, waits. This test also
   follows an initiative of the 50 % branch that sent nothing, so the initiative can run
   twice in one turn (confirmed: binary).
+- What the initiative's demand step (its step 4) sends is not reported back: the
+  initiative counts as having sent nothing. So after a demand, request, surrender demand or
+  chatter in the 50 % branch, the second initiative runs as well (in simultaneous games
+  when no message from X waits) and may send X a second message that turn (confirmed:
+  binary, 2026-10-15, complete listing, question 88). Since 2026-10-15 ours follows
+  (`Politician::initiative`, `ai_diplomacy.cpp`); before, a demand counted as sent and
+  the second initiative did not run.
 - Each check of "wants war" or "wants to break" rolls again, and the initiative checks
   them again. The first check that finds a war or break queued by an accepted demand uses
   it up, so a queued war can end without a declaration when a later roll fails
@@ -1793,56 +1800,98 @@ follows the same pattern as war, with the Break Treaty threshold and the break l
 1. Declare war. Anger toward X becomes 100. Against the MEE, the message text is a random
    `Mega Evil Declarations` line.
 2. Break the treaty.
-3. Propose a treaty.
-4. Otherwise, with a 25 % chance, a demand or request (below).
+3. Propose a treaty. Once the proposal decision below names a treaty, the initiative ends
+   here, even when the `Send Propose Treaty` pool is empty and nothing is sent; the demand
+   roll of step 4 is not made (confirmed: binary, 2026-10-15, complete listing, question
+   88). Since 2026-10-15 ours follows (`Politician::initiative`); before, an empty pool
+   fell through to step 4.
+4. Otherwise, with a 25 % chance, a demand or request (below). Whatever it sends, the
+   initiative reports that nothing was sent ("Each turn" above).
 
-**Propose Treaty**
+**Propose Treaty**, tested in this order (confirmed: binary; corrected 2026-10-15, complete
+listing, question 88: the chance roll was listed first, without a roll in Team Mode, and a
+forced proposal was said to skip the roll and the threshold):
 
-- The chance is `Propose Treaty Percent Chance Per Turn`, tripled while an MEE exists and
-  X is not the MEE. There is no roll in Team Mode.
-- Never while the AI is someone's subject.
-- Blocked while turns since war < `Turns Since Last War Before Friendly Treaty`. This
-  gate applies only if the AI or X is human, and is lifted in Team Mode or while an MEE
-  exists.
-- Needs anger ≤ T. When anger > 70, there is a further 50 % chance to drop the proposal.
-- A team mate, or an accepted "make peace" request, forces a proposal. If no threshold was
-  computed in that case, T = 50. The request counts when X is neither a team mate nor a
-  team enemy, the AI is not a subject and the peace list (§7.4 "Demand lists") holds X:
-  one entry for X is then used up, even when no treaty qualifies and nothing is sent
-  (confirmed: binary).
-- **Which treaty**:
-  - Walk the `Propose Treaty Type N` entries in file order.
-  - An entry qualifies if its treaty is at most `Highest Allowed Treaty`, better than the
-    current treaty, and anger ≤ T − its `Anger Level Below Computed`.
-  - The *last* qualifying entry is sent. With the stock best-first lists the AI climbs one
-    step at a time.
-  - A team mate is always offered Partnership. Nothing is sent when no entry qualifies.
-- Proposals are made even while at war.
+1. Never while the AI is someone's subject. Nothing is rolled.
+2. The gate: blocked while turns since war < `Turns Since Last War Before Friendly
+   Treaty`. It applies only if the AI or X is human, and is lifted in Team Mode or while
+   an MEE exists (any empire, X included). A gated proposal makes no roll.
+3. The chance roll: `Propose Treaty Percent Chance Per Turn`, tripled while an MEE exists
+   and X is not the MEE. The roll is made in Team Mode too, where its result is ignored.
+4. When the gate and the roll passed: T is computed, the proposal needs anger ≤ T, and
+   when anger > 70 a further 50 % roll can drop it (made only when anger ≤ T).
+5. A team mate, or an accepted "make peace" request, forces a proposal: steps 2–4 still
+   run and make their rolls, but no longer stop it. The treaty is then picked with the T of
+   step 4 when the gate and the chance roll passed, and with T = 50 when either stopped
+   them. So a "make peace" proposal toward an empire at anger 40 with a computed T of 30
+   sends nothing, and toward the MEE, whose T is −1, one goes with the stock lists only on
+   a turn whose roll fails. The request counts when X is neither a team mate nor a team
+   enemy, the AI is not a subject and the peace list (§7.4 "Demand lists") holds X: one
+   entry for X is then used up, even when no treaty qualifies and nothing is sent
+   (confirmed: binary).
+6. **Which treaty**:
+   - Walk the `Propose Treaty Type N` entries in file order.
+   - An entry qualifies if its treaty is at most `Highest Allowed Treaty`, better than the
+     current treaty, and anger ≤ T − its `Anger Level Below Computed`.
+   - The *last* qualifying entry is sent. With the stock best-first lists the AI climbs one
+     step at a time.
+   - A team mate is always offered Partnership. Nothing is sent when no entry qualifies.
 
-**Answering a treaty proposal or counter-proposal**
+Proposals are made even while at war: against a human, only while an MEE exists or in Team
+Mode, since the gate blocks them otherwise; the stock and race files list only Trade
+Alliance and better, so such a proposal names Trade Alliance at once. Since 2026-10-15 ours
+follows (`Politician::proposal`, `ai_diplomacy.cpp`); before, it rolled the chance before
+the gate (one roll too many on every gated turn), made no roll in Team Mode, and a forced
+proposal skipped the roll and the threshold and picked with T = 50.
+
+**Answering a treaty proposal or counter-proposal** (confirmed: binary; corrected
+2026-10-15, complete listing, question 88), whoever proposes, human or computer, in every
+game mode:
 
 - No answer at all while the AI is a subject.
 - Team mate: yes. Team enemy: no.
 - No when the treaty is above `Highest Allowed Treaty`.
-- No when turns since war < `Turns Since Last War Before Friendly Treaty`, whether human
-  or not.
+- No when turns since war < `Turns Since Last War Before Friendly Treaty`. The test does
+  not look at the treaty, so despite the key's name it covers every treaty, Non-Intercourse
+  and Non-Aggression included. Since the counter is 0 throughout a war, a computer player
+  at war accepts no treaty at all, whatever its mood; only a Team Mode team mate gets past
+  it, being tested earlier.
 - No when X is the MEE.
-- Otherwise yes exactly when T > anger. There is no randomness.
-- After a refusal, with a 25 % chance, the AI counter-proposes the treaty one step lower
-  (never below Non-Aggression), if that one would pass the same test.
+- Otherwise yes exactly when T > anger. There is no randomness, and no test for War: a War
+  treaty (possible only as an item of a trade, gift or tribute) is judged like any other.
+- A refusal: the AI works out a counter-proposal, the treaty one step lower, but
+  Non-Aggression for anything at or below Subjugation (Non-Intercourse included). It is
+  not compared with the current treaty, so it may equal it. If the counter treaty passes
+  the same test (so never toward a team enemy), and then a 25 % roll, made on every
+  refusal whatever the treaty, succeeds, the AI sends a Counter Treaty
+  (`Send Offer Counter Treaty Proposal`) *instead of* the refusal. Otherwise it sends the
+  Refuse Treaty, a line from `Send Refuse Treaty`, drawn only then. The reason for a
+  refusal is not passed on: every refusal draws from that one pool (its stock lines
+  include one about alliances, which a refused Non-Intercourse gets as well), and the
+  `Send` pools have no friend or enemy variant.
+
+Since 2026-10-15 ours follows (`Politician::answerTreaty`, `acceptsTreaty`); before, it sent
+the refusal and then, with 25 %, a separate Counter Treaty, only for proposals above
+Non-Aggression and only when the lower treaty was better than the current one, rolled after
+drawing the refusal's line, and refused every War item.
 
 **Trades**
 
 - Refused when the AI cannot give what is asked (items it does not have or know), with
-  one of three stock replies.
-- Refused when the request contains "any …" items. The AI may then counter: it replaces
+  one of three built-in replies picked with a 1-in-3 roll, not a line of a speech pool
+  (confirmed: binary, 2026-10-15). OpenSE4's three lines are its own words.
+- Refused when the request contains "any …" items, unless the AI counters: it replaces
   each with a random concrete item and, with a 50 % chance, offers that if the value test
-  passes.
+  passes. The Counter Trade then goes *instead of* the Refuse Trade (confirmed: binary;
+  corrected 2026-10-15, complete listing: it was said to come after a refusal).
 - Otherwise accepted when value received ≥ value given × pct / 100 (truncated), where
   pct is `Accept Trade From Friend …` or `… Enemy …`. Every treaty item in either package
   must also pass the accept rule.
 - A subject (§3.2) refuses every trade that holds a treaty on either side (confirmed:
   binary; added 2026-10-14, complete listing).
+
+Since 2026-10-15 ours follows (`Politician::answerTrade`); before, it sent the refusal and the
+counter both, and drew the refusal for items it cannot give from `Send Refuse Trade`.
 
 **Item values**, for the receiving side:
 
@@ -3345,7 +3394,12 @@ simultaneous game the same steps see the advanced date.
 
 **One message per recipient per turn** (confirmed: binary) is read from the recipient's
 log: a political message from us dated the current turn blocks another. In a turn-based
-game the limit therefore lasts until the game turn ends.
+game the limit therefore lasts until the game turn ends. It is a test of the player's
+Communicate window (§3.4): the computer player's and a Politics minister's messages count
+toward it but are not held to it, so a computer player's second initiative of a turn can
+write to an empire it already wrote to (§7.4 "Each turn", question 88). Since 2026-10-15
+OpenSE4 holds only a player's own messages to it (`cmd::SendMessage`, `commands.cpp`); before,
+it held every message to it.
 
 **End-of-turn processing of one empire** (in this order):
 

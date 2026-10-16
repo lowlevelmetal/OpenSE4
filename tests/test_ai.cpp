@@ -7304,3 +7304,254 @@ TEST_CASE("ai: loading a game empties the demand lists, promises and the systems
     CHECK(e.aiMemory.staging == SystemId{3u});
     (void)r;
 }
+
+// ---- Treaties during a war and the rules around them (GitHub issue #19, spec 05 question 88) ----
+
+namespace {
+
+// What the computer player answers or sends in reply to `id` this turn.
+struct ReplyTo {
+    std::optional<bool> answer;              // an Accept or Refuse
+    std::optional<DiplomaticMessage> sent;   // a message in reply (a counter-proposal)
+};
+ReplyTo replyTo(const Rules& r, const GameState& s, EmpireId cpu, MessageId id) {
+    ReplyTo out;
+    for (const Command& c : ai::planTurn(r, datedNow(s, id), cpu)) {
+        if (const auto* a = as<cmd::AnswerMessage>(c); a && a->message == id) out.answer = a->accept;
+        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.inReplyTo == id) out.sent = m->message;
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("ai: at war every treaty proposal is refused, Non-Intercourse included, whatever the mood (issue #19)") {
+    // Spec 05 §7.4 (confirmed: binary): the turns-since-war gate does not
+    // look at the treaty, and the counter is 0 throughout a war.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, false);
+    const EmpireId human{0u}, cpu{1u};
+    meet(s, human, cpu);
+    setBoth(s, human, cpu, Treaty::War);
+    s.empire(cpu).relation(human).turnsSinceWar = 0;
+    s.empire(cpu).relation(human).anger = 0;   // Brotherly
+    for (Treaty t : {Treaty::NonIntercourse, Treaty::NonAggression, Treaty::TradeAlliance}) {
+        CAPTURE(static_cast<int>(t));
+        GameState g = s;
+        const MessageId id = deliver(g, human, cpu, MessageType::ProposeTreaty, t);
+        for (uint32_t turn = 60; turn < 72; ++turn) {
+            g.turn = turn;
+            const ReplyTo rep = replyTo(r, g, cpu, id);
+            REQUIRE(rep.answer.has_value());
+            CHECK_FALSE(*rep.answer);
+            CHECK_FALSE(rep.sent.has_value());   // the counter-proposal fails the same gate
+        }
+    }
+    // After peace, once the counter has reached the key's value, the same proposal passes.
+    setBoth(s, human, cpu, Treaty::None);
+    const int key = ai::builtinProfile().politics.turnsSinceWarBeforeFriendly;
+    s.empire(cpu).relation(human).turnsSinceWar = key - 1;
+    const MessageId id = deliver(s, human, cpu, MessageType::ProposeTreaty, Treaty::NonIntercourse);
+    s.turn = 60;
+    CHECK(replyTo(r, s, cpu, id).answer == std::optional<bool>{false});
+    s.empire(cpu).relation(human).turnsSinceWar = key;
+    CHECK(replyTo(r, s, cpu, id).answer == std::optional<bool>{true});
+}
+
+TEST_CASE("ai: a counter-proposal replaces the refusal: one step lower, Non-Aggression at or below Subjugation") {
+    TempTree t("counter");
+    t.write("Ai/Default_AI_Politics.txt",
+            std::string(kQuietPolitics) +
+                "Highest Allowed Treaty := Trade Alliance\nTurns Since Last War Before Friendly Treaty := 0\n"
+                "Accept Treaty Base Anger Level := 60\nAccept Treaty Minimum Anger Chance := 0\nAccept Treaty Anger Modifier Per Other Wars := 0\n"
+                "Accept Treaty Anger Modifier For Percent Stronger Player := 100000\nAccept Treaty Anger Modifier For Percent Weaker Player := 0\n"
+                "Accept Treaty Score Percent To Accept Subjugation Treaty := 100000\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 12, r);
+    const EmpireId asker{0u}, cpu{1u};
+    // At Trade Alliance already: the counter to a Trade and Research Alliance is
+    // that same treaty, which is offered all the same (it is not compared).
+    setBoth(s, asker, cpu, Treaty::TradeAlliance);
+    s.empire(cpu).relation(asker).anger = 0;
+    auto replies = [&](Treaty proposed, Treaty counter) {
+        CAPTURE(static_cast<int>(proposed));
+        GameState g = s;
+        const MessageId id = deliver(g, asker, cpu, MessageType::ProposeTreaty, proposed);
+        int counters = 0, refusals = 0;
+        for (uint32_t turn = 61; turn < 101; ++turn) {
+            g.turn = turn;
+            const ReplyTo rep = replyTo(r, g, cpu, id);
+            if (rep.sent) {
+                ++counters;
+                CHECK(rep.sent->type == MessageType::CounterTreaty);
+                CHECK(rep.sent->treaty == counter);
+                CHECK_FALSE(rep.answer.has_value());   // instead of the refusal
+            } else {
+                REQUIRE(rep.answer.has_value());
+                CHECK_FALSE(*rep.answer);
+                ++refusals;
+            }
+        }
+        CHECK(counters > 0);
+        CHECK(refusals > counters);   // a 1-in-4 roll
+    };
+    replies(Treaty::TradeResearchAlliance, Treaty::TradeAlliance);   // above the highest allowed
+    replies(Treaty::Subjugation, Treaty::NonAggression);             // the score percent
+}
+
+TEST_CASE("ai: a War item of a gift or trade is judged like any other treaty") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, false);
+    const EmpireId human{0u}, cpu{1u};
+    meet(s, human, cpu);
+    s.empire(cpu).relation(human).anger = 0;
+    const MessageId gift = deliver(s, human, cpu, MessageType::Gift);
+    PackageItem war;
+    war.kind = PackageItem::Kind::Treaty;
+    war.treaty = Treaty::War;
+    s.messages.back().offer.push_back(war);
+    std::optional<bool> a;
+    for (uint32_t turn = 60; turn < 70 && !a; ++turn) {
+        s.turn = turn;
+        a = answerTo(r, s, cpu, gift);
+    }
+    REQUIRE(a);
+    CHECK(*a);
+}
+
+TEST_CASE("ai: a demand made by the initiative counts as nothing sent, so the second initiative may write again") {
+    // Spec 05 §7.4 "Each turn" (question 88): a computer player is not held to
+    // the player's one message per empire and turn.
+    TempTree t("twice");
+    t.write("Ai/Default_AI_Politics.txt", kQuietPolitics);
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 12, r);
+    const EmpireId x{0u}, cpu{1u};
+    setBoth(s, cpu, x, Treaty::None);
+    bool twice = false;
+    for (uint32_t turn = 21; turn < 400 && !twice; ++turn) {
+        if (turn % 10 == 0) continue;
+        GameState g = s;
+        g.turn = turn;
+        Relation& rel = g.empire(cpu).relation(x);
+        rel.queuedWar = 1;            // the 50 % branch's first check finds it: the initiative runs
+        rel.attackedUs = true;        // and its demand step always has a demand to make
+        rel.attackedIn = SystemId{2u};
+        const auto cmds = ai::planTurn(r, g, cpu);
+        int toX = 0;
+        for (const Command& c : cmds)
+            if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == x) ++toX;
+        CHECK(toX <= 2);
+        if (toX == 2) {
+            twice = true;
+            CHECK(applyAll(r, g, cpu, cmds).empty());
+        }
+    }
+    CHECK(twice);
+    // A player's own second message to an empire in a turn is still refused.
+    GameState h = newEngineGame(7, 2, 12, true);
+    const EmpireId p0{0u}, p1{1u};
+    meet(h, p0, p1);
+    DiplomaticMessage hello;
+    hello.to = p1;
+    hello.type = MessageType::General;
+    hello.text = "Hello.";
+    REQUIRE(apply(engineRules(), h, p0, cmd::SendMessage{hello, false}).ok);
+    CHECK_FALSE(apply(engineRules(), h, p0, cmd::SendMessage{hello, false}).ok);
+    CHECK(apply(engineRules(), h, p0, cmd::SendMessage{hello, true}).ok);   // its Politics minister's
+}
+
+TEST_CASE("ai: a make-peace proposal picks with the threshold the usual steps computed, 50 when the roll stopped them") {
+    auto proposed = [&](int chance) -> std::optional<Treaty> {
+        TempTree t(std::format("forced{}", chance));
+        t.write("Ai/Default_AI_Politics.txt",
+                std::format("Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\n"
+                            "Propose Treaty Percent Chance Per Turn := {}\nPropose Treaty Base Anger Level := 30\n"
+                            "Propose Treaty Anger Modifier Per Other Wars := 0\nPropose Treaty First 50 Turns Modifier := 0\n"
+                            "Propose Treaty Anger Modifier For Percent Stronger Player := 100000\n"
+                            "Propose Treaty Anger Modifier For Percent Weaker Player := 0\n"
+                            "Propose Treaty Type Count := 1\nPropose Treaty Type 1 := Trade Alliance\n"
+                            "Propose Treaty Type 1 Anger Level Below Computed := 0\n",
+                            chance));
+        const Rules r{buildEngineRuleset(), t.root};
+        GameState s = computerGame(7, 2, 0, 12, r);
+        const EmpireId other{0u}, cpu{1u};
+        setBoth(s, cpu, other, Treaty::None);
+        s.turn = 61;
+        s.empire(cpu).relation(other).anger = 40;
+        s.empire(cpu).relation(other).queuedPeace = 1;
+        std::optional<Treaty> out;
+        for (const Command& c : ai::planTurn(r, s, cpu))
+            if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == other && m->message.type == MessageType::ProposeTreaty)
+                out = m->message.treaty;
+        return out;
+    };
+    CHECK_FALSE(proposed(100).has_value());           // the roll passed: T = 30 < anger 40
+    CHECK(proposed(0) == std::optional<Treaty>{Treaty::TradeAlliance});   // it failed: T = 50
+}
+
+TEST_CASE("ai: a proposal decided with an empty speech pool ends the initiative, with no demand") {
+    TempTree t("silentproposal");
+    t.write("Ai/Default_AI_Politics.txt",
+            "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 100\n"
+            "Propose Treaty Base Anger Level := 100\n");
+    // Lines for the demand, none for the proposal.
+    t.write("Ai/Default_AI_Speech.txt", "Number of Send Stop attacks in system := 1\nSend Stop attacks in system 1 := Stop it.\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 12, r);
+    const EmpireId x{0u}, cpu{1u};
+    setBoth(s, cpu, x, Treaty::None);
+    Relation& rel = s.empire(cpu).relation(x);
+    rel.anger = 0;
+    rel.attackedUs = true;
+    rel.attackedIn = SystemId{2u};
+    CHECK(requestsOver(r, s, cpu, x).empty());
+    // With a proposal that never qualifies, the same AI makes its demands.
+    s.empire(cpu).relation(x).treaty = s.empire(x).relation(cpu).treaty = Treaty::Partnership;
+    CHECK_FALSE(requestsOver(r, s, cpu, x).empty());
+}
+
+TEST_CASE("ai: a trade asking for what the AI cannot give gets one of three built-in lines") {
+    TempTree t("cannotgive");
+    t.write("Ai/Default_AI_Politics.txt", kQuietPolitics);
+    t.write("Ai/Default_AI_Speech.txt", "Number of Send Refuse Trade := 1\nSend Refuse Trade 1 := From the pool.\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 12, r);
+    const EmpireId asker{0u}, cpu{1u};
+    setBoth(s, asker, cpu, Treaty::None);
+    s.empire(cpu).stockpile = Resources{1000, 1000, 1000};
+    auto trade = [&](int64_t get) {
+        DiplomaticMessage m;
+        m.id = MessageId{s.nextMessageId++};
+        m.from = asker;
+        m.to = cpu;
+        m.type = MessageType::ProposeTrade;
+        m.sentTurn = s.turn;
+        m.delivered = true;
+        PackageItem offer, request;
+        offer.resources = {100, 0, 0};
+        request.resources = {get, 0, 0};
+        m.offer.push_back(offer);
+        m.request.push_back(request);
+        s.messages = {m};
+        return m.id;
+    };
+    std::set<std::string> lines;
+    const MessageId cannot = trade(900000);
+    for (uint32_t turn = 61; turn < 101; ++turn) {
+        s.turn = turn;
+        for (const Command& c : ai::planTurn(r, datedNow(s, cannot), cpu))
+            if (const auto* a = as<cmd::AnswerMessage>(c); a && a->message == cannot) {
+                CHECK_FALSE(a->accept);
+                lines.insert(a->text);
+            }
+    }
+    CHECK(lines.size() == 3);
+    CHECK_FALSE(lines.contains("From the pool."));
+    // A trade it can give but finds unfair is refused from the pool.
+    const MessageId unfair = trade(1000);   // worth 1 against an offer worth 0
+    std::optional<std::string> text;
+    for (const Command& c : ai::planTurn(r, datedNow(s, unfair), cpu))
+        if (const auto* a = as<cmd::AnswerMessage>(c); a && a->message == unfair) text = a->text;
+    CHECK(text == std::optional<std::string>{"From the pool."});
+}

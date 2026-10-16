@@ -1084,7 +1084,13 @@ struct Applier {
         DiplomaticMessage m = c.message;
         if (!m.to.valid() || m.to.index() >= s.empires.size() || m.to == e) return R::fail("Invalid recipient");
         if (!emp().relation(m.to).contact) return R::fail("No contact with that empire");
-        if (emp().relation(m.to).messageSentThisTurn) return R::fail("Only one message per empire per turn");
+        // One message per recipient per turn is a test of the player's
+        // Communicate window (spec 05 §8): a computer player's and a Politics
+        // minister's messages count toward it but are not held to it, so the
+        // computer player's second initiative of a turn can write again
+        // (§7.4 "Each turn", question 88).
+        const bool player = emp().kind == PlayerKind::Human && !c.minister;
+        if (player && emp().relation(m.to).messageSentThisTurn) return R::fail("Only one message per empire per turn");
         // A request about a third empire names one the sender picks from the
         // empires it has met that are still in the game, other than itself and
         // the recipient (spec 05 open question 51, confirmed: binary). Only the

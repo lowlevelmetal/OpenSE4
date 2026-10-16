@@ -9,6 +9,7 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <map>
 #include <optional>
@@ -200,11 +201,16 @@ private:
         return team(x, T);
     }
 
-    // The whole acceptance test for a treaty offered by x.
+    // The whole acceptance test for a treaty offered by x, in this order
+    // (spec 05 §7.4 "Answering a treaty proposal", question 88). The gate of
+    // turns since war does not look at the treaty, so it covers every one,
+    // Non-Intercourse and Non-Aggression included: at war, the counter is 0
+    // and nothing is accepted. There is no test for War, which an item of a
+    // trade, gift or tribute can name: it is judged like any other treaty.
     bool acceptsTreaty(EmpireId x, Treaty t) const {
         if (teamMate(x)) return true;
         if (teamEnemy(x)) return false;
-        if (t > pol_.highestAllowedTreaty || t == Treaty::War) return false;
+        if (t > pol_.highestAllowedTreaty) return false;
         if (rel(x).turnsSinceWar < pol_.turnsSinceWarBeforeFriendly) return false;
         if (x == mee_) return false;
         return acceptThreshold(x, t) > anger(x);
@@ -253,7 +259,8 @@ private:
         return false;
     }
 
-    // Whether something went to x.
+    // Whether something went to x, as the initiative reports it (spec 05
+    // §7.4 "Each turn", "Initiative", question 88, confirmed: binary).
     bool initiative(EmpireId x) {
         if (wantsWar(x)) {
             // Against the MEE the text is a `Mega Evil Declarations` line.
@@ -265,37 +272,53 @@ private:
             return sent;
         }
         if (wantsBreak(x)) return sendNamed(x, MessageType::BreakTreaty, rel(x).treaty);
-        if (propose(x)) return true;
-        if (p_.rng.percent(25)) return demand(x);
+        // Once the decision names a treaty the initiative ends here, even when
+        // the `Send Propose Treaty` pool is empty and nothing is sent.
+        if (const std::optional<Treaty> pick = proposal(x)) return sendNamed(x, MessageType::ProposeTreaty, *pick);
+        // What the demand step sends is not reported back: the initiative
+        // counts as having sent nothing, so after a demand in the 50 % branch
+        // the second initiative runs as well (turnWith).
+        if (p_.rng.percent(25)) static_cast<void>(demand(x));
         return false;
     }
 
-    bool propose(EmpireId x) {
-        if (subject()) return false;
+    // The treaty the AI proposes to x, if any (spec 05 §7.4 "Propose Treaty",
+    // question 88, confirmed: binary), tested in this order: a subject
+    // proposes nothing and rolls nothing; then the gate of turns since war (a
+    // gated proposal makes no roll); then the chance roll, made in Team Mode
+    // too, where its result is ignored; then, when both passed, the threshold
+    // T, anger <= T and, above 70, a 50 % roll. A team mate or an accepted
+    // "make peace" request forces the proposal: those steps still run and
+    // roll, but no longer stop it, and the treaty is picked with the T they
+    // computed, or with 50 when the gate or the chance roll stopped them.
+    std::optional<Treaty> proposal(EmpireId x) {
+        if (subject()) return std::nullopt;
         const bool mate = teamMate(x);
-        // An accepted "make peace" request forces a proposal: one entry of the
-        // peace list is used up, even when nothing is sent (open question 49).
+        // One entry of the peace list is used up, even when nothing is sent
+        // (open question 49).
         const bool peace = !mate && !teamEnemy(x) && rel(x).queuedPeace > 0 && useEntry(cmd::DemandList::Peace, x);
         const bool forced = mate || peace;
-        int T = 50;  // when a forced proposal computed no threshold
-        if (!forced) {
+        const bool teamMode = p_.st.options.teamMode;
+        const bool gated = (human(p_.id) || human(x)) && !teamMode && !mee_.valid() && rel(x).turnsSinceWar < pol_.turnsSinceWarBeforeFriendly;
+        int T = 50;
+        bool usual = false;
+        if (!gated) {
             const int chance = pol_.proposeChancePercent * (mee_.valid() && x != mee_ ? 3 : 1);
-            if (!p_.st.options.teamMode && !p_.rng.percent(chance)) return false;
-            const bool gated = (human(p_.id) || human(x)) && !p_.st.options.teamMode && !mee_.valid();
-            if (gated && rel(x).turnsSinceWar < pol_.turnsSinceWarBeforeFriendly) return false;
-            T = proposeThreshold(x);
-            if (anger(x) > T) return false;
-            if (anger(x) > 70 && p_.rng.percent(50)) return false;
+            const bool rolled = p_.rng.percent(chance);
+            if (rolled || teamMode) {
+                T = proposeThreshold(x);
+                usual = anger(x) <= T && !(anger(x) > 70 && p_.rng.percent(50));
+            }
         }
-        Treaty pick = Treaty::Count;
+        if (!usual && !forced) return std::nullopt;
         if (mate) {
-            if (rel(x).treaty != Treaty::Partnership) pick = Treaty::Partnership;
-        } else {
-            for (const auto& [treaty, below] : pol_.proposeTypes)
-                if (treaty <= pol_.highestAllowedTreaty && treaty > rel(x).treaty && anger(x) <= T - below) pick = treaty;  // the last one
+            if (rel(x).treaty != Treaty::Partnership) return Treaty::Partnership;
+            return std::nullopt;
         }
-        if (pick == Treaty::Count) return false;
-        return sendNamed(x, MessageType::ProposeTreaty, pick);
+        std::optional<Treaty> pick;
+        for (const auto& [treaty, below] : pol_.proposeTypes)
+            if (treaty <= pol_.highestAllowedTreaty && treaty > rel(x).treaty && anger(x) <= T - below) pick = treaty;  // the last one
+        return pick;
     }
 
     // ---- Demands the AI starts (spec 05 §7.4, always in the neutral tone) --------------------------
@@ -493,21 +516,25 @@ private:
         return p_.emit(cmd::AnswerMessage{msg.id, accept, std::move(*text), true});
     }
 
+    // Spec 05 §7.4 "Answering a treaty proposal or counter-proposal"
+    // (question 88, confirmed: binary). On a refusal the AI works out a
+    // counter-proposal: one step lower, but Non-Aggression for anything at or
+    // below Subjugation, not compared with the current treaty. Its test, then
+    // a 25 % roll made on every refusal; when both pass, the Counter Treaty
+    // goes instead of the refusal. Only then is the reply's line drawn.
     bool answerTreaty(const DiplomaticMessage& msg) {
         if (subject()) return false;  // no answer at all
         const EmpireId x = msg.from;
-        const bool accept = acceptsTreaty(x, msg.treaty);
-        if (!reply(msg, accept, accept ? "Send Accept Treaty" : "Send Refuse Treaty")) return false;
-        // A counter-proposal one step lower, never below Non-Aggression.
-        if (!accept && msg.treaty > Treaty::NonAggression && msg.treaty < Treaty::Count && p_.rng.percent(25)) {
-            const Treaty lower = static_cast<Treaty>(static_cast<int>(msg.treaty) - 1);
-            if (lower > rel(x).treaty && acceptsTreaty(x, lower)) {
-                DiplomaticMessage m;
-                m.inReplyTo = msg.id;
-                sendNamed(x, MessageType::CounterTreaty, lower, {}, {}, {}, {}, &m);
-            }
+        if (acceptsTreaty(x, msg.treaty)) return reply(msg, true, "Send Accept Treaty");
+        const Treaty proposed = std::min(msg.treaty, Treaty::Count);
+        const Treaty lower = proposed > Treaty::Subjugation ? static_cast<Treaty>(static_cast<int>(proposed) - 1) : Treaty::NonAggression;
+        const bool counterPasses = acceptsTreaty(x, lower);
+        if (p_.rng.percent(25) && counterPasses) {
+            DiplomaticMessage m;
+            m.inReplyTo = msg.id;
+            return sendNamed(x, MessageType::CounterTreaty, lower, {}, {}, {}, {}, &m);
         }
-        return true;
+        return reply(msg, false, "Send Refuse Treaty");
     }
 
     int64_t itemValue(const PackageItem& item, EmpireId giver, EmpireId receiver) const { return tradeItemValue(p_, item, giver, receiver); }
@@ -608,34 +635,53 @@ private:
         if (subject() && holdsTreaty(msg.offer, msg.request)) return reply(msg, false, "Send Refuse Trade");
         if (teamMate(x) || teamEnemy(x)) return reply(msg, teamMate(x), teamMate(x) ? "Send Accept Trade" : "Send Refuse Trade");
         for (const PackageItem& i : msg.request)
-            if (!diplomacy::isPlaceholder(i) && !canGive(i, x)) return reply(msg, false, "Send Refuse Trade");
+            if (!diplomacy::isPlaceholder(i) && !canGive(i, x)) return refuseCannotGive(msg);
         const bool anyItems = std::any_of(msg.request.begin(), msg.request.end(), [](const PackageItem& i) { return diplomacy::isPlaceholder(i); });
         const int need = isFriend(x) ? pol_.acceptTradeFriendPercent : pol_.acceptTradeEnemyPercent;
         auto passes = [&](const std::vector<PackageItem>& give, const std::vector<PackageItem>& get) {
             return packageValue(get, x, p_.id) >= xmath::pctTrunc(packageValue(give, p_.id, x), need) && treatyItemsPass(x, give, get);
         };
         if (anyItems) {
-            if (!reply(msg, false, "Send Refuse Trade")) return false;
-            // Counter with concrete items, half of the time, if the value test passes.
+            // A counter with concrete items, half of the time, if the value
+            // test passes; it goes instead of the refusal (spec 05 §7.4
+            // "Trades", question 88, confirmed: binary).
             std::vector<PackageItem> give;
+            bool complete = true;
             for (const PackageItem& i : msg.request) {
                 if (!diplomacy::isPlaceholder(i)) {
                     give.push_back(i);
                     continue;
                 }
                 const auto c = concrete(i, x);
-                if (!c) return true;
+                if (!c) {
+                    complete = false;
+                    break;
+                }
                 give.push_back(*c);
             }
-            if (p_.rng.percent(50) && passes(give, msg.offer)) {
+            if (complete && p_.rng.percent(50) && passes(give, msg.offer)) {
                 DiplomaticMessage m;
                 m.inReplyTo = msg.id;
-                sendNamed(x, MessageType::CounterTrade, Treaty::None, {}, {}, std::move(give), msg.offer, &m);
+                return sendNamed(x, MessageType::CounterTrade, Treaty::None, {}, {}, std::move(give), msg.offer, &m);
             }
-            return true;
+            return reply(msg, false, "Send Refuse Trade");
         }
         const bool accept = passes(msg.request, msg.offer);
         return reply(msg, accept, accept ? "Send Accept Trade" : "Send Refuse Trade");
+    }
+
+    // A trade asking for what the AI cannot give is refused with one of
+    // three built-in replies, picked with a 1-in-3 roll, not a line of a
+    // speech pool (spec 05 §7.4 "Trades", question 88, confirmed: binary).
+    // The three lines are OpenSE4's own words.
+    bool refuseCannotGive(const DiplomaticMessage& msg) {
+        static constexpr std::array<std::string_view, 3> kLines{
+            "We cannot hand over what you ask for.",
+            "Part of what you ask is not ours to give.",
+            "This exchange asks for things we do not have.",
+        };
+        std::string text{kLines[p_.rng.index(kLines.size())]};
+        return p_.emit(cmd::AnswerMessage{msg.id, false, std::move(text), true});
     }
 
     bool answerGift(const DiplomaticMessage& msg) {
