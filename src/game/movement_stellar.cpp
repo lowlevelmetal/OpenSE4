@@ -543,7 +543,7 @@ private:
         return a;
     }
 
-    // Who is told of a result, and how (spec 01 §9, spec 05 §7.3 term 2,
+    // Who is told of a result, and how (spec 01 §9, spec 05 §7.3 term 3,
     // Q50, findings B1, confirmed: binary). Each empire in `to` gets one log
     // entry naming the culprit, with `picture` (spec 06 §4.1: PlanetCreated,
     // StarDestroyed, WPOpened and the others, the new object's for a

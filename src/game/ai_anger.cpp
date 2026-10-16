@@ -21,6 +21,7 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <array>
 #include <deque>
 #include <optional>
 
@@ -344,19 +345,28 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
     // battle was fought, wherever it was (confirmed: binary): in a turn-based
     // game the player whose turn it was, in a simultaneous one the highest
     // player number. Only the battles the political window counts (since
-    // Empire::politicsMark): turn-based games keep two turns' battles.
-    if (belowNonAggression)
+    // Empire::politicsMark): turn-based games keep two turns' battles. The
+    // battles are counted by kind, and each kind adds its value × its count
+    // as one change, in the order Attacking Won, Lost, Stalemate, then
+    // Defending Won, Lost, Stalemate (spec 05 §7.3, question 88, confirmed:
+    // binary); with the clamping the order matters when a table mixes signs.
+    if (belowNonAggression) {
+        std::array<int64_t, 6> battles{};  // Attacking Won, Lost, Stalemate, Defending Won, Lost, Stalemate
         for (size_t i = 0; i < s.combats.size(); ++i) {
             const CombatRecord& rec = s.combats[i];
             if (!in.battles[i] || !involves(rec, e.id) || !involves(rec, x.id)) continue;
             const bool attacking = rec.currentPlayer == e.id;  // a record from an old save names nobody (inferred)
-            switch (outcomeFor(rec, e.id)) {
-                case Outcome::Won: add(attacking ? t.attackingWon : t.defendingWon); break;
-                case Outcome::Lost: add(attacking ? t.attackingLost : t.defendingLost); break;
-                case Outcome::Stalemate: add(attacking ? t.attackingStalemate : t.defendingStalemate); break;
-            }
+            ++battles[(attacking ? 0 : 3) + static_cast<size_t>(outcomeFor(rec, e.id))];  // Won, Lost, Stalemate
         }
-    // 2. Stellar manipulation: each report in our own log, counted like the
+        const std::array<int, 6> values{t.attackingWon, t.attackingLost, t.attackingStalemate, t.defendingWon, t.defendingLost, t.defendingStalemate};
+        for (size_t k = 0; k < battles.size(); ++k)
+            if (battles[k] > 0) add(int64_t{values[k]} * battles[k]);
+    }
+    // 2. Successful operations traced to them: the victim's log names the
+    // culprit (intel::namesCulprit); blocked attempts and counter-intelligence never do.
+    for (size_t i = 0; i < e.log.size(); ++i)
+        if (in.logs[e.id.index()][i] && intel::namesCulprit(s, e.log[i], x.id)) add(t.intelligenceAgainstUs);
+    // 3. Stellar manipulation: each report in our own log, counted like the
     // others, that X destroyed a planet or a star or made a nebula or black
     // hole (logged to every empire present when it happened, spec 05 §7.3).
     for (size_t i = 0; i < e.log.size(); ++i) {
@@ -364,10 +374,6 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
         if (in.logs[e.id.index()][i] && l.category == LogCategory::Events && movement::stellarReportNames(s, l, x.id))
             add(int64_t{2} * t.defendingLost);
     }
-    // 3. Successful operations traced to them: the victim's log names the
-    // culprit (intel::namesCulprit); blocked attempts and counter-intelligence never do.
-    for (size_t i = 0; i < e.log.size(); ++i)
-        if (in.logs[e.id.index()][i] && intel::namesCulprit(s, e.log[i], x.id)) add(t.intelligenceAgainstUs);
     // 4. The earliest message from them that arrived this turn.
     const DiplomaticMessage* first = nullptr;
     for (const DiplomaticMessage& m : s.messages)

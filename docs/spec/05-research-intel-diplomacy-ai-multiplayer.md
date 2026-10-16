@@ -1592,8 +1592,16 @@ minister on gets the same claims each turn (spec 06 §7 Q47, confirmed: binary).
 
 **Per-turn update** toward empire X, in this order:
 
-1. **Combat.** For each combat this turn involving X, while X's treaty with us is below
-   Non-Aggression, apply one `Combat …` value:
+1. **Combat.** While X's treaty with us is below Non-Aggression, the combats this turn
+   involving X are counted by kind, and each kind adds its `Combat …` value × its count as
+   one change, in the order Attacking Won, Attacking Lost, Attacking Stalemate, Defending
+   Won, Defending Lost, Defending Stalemate (confirmed: binary; corrected 2026-10-15,
+   complete listing: this step said earlier that each battle adds its value in turn, and
+   the stellar term came before the intelligence term). Because each change is clamped,
+   the order matters only when a table mixes positive and negative values among terms
+   1–3; the stock tables have none below 0 there. Since 2026-10-15 ours follows
+   (`updateAngerToward`, `ai_anger.cpp`); before, it added the battles one by one in record
+   order and term 3 before term 2. The kinds:
    - we are *Attacking* when we are the "current player" at the moment the battle is fought,
      otherwise *Defending*; where it happens does not matter (confirmed: binary). In a
      turn-based game the current player is the one whose turn it is, so a battle in our own
@@ -1607,7 +1615,10 @@ minister on gets the same claims each turn (spec 06 §7 Q47, confirmed: binary).
    - anything else is a *Stalemate*.
 
    Ground combat changes nothing.
-2. **Stellar manipulation.** Each report this turn that X destroyed a planet, destroyed a
+2. **Intelligence.** Each successful project by X against us adds `Intelligence Against
+   Us`, but only when we learn who did it. After a success, the target is told the culprit
+   with a 1 in 5 chance. Blocked attempts and counter-intelligence projects add nothing.
+3. **Stellar manipulation.** Each report this turn that X destroyed a planet, destroyed a
    star (making a nebula is reported the same way) or created a black hole adds 2 ×
    `Combat Defending Lost`. The report is an entry of our own log, counted like the
    others: when the manipulation happens, it is logged, naming the empire responsible. For
@@ -1617,9 +1628,6 @@ minister on gets the same claims each turn (spec 06 §7 Q47, confirmed: binary).
    goes to every empire that lost a colony or any object of its own in the system to the
    shockwave, mine fields included, the culprit too (a report naming oneself never counts)
    (confirmed: binary, question 50).
-3. **Intelligence.** Each successful project by X against us adds `Intelligence Against
-   Us`, but only when we learn who did it. After a success, the target is told the culprit
-   with a 1 in 5 chance. Blocked attempts and counter-intelligence projects add nothing.
 4. **Messages.** At most one message from X counts per turn: the earliest received this
    turn. It adds the `Receive <type>` value of its message type. There are 38 types, in
    file order:
@@ -4407,7 +4415,7 @@ started (confirmed: binary).
     empire whose step does not run marks nothing, and its next step counts what is still
     unmarked in its window. The stellar-manipulation term reads the counting empire's own
     log: the report is logged to every empire present in the system when it happens,
-    naming the empire responsible (confirmed: binary, §7.3). The engine differs in term 2:
+    naming the empire responsible (confirmed: binary, §7.3). The engine differs in term 3:
     it reads the culprit's log and tests who is present when the step runs. It must log
     the report to each empire present at that moment and count it from the counting
     empire's own log. Its per-empire mark of what a step counted gives the same result as
@@ -4473,7 +4481,7 @@ started (confirmed: binary).
     "wants war" and "wants to break" once per turn. It must keep counts (or lists) per
     empire, add one per carried-out demand, use one up at each check described above, and
     clear them all on the dates that are multiples of 10.
-50. **When the empires present at a stellar manipulation are taken** (§7.3 term 2): the
+50. **When the empires present at a stellar manipulation are taken** (§7.3 term 3): the
     report goes to every empire with a ship, base, colony, or fighter, satellite or drone
     group in the system "at that moment". Destroy Planet removes the colony and Destroy Star
     everything in the system, so it matters whether that moment is before or after the

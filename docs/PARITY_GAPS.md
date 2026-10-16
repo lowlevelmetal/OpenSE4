@@ -509,7 +509,7 @@ Every rule of this section follows the spec. On 2026-09-30 the engine's own choi
 - A ship's or base's report dates only its own design; a unit group's report dates nothing
   in a simultaneous game (Q43). OpenSE4 skips it on the player's machine too, where the
   original dates it until the turn ends.
-- Stellar manipulation reports go to every empire present in the system, and anger term 2
+- Stellar manipulation reports go to every empire present in the system, and anger term 3
   counts them in the counting empire's own log (`movement::stellarReportNames`, Q44). The
   per-empire mark of what a turn-based step counted stays; opening the Log window marks
   nothing in OpenSE4.
@@ -522,7 +522,7 @@ Every rule of this section follows the spec. On 2026-09-30 the engine's own choi
 Q45 and Q46 needed no change. The "(inferred)" markers of these choices are gone (the third
 empire draw, the silent Conditions Change, the log copy's default and the files' widths, the
 rebel's pictures, the theft's built count, the capitals standing for home locations, the
-report's cargo designs, the culprit's log in anger term 2), and the 21-order limit's is now
+report's cargo designs, the culprit's log in anger term 3), and the 21-order limit's is now
 "(confirmed: binary)". On 2026-10-01 the answers to questions 50 and 51 followed: Destroy
 Planet reports to the empires still present after its result, the shockwave to every empire
 that lost an object there, mine fields included (`Manipulation::noteWitnesses`); a human

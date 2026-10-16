@@ -3100,7 +3100,7 @@ TEST_CASE("movement: stellar manipulation - planets from asteroids and back") {
     CHECK(inSystemList(w.s, big));
     CHECK_FALSE(inSystemList(w.s, open));
     CHECK(w.objectAt(a, {9, 9}, ObjectKind::Asteroids).valid());
-    // The report the computer players' anger reads (spec 05 §7.3 term 2).
+    // The report the computer players' anger reads (spec 05 §7.3 term 3).
     CHECK(std::any_of(w.s.empire(kA).log.begin(), w.s.empire(kA).log.end(), [](const LogEntry& l) {
         return l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title);
     }));

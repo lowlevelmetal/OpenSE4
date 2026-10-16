@@ -2171,7 +2171,7 @@ TEST_CASE("ai: only a successful operation whose culprit is named angers the vic
     auto logIntel = [&](std::string title, std::string text) {
         s.empire(a).log.push_back(LogEntry{s.turn, LogCategory::Intelligence, std::move(title), std::move(text), std::nullopt, {}});
     };
-    // A blocked attempt and a counter-intelligence report name b but add nothing (spec 05 §7.3 term 3).
+    // A blocked attempt and a counter-intelligence report name b but add nothing (spec 05 §7.3 term 2).
     logIntel("Counter Intelligence", std::format("Our counter-intelligence stopped an operation of the {}.", culprit));
     logIntel("Counter Intelligence", std::format("Our agents shut down the Sabotage operation of the {}.", culprit));
     s.empire(a).relation(b).anger = 50;
@@ -2298,7 +2298,7 @@ TEST_CASE("ai: intruders in our territory and a promise change anger") {
     CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease);
 }
 
-TEST_CASE("ai: anger term 2 counts the stellar manipulation reports of the empire's own log (spec 05 Q44)") {
+TEST_CASE("ai: anger term 3 counts the stellar manipulation reports of the empire's own log (spec 05 Q44)") {
     const Rules& r = engineRules();
     GameState s = computerGame(4, 3, 0, 10);
     const EmpireId a{0u}, b{1u}, c{2u};
@@ -7622,4 +7622,60 @@ TEST_CASE("ai: a trade asking for what the AI cannot give gets one of three buil
     for (const Command& c : ai::planTurn(r, datedNow(s, unfair), cpu))
         if (const auto* a = as<cmd::AnswerMessage>(c); a && a->message == unfair) text = a->text;
     CHECK(text == std::optional<std::string>{"From the pool."});
+}
+
+TEST_CASE("ai: the anger's combat terms go by kind, then intelligence, then the stellar reports") {
+    // Spec 05 §7.3 steps 1-3 (question 88): with the clamping the order shows
+    // when a table mixes positive and negative values.
+    TempTree t("angerorder");
+    t.write("Ai/Default_AI_Anger.txt",
+            "Per Attack Location := 0\nPer No Treaty Ship := 0\nPer Enemy Ship := 0\nRegular Decrease := 0\nMega Evil Empire := 0\n"
+            "Minimum Anger := 0\nCombat Attacking Won := -30\nCombat Defending Lost := 40\nIntelligence Against Us := -30\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(5, 3, 0, 10, r);
+    const EmpireId me{0u}, enemy{1u};
+    meet(s, me, enemy);
+    setBoth(s, me, enemy, Treaty::War);
+    s.turn = 3;
+    auto battle = [&](EmpireId current, bool weWin) {
+        CombatRecord rec;
+        rec.turn = 2;
+        rec.location = locationOf(s.galaxy, homeworld(s, me).planet);
+        rec.participants = {me, enemy};
+        rec.currentPlayer = current;
+        CombatPiece ours, theirs;
+        ours.owner = me;
+        theirs.owner = enemy;
+        rec.pieces = {ours, theirs};
+        CombatEvent gone;
+        gone.kind = CombatEvent::Kind::Destroyed;
+        gone.piece = weWin ? 1 : 0;
+        rec.events = {gone};
+        return rec;
+    };
+    {
+        // A battle lost while defending, then one won while attacking: the
+        // Attacking Won term comes first (90 - 30 = 60, + 40 = 100); one
+        // battle at a time in record order would end at 70.
+        GameState g = s;
+        g.combats = {battle(enemy, false), battle(me, true)};
+        g.empire(me).relation(enemy).anger = 90;
+        TurnContext ctx{r, g, {}, {}, {}};
+        ai::politicalStep(ctx, me, 2u);
+        CHECK(g.empire(me).relation(enemy).anger == 100);
+    }
+    {
+        // A traced operation and a stellar report: intelligence first (50 - 30
+        // = 20, + 2 x 40 = 100); the report first would end at 70.
+        GameState g = s;
+        const std::string culprit = effects::empireFullName(g.empire(enemy));
+        g.empire(me).log.push_back(LogEntry{2, LogCategory::Intelligence, "Sabotage", "A hostile intelligence operation struck us." + intel::suspectLine(culprit),
+                                            std::nullopt, {}});
+        const Location where = locationOf(g.galaxy, homeworld(g, me).planet);
+        g.empire(me).log.push_back(LogEntry{2, LogCategory::Events, "Planet Destroyed: Somewhere", movement::stellarReportText(g, enemy, "Breaker 1"), where, {}});
+        g.empire(me).relation(enemy).anger = 50;
+        TurnContext ctx{r, g, {}, {}, {}};
+        ai::politicalStep(ctx, me, 2u);
+        CHECK(g.empire(me).relation(enemy).anger == 100);
+    }
 }
