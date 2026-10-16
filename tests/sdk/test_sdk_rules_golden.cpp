@@ -119,8 +119,8 @@ TEST_CASE("sdk rules golden: a simultaneous game a rules mod changes gives the g
         {5, 0xf6a92fb73aa10eecull},
         {10, 0xa7be42a8d05951f1ull},
         {20, 0x37384e964bf7142full},
-        {40, 0xd901d92aa4c84f3full},
-        {60, 0x7e6d8ce0f96ced88ull},
+        {40, 0xb2d649a5eac395e7ull},
+        {60, 0x4d2e8191c907e862ull},
     }};
     playGolden("simultaneous", 151, true, kGolden);
 }

@@ -1438,4 +1438,6 @@ of three built-in lines; a proposal with an empty speech pool ends the initiativ
 anger's combat terms go by kind, then intelligence, then the stellar reports; and the
 start-of-turn ministers order their attack candidates by the anger the step began with,
 the in-system attack and the anti-planet drones reading the list as built. Question 88 (b)
-to (d) lists what remains inferred.
+to (d) lists what remains inferred. The turn-based golden game of `tests/test_determinism.cpp`
+moved to seed 42 with these rules: seed 39 fought only four battles, below the coverage
+check's five.
