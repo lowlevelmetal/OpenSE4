@@ -5611,3 +5611,64 @@ started (confirmed: binary).
     has no handler when carried out, counts as done at once and is removed, with no log entry;
     the cure is the Medical Bay's automatic one (spec 03 §3). Our Move To alone is
     equivalent.
+88. **Treaty proposals refused during a war** (GitHub issue #19, raised 2026-10-15; §7.3,
+    §7.4). A player at war with three computer empires since 2410 saw one of them, the
+    Toltayan, at mood Brotherly (anger 0) in the Empires window, proposed Non-Intercourse
+    to it and was refused with the computer's stock line about alliances: "Empires with
+    Brotherly mood still reject treaty proposals." Is that the original's rule, and what
+    keeps a computer player's anger at 0 during a war?
+    **Answer** (confirmed: binary, 2026-10-15, complete listing): the refusal is the
+    original's. While two empires are at war the computer player's turns-since-war counter
+    toward the other is 0 at every one of its turns, and every treaty proposal is refused
+    while that counter is below `Turns Since Last War Before Friendly Treaty` (12 in the
+    Toltayan file, 15 in the default one). The test does not look at the treaty or at the
+    mood, so Non-Intercourse and Non-Aggression are refused too; only a Team Mode team mate
+    gets past it. Every refusal draws its line from `Send Refuse Treaty`, whatever the
+    reason. A war with a computer player ends through proposals only when the computer
+    proposes (against a human, only while a Mega Evil Empire exists or in Team Mode, or
+    when an accepted "make peace" request forces it) and the player accepts; otherwise by
+    surrender or elimination. The mood is plausible: nothing but the political step, the
+    computer's own declaration (100), an elimination (0), the start (50) and loading
+    change anger, and the Toltayan tables decrease it by 4 a turn to a floor of 0, count
+    no enemy ships or colonies in its space and add only 2 for each battle it wins, so it
+    falls from 100 to 0 in 25 quiet turns. §7.3 and §7.4 state the rules. The same code
+    path held eleven differences, which OpenSE4 follows since 2026-10-15:
+    1. a counter-proposal replaces the refusal instead of following it, one step lower but
+       Non-Aggression for anything at or below Subjugation, not compared with the current
+       treaty, its 25 % roll made on every refusal before the line is drawn; a trade's
+       counter likewise replaces the Refuse Trade (`answerTreaty`, `answerTrade`);
+    2. a demand made by the initiative counts as nothing sent, so the second initiative
+       runs (`initiative`); the computer player and Politics ministers are therefore no
+       longer held to the one-message-per-turn limit, which is the Communicate window's
+       (§8, `cmd::SendMessage`);
+    3. a forced proposal picks with the threshold the usual steps computed, 50 only when
+       the gate or the chance roll stopped them (`proposal`);
+    4. a War item of a trade, gift or tribute is judged like any other treaty, not refused
+       (`acceptsTreaty`);
+    5. the subject test and the gate come before the chance roll, which is made in Team
+       Mode too (`proposal`);
+    6. an empire with none of its ministers on keeps its turns-since-war counters;
+    7. a trade asking for what the computer cannot give gets one of three built-in lines,
+       picked with a 1-in-3 roll (`refuseCannotGive`, our own words);
+    8. a proposal decided with an empty `Send Propose Treaty` pool ends the initiative;
+    9. the turns-since-war counter is updated before the Politics minister, in the
+       start-of-turn step, not after the empire's orders (`countTurnsSinceWar`,
+       `ai_anger.cpp`): ours lifted the gate one turn late after peace and, after a
+       player's declaration between two of the computer's turns, still let it propose;
+    10. the combat terms of the anger are added by kind, then intelligence, then the
+        stellar reports (`updateAngerToward`; modded tables only);
+    11. the start-of-turn ministers order their attack candidates by the anger the step
+        began with, and the attack on a system's candidates and the anti-planet drones read
+        the list as built (`sortCandidatesBy`, `candidatesAsBuilt`).
+
+    Still open: (a) whether a player can name the computer player itself, or the player's
+    own empire, as the third empire of a "make peace" request, which would let the player
+    force a proposal. The Communicate window's picker leaves both out (question 51), and
+    ours refuses such a player's message in the command, so this matters only if the
+    original lets one through some other way;
+    (b) which of OpenSE4's minister switches stand for the original's empire-wide ones in
+    item 6 (ours: a computer player, Complete AI or any of the 25 switches; inferred);
+    (c) whether the original's start-of-turn ministers read the candidate list built first
+    thing, contents included: ours builds it again after the Politics minister, so a treaty
+    or a planet that changes hands in that minister's run already counts (inferred);
+    (d) whether our candidates' build order, the colonies' slot order, is the original's.

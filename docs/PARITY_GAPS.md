@@ -1421,3 +1421,21 @@ Settled with the engine already matching: what enters the enemy-in-territory lis
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state
 machine's transitions (question 53).
 
+
+GitHub issue #19 (spec 05 question 88, 2026-10-15, complete listing): a computer player at
+war refuses every treaty proposal, Non-Intercourse included and whatever its mood, because
+its turns-since-war counter is 0 throughout the war; that is the original's rule and stays.
+The same code path held eleven differences, which the engine follows since then
+(`ai_diplomacy.cpp`, `ai_anger.cpp`, `ai.cpp`, `ai_military.cpp`): a counter-proposal (treaty
+or trade) replaces the refusal, one step lower but Non-Aggression at or below Subjugation;
+a demand of the initiative counts as nothing sent, so the second initiative runs, and the
+one-message-per-turn limit holds only a player's own messages (`cmd::SendMessage`); a forced
+proposal picks with the computed threshold; War items are judged like other treaties; the
+gate and the subject test come before the chance roll, which Team Mode makes too; the
+turns-since-war counter is updated before the Politics minister and not at all for an
+empire with every minister off; a trade asking for what the computer cannot give gets one
+of three built-in lines; a proposal with an empty speech pool ends the initiative; the
+anger's combat terms go by kind, then intelligence, then the stellar reports; and the
+start-of-turn ministers order their attack candidates by the anger the step began with,
+the in-system attack and the anti-planet drones reading the list as built. Question 88 (b)
+to (d) lists what remains inferred.
