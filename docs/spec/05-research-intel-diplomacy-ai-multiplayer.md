@@ -1697,8 +1697,23 @@ like the others.
 - **Wars**: the empires we are at war with whose score is greater than our score / 4
   (integer division). The empire being judged counts if we are at war with it.
 - **First 50 turns**: the first 50 turns of the game.
-- **Turns since war** with an empire: +1 each turn, 0 while at war with it; it starts at
-  999.
+- **Turns since war** with an empire: a counter each empire keeps toward every other
+  player, so the two sides of a pair have their own; it is saved with the game and starts
+  at 999. It changes only at the start of the empire's start-of-turn step, before its
+  Politics minister acts: every counter goes up by 1, then every counter toward an empire
+  it is at war with at that moment is set to 0. Nothing else writes it: declaring war,
+  making peace and signing treaties do not. So while at war the AI always reads 0, and
+  after peace it reads 1 at its first start-of-turn step, 2 at the next, and so on. An
+  empire with none of its ministers on skips that step: a computer player always counts,
+  and a human playing without ministers keeps its counters as they were (999 if it never
+  had a minister on) (confirmed: binary; corrected 2026-10-15, complete listing, question
+  88: this line said only "+1 each turn"). Only two rules read it: answering a treaty and
+  proposing one (below). Since 2026-10-15 ours follows (`countTurnsSinceWar` in the state
+  update, `ai_anger.cpp`); before, it counted after the empire's orders, so the Politics
+  minister read the previous turn's value, and it counted for every empire. Which of our
+  switches stand for the original's empire-wide minister switches is (inferred): ours
+  counts an empire that is not human, has Complete AI control (`Empire::ministerAll`) or
+  has any of its 25 minister switches on.
 - **Treaty age**: turns since the treaty with that empire last changed. A change from one
   treaty at Trade Alliance or better to another does not reset it.
 - **Team Mode**: a *team mate* is on the same side (both computer or both human), a *team

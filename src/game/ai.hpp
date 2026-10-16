@@ -185,14 +185,15 @@ PlanReport planTurnReport(const Rules& r, const GameState& s, EmpireId e, bool m
 // reports and messages, and what the AI remembers of the turn.
 void updateAnger(TurnContext& ctx);
 // The parts of updateAnger:
-// after the AI's commands were applied (difficulty, counters, war declarations and
-// accepted demands);
+// after the AI's commands were applied (difficulty, treaty age and the noted
+// attacks and spies, war declarations and accepted demands);
 void recordAiDecisions(TurnContext& ctx);
 // ... or one empire's, after its own group 1 (turn-based games, spec 05 §8).
 void recordAiDecisions(TurnContext& ctx, EmpireId e);
-// before the ministers act (the state machine of §7.2, on the territory
-// claimed during the previous turn): every empire, or one empire at the start
-// of its turn;
+// before the ministers act (the turns since war of §7.4, which an empire
+// with every minister off skips, the demand lists' 10-turn clear and the
+// state machine of §7.2, on the territory claimed during the previous turn):
+// every empire, or one empire at the start of its turn;
 void updateAiStates(TurnContext& ctx);
 // `options` false: without copying the AI_Settings movement options and the
 // systems agreed to leave into the empire's options (an empire a player

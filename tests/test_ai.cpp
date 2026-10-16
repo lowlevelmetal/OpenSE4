@@ -7419,6 +7419,74 @@ TEST_CASE("ai: a War item of a gift or trade is judged like any other treaty") {
     CHECK(*a);
 }
 
+TEST_CASE("ai: turns since war count first thing in the start-of-turn step, not for an empire with every minister off") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, false);
+    const EmpireId human{0u}, cpu{1u};
+    meet(s, human, cpu);
+    TurnContext ctx{r, s, {}, {}, {}};
+    auto counter = [&](EmpireId a, EmpireId b) { return s.empire(a).relation(b).turnsSinceWar; };
+    setBoth(s, human, cpu, Treaty::War);
+    ai::updateAiState(ctx, cpu);
+    CHECK(counter(cpu, human) == 0);
+    // Peace: 1 at the next start of turn, then 2. The bookkeeping after the
+    // orders leaves it alone.
+    setBoth(s, human, cpu, Treaty::None);
+    ai::recordAiDecisions(ctx, cpu);
+    CHECK(counter(cpu, human) == 0);
+    ai::updateAiState(ctx, cpu);
+    CHECK(counter(cpu, human) == 1);
+    ai::updateAiState(ctx, cpu);
+    CHECK(counter(cpu, human) == 2);
+    // A human with every minister off keeps its counters, at war or not.
+    Empire& h = s.empire(human);
+    h.ministers = 0;
+    h.ministerAll = false;
+    h.relation(cpu).turnsSinceWar = 999;
+    setBoth(s, human, cpu, Treaty::War);
+    ai::updateAiState(ctx, human);
+    ai::updateAiStates(ctx);
+    CHECK(counter(human, cpu) == 999);
+    // With any minister switched on, it counts.
+    s.empire(human).ministers = ministerBit(Minister::Research);
+    ai::updateAiState(ctx, human);
+    CHECK(counter(human, cpu) == 0);
+}
+
+TEST_CASE("ai: after peace the Politics minister already reads the counter of this turn") {
+    // Spec 05 §7.4 "Terms" (question 88): with the key at 1, a proposal waiting
+    // at the first turn processed after peace is accepted at once.
+    TempTree t("gateafterpeace");
+    t.write("Ai/Default_AI_Politics.txt",
+            std::string(kQuietPolitics) +
+                "Turns Since Last War Before Friendly Treaty := 1\nAccept Treaty Base Anger Level := 100\n"
+                "Accept Treaty Anger Modifier Per Other Wars := 0\nAccept Treaty First 50 Turns Modifier := 0\n"
+                "Accept Treaty Anger Modifier For Percent Stronger Player := 100000\nAccept Treaty Anger Modifier For Percent Weaker Player := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 12, r);
+    const EmpireId a{0u}, b{1u};
+    setBoth(s, a, b, Treaty::None);   // peace was made during the turn before
+    s.empire(a).relation(b).turnsSinceWar = s.empire(b).relation(a).turnsSinceWar = 0;
+    s.empire(b).relation(a).anger = 0;
+    s.turn = 5;
+    // A proposal b answers in this processing: dated the ministers' date − 2.
+    DiplomaticMessage m;
+    m.id = MessageId{s.nextMessageId++};
+    m.from = a;
+    m.to = b;
+    m.type = MessageType::ProposeTreaty;
+    m.treaty = Treaty::NonAggression;
+    m.sentTurn = 4;
+    m.dated = 4;
+    m.delivered = true;
+    s.messages.push_back(m);
+    processTurn(r, s, {});
+    CHECK(s.empire(b).relation(a).turnsSinceWar >= 1);
+    bool accepted = false;
+    for (const DiplomaticMessage& x : s.messages) accepted = accepted || (x.from == b && x.inReplyTo == m.id && x.type == MessageType::AcceptTreaty);
+    CHECK(accepted);
+}
+
 TEST_CASE("ai: a demand made by the initiative counts as nothing sent, so the second initiative may write again") {
     // Spec 05 §7.4 "Each turn" (question 88): a computer player is not held to
     // the player's one message per empire and turn.

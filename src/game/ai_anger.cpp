@@ -72,15 +72,29 @@ void recordDecisions(TurnContext& ctx, EmpireId id, Rng&) {
             s.empire(id).relation(m.to).anger = kMaxAnger;
 }
 
-// Turns since war, treaty age, and the attacks and spies the AI noted for
-// its own demands (OpenSE4's record of what its log shows), forgotten every
-// 10 turns.
+// Turns since war (spec 05 §7.4 "Terms", question 88, confirmed: binary):
+// first thing in the empire's start-of-turn step, before its Politics
+// minister, every counter goes up by 1, and those toward an empire it is at
+// war with at that moment become 0. Nothing else writes them. An empire with
+// none of its ministers on skips that step and keeps its counters; which of
+// our switches count is inferred: a computer player, Complete AI control
+// (Empire::ministerAll) or any of the 25 empire-wide minister switches.
+void countTurnsSinceWar(Empire& e) {
+    if (e.kind == PlayerKind::Human && !e.ministerAll && (e.ministers & kAllMinisters) == 0) return;
+    for (size_t i = 0; i < e.relations.size(); ++i) {
+        if (i == e.id.index()) continue;
+        Relation& rel = e.relations[i];
+        rel.turnsSinceWar = rel.treaty == Treaty::War ? 0 : std::min(rel.turnsSinceWar + 1, kCounterCap);
+    }
+}
+
+// Treaty age, and the attacks and spies the AI noted for its own demands
+// (OpenSE4's record of what its log shows), forgotten every 10 turns.
 void keepCounters(GameState& s, Empire& e) {
     const bool forget = aiDate(s) % 10 == 0;  // "every 10 turns" reads the date the ministers see
     for (size_t i = 0; i < e.relations.size(); ++i) {
         if (i == e.id.index()) continue;
         Relation& rel = e.relations[i];
-        rel.turnsSinceWar = rel.treaty == Treaty::War ? 0 : std::min(rel.turnsSinceWar + 1, kCounterCap);
         const bool bothHigh = rel.agedTreaty >= Treaty::TradeAlliance && rel.treaty >= Treaty::TradeAlliance;
         if (rel.treaty != rel.agedTreaty && !bothHigh) rel.treatyAge = 0;
         else rel.treatyAge = std::min(rel.treatyAge + 1, kCounterCap);
@@ -546,9 +560,9 @@ void recordAiDecisions(TurnContext& ctx) {
         const bool randomPlayer = e.id.index() < random.size() && random[e.id.index()] != 0;
         e.aiDifficulty = randomPlayer || s.turn == 0 ? difficultyOf(s, e.id) : rebels;
     }
-    // The counters (the queues are forgotten every 10 turns), then this turn's
-    // decisions; not for an empire a script or external player plays that
-    // keeps no classic state (game/players.hpp).
+    // Treaty age and the noted attacks and spies (forgotten every 10 turns),
+    // then this turn's decisions; not for an empire a script or external
+    // player plays that keeps no classic state (game/players.hpp).
     for (Empire& e : s.empires) {
         if (!e.alive || !classicStateKept(ctx, e.id)) continue;
         keepCounters(s, s.empire(e.id));
@@ -650,7 +664,10 @@ void angerOf(const Rules& r, GameState& s, Empire& e, const AngerInputs& in) {
 void updateAiStates(TurnContext& ctx) {
     GameState& s = ctx.state;
     for (Empire& e : s.empires)
-        if (e.alive) forgetDemands(s, e);
+        if (e.alive) {
+            countTurnsSinceWar(e);
+            forgetDemands(s, e);
+        }
     for (Empire& e : s.empires) keepAiOptions(ctx.rules, e);
     for (const Empire& e : s.empires)
         if (e.alive) decideState(ctx.rules, s, e.id);
@@ -659,6 +676,7 @@ void updateAiStates(TurnContext& ctx) {
 void updateAiState(TurnContext& ctx, EmpireId id, bool options) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
+    countTurnsSinceWar(s.empire(id));
     forgetDemands(s, s.empire(id));
     if (options) keepAiOptions(ctx.rules, s.empire(id));
     decideState(ctx.rules, s, id);
