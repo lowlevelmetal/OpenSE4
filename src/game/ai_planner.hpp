@@ -121,9 +121,22 @@ struct Candidate {
     SystemId system;
     EmpireId owner;
     int jumps = 0;
-    int anger = 0;
+    int anger = 0;         // ours toward the owner, the sort's second key
     int64_t value = 0;     // tenths: the foreign ratings in its sector plus the planet's defence
+    uint32_t built = 0;    // its place in the order the list was built
 };
+// The attack candidates' order (spec 05 §7.2): fewest jumps, the highest
+// anger, the highest value compared as a whole number, by the ministers' sort.
+void sortCandidates(std::vector<Candidate>& candidates);
+// The order the start-of-turn ministers read them in (spec 05 §7.2, question
+// 88, confirmed: binary): sorted once, first thing in the start-of-turn step,
+// by the anger as it stood then, before the political step. `anger` holds
+// ours toward each player at that moment (ai::StartOfTurnFigures); the list
+// goes back to the order it was built in and is sorted again with it.
+void sortCandidatesBy(std::vector<Candidate>& candidates, const std::vector<int>& anger);
+// The candidates in the order the list was built in, which the attack on a
+// system's candidates and the anti-planet drones read (question 88).
+std::vector<const Candidate*> candidatesAsBuilt(const std::vector<Candidate>& candidates);
 
 // An enemy-in-territory entry of the defend list (spec 05 §7.2): one per
 // (system, sector, owner).

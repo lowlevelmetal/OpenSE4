@@ -37,6 +37,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <type_traits>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -7678,4 +7679,38 @@ TEST_CASE("ai: the anger's combat terms go by kind, then intelligence, then the 
         ai::politicalStep(ctx, me, 2u);
         CHECK(g.empire(me).relation(enemy).anger == 100);
     }
+}
+
+TEST_CASE("ai: the start-of-turn ministers order the attack candidates by the anger the step began with") {
+    using ai::detail::Candidate;
+    const EmpireId a{1u}, b{2u};
+    std::vector<Candidate> list = {
+        {ObjectId{10u}, SystemId{1u}, a, 1, 90, 10 * ai::detail::kStrengthScale, 0},
+        {ObjectId{11u}, SystemId{2u}, b, 1, 10, 10 * ai::detail::kStrengthScale, 1},
+        {ObjectId{12u}, SystemId{3u}, a, 0, 90, 10 * ai::detail::kStrengthScale, 2},
+    };
+    auto planets = [](const auto& v) {
+        std::vector<uint32_t> out;
+        for (const auto& c : v) {
+            if constexpr (std::is_pointer_v<std::decay_t<decltype(c)>>) out.push_back(c->planet.value);
+            else out.push_back(c.planet.value);
+        }
+        return out;
+    };
+    ai::detail::sortCandidates(list);
+    CHECK(planets(list) == std::vector<uint32_t>{12, 10, 11});   // fewest jumps, then the angriest owner
+    // The anger the step began with: b was the angrier then.
+    ai::detail::sortCandidatesBy(list, {0, 5, 80});
+    CHECK(planets(list) == std::vector<uint32_t>{12, 11, 10});
+    CHECK(list[1].anger == 80);
+    // The in-system attack and the drones read the list as it was built.
+    CHECK(planets(ai::detail::candidatesAsBuilt(list)) == std::vector<uint32_t>{10, 11, 12});
+
+    // The figures note the anger as the step begins.
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 3, 0, 10);
+    s.empire(EmpireId{0u}).relation(b).anger = 77;
+    const ai::StartOfTurnFigures f = ai::startOfTurnFigures(r, s, EmpireId{0u});
+    REQUIRE(f.anger.size() == s.empire(EmpireId{0u}).relations.size());
+    CHECK(f.anger[b.index()] == 77);
 }

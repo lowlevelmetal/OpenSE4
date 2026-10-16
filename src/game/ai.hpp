@@ -107,9 +107,13 @@ std::vector<Command> planPlayerPolitics(const Rules& r, const GameState& s, Empi
 // startOfTurnFigures, hands them to the start-of-turn ministers
 // (planOrdersAfterPolitics) and keeps them for the economy step
 // (TurnContext::aiStartFigures, planEconomyStep).
+// It also notes the anger toward each player as it stands then, before the
+// political step, by which the start-of-turn ministers order their attack
+// candidates (spec 05 §7.2, question 88, confirmed: binary).
 struct StartOfTurnFigures {
     Resources net;
     Resources revenue;
+    std::vector<int> anger;   // per player
 };
 StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, EmpireId e);
 // `colonyTargets` receives the colonization targets of the lists, in order

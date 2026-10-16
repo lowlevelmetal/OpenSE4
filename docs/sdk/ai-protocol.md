@@ -345,7 +345,7 @@ the game: other empires see it or the rules read it.
 
 | Step of the built-in AI | When | Kind | For an empire a player plays |
 |---|---|---|---|
-| The start-of-turn figures (`ai::startOfTurnFigures`): net income and revenue | First thing in the empire's start of turn | Bookkeeping | Worked out; the classic `orders` and `economy` answers plan with them |
+| The start-of-turn figures (`ai::startOfTurnFigures`): net income, revenue, and the anger toward each empire, by which the start-of-turn ministers order their attack candidates | First thing in the empire's start of turn | Bookkeeping | Worked out; the classic `orders` and `economy` answers plan with them |
 | The state update (`ai::updateAiState`): the turns since war with each empire (not for an empire with every minister off), the demand lists and the systems to avoid or attack forgotten every ten turns, the AI state machine (state, turns in it, targets, staging, defended systems, the after-attack timer) | Start of turn | Bookkeeping | Runs |
 | The four AI_Settings movement options and the systems it agreed to leave copied into the empire's options (part of the state update) | Start of turn | Action: they decide how its ships move | Commands at the start of the classic `politics` answer (`set_encounter_options`, `set_system_flags` with `avoid`), only where the empire's options differ |
 | The political step (`ai::politicalStep`): anger toward every empire in contact, and its mark of what it counted | Start of turn | Bookkeeping (other players see anger only as the leader's mood in their Empires window) | Runs |

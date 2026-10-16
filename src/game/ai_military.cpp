@@ -354,7 +354,8 @@ Location stagingSpot(const Planner& p) {
 }
 
 // The attack on a system's candidates (spec 05 §7.5 *Attack*, confirmed:
-// binary): its hostile-owned candidates (below Non-Aggression), sorted again
+// binary): its hostile-owned candidates (below Non-Aggression), taken in the
+// order the list was built (question 88), sorted again
 // when there are two or more by fewest jumps, our colonies' maximum population
 // in the candidate's sector (the higher first, inferred from the defend list,
 // question 87) and the weakest value first, the values compared as whole
@@ -365,8 +366,8 @@ Location stagingSpot(const Planner& p) {
 // added to it.
 std::vector<Order> attackIn(Planner& p, SystemId sys, Location from, int64_t credit) {
     std::vector<const Candidate*> list;
-    for (const Candidate& c : p.sit.candidates)
-        if (c.system == sys && hostileTo(p.emp(), c.owner)) list.push_back(&c);
+    for (const Candidate* c : candidatesAsBuilt(p.sit.candidates))
+        if (c->system == sys && hostileTo(p.emp(), c->owner)) list.push_back(c);
     if (list.empty()) return {};
     if (list.size() >= 2) {
         std::map<ObjectId, int64_t> population;
@@ -1418,7 +1419,8 @@ bool holds(Planner& p, const Cargo& cargo, auto&& accept) {
 }
 
 // The targets of the drones (spec 05 §7.5): ships inside our territory of
-// empires at War with us, and those empires' planets among the attack candidates.
+// empires at War with us, and those empires' planets among the attack
+// candidates, in the order the list was built (question 88).
 std::vector<Order> antiShipTargets(const Planner& p) {
     std::vector<Order> out;
     for (const Threat& t : p.sit.enemyInTerritory) {
@@ -1429,8 +1431,8 @@ std::vector<Order> antiShipTargets(const Planner& p) {
 }
 std::vector<Order> antiPlanetTargets(const Planner& p) {
     std::vector<Order> out;
-    for (const Candidate& c : p.sit.candidates)
-        if (p.atWarWith(c.owner)) out.push_back(attackPlanet(p.st, c.planet));
+    for (const Candidate* c : candidatesAsBuilt(p.sit.candidates))
+        if (p.atWarWith(c->owner)) out.push_back(attackPlanet(p.st, c->planet));
     return out;
 }
 

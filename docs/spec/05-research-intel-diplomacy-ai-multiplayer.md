@@ -1403,6 +1403,26 @@ High always notice.
   `canSettle`, and the second count goes to the hostile strength of the system when we have
   met the owner); it used to keep every noticed planet of another empire, so its computers
   found attack candidates, and left Infrastructure for Prepare for Attack, more often.
+
+  **When the list is sorted** (confirmed: binary, 2026-10-15, complete listing, question
+  88): once, first thing in the start-of-turn step, before the turns-since-war counters,
+  the MEE, the state update and the Politics minister. So the anger it sorts by is the one
+  the previous turn left, before this turn's political step (a 100 from the AI's own
+  declaration of war in its previous step included). The economy step builds the list
+  again, but nothing there reads its order. The sorted order feeds the state update's
+  choice of targets and the Fleets and Attack ministers' fallback goal (the top candidate,
+  when its owner is at War with us). The attack on a system's candidates (§7.5 *Attack*)
+  and the anti-planet drones' targets (§7.5 *Mines, satellites and drones*) walk the list
+  in the order it was built, not the sorted one. Since 2026-10-15 ours follows: the
+  start-of-turn ministers order the candidates by the anger the step began with
+  (`StartOfTurnFigures::anger`, `sortCandidatesBy`, `ai.cpp`), and `attackIn` and
+  `antiPlanetTargets` (`ai_military.cpp`) read them as built (`candidatesAsBuilt`); before,
+  they used the order of a list sorted by the anger after the political step. Our ministers
+  after Politics still build their list on the state that minister left (with the claims
+  the step began with), so a treaty or a planet that changes hands in its run already
+  counts; whether the original's ministers read the list built first thing, contents and
+  all, was not checked (question 88 (c)). Our list is built in the colonies' slot order;
+  whether that is the original's build order was not checked either.
 - **Exploration frontier** (confirmed: binary): the warp points of explored systems whose
   far system we have not explored. Whether we know where the link leads plays no part: a
   warp point into a system we have explored by another route is never on the frontier,
@@ -3107,8 +3127,9 @@ binary).
       With none, the last case.
     - Otherwise, and in the fall-throughs: the top attack candidate's system, when its
       owner is at War with us; else no order.
-    - In the chosen system the hostile-owned candidates (owner below Non-Aggression) are
-      sorted again when there are two or more: fewest jumps, our colonies' maximum
+    - In the chosen system the hostile-owned candidates (owner below Non-Aggression), taken
+      in the order the list was built (§7.2 "When the list is sorted"), are sorted again
+      when there are two or more: fewest jumps, our colonies' maximum
       population in the candidate's sector (the higher first, inferred from the defend list,
       question 87), then the weakest value first, the values compared as whole numbers.
       Each candidate is then skipped with a 25 % chance, and otherwise taken when its
@@ -3242,7 +3263,8 @@ binary).
     taking all the drones in that cargo off the half; colonies holding Anti-Planet drones
     do the same for the planet half. A colony can launch for both.
   - Anti-ship targets are ships inside our territory of empires at War with us.
-    Anti-planet targets are planets of such empires among the attack candidates.
+    Anti-planet targets are planets of such empires among the attack candidates, in the
+    order the candidate list was built (§7.2 "When the list is sorted").
   - Idle drones in space within `Maximum Anti-Ship` (or `Anti-Planet`) `Drone Target
     System Distance` less 2 jumps (3 with the stock 5; the setting is compared with the
     jumps plus two, §7.2 *Jumps*) are then sent after the targets, per-target times.

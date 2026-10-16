@@ -263,6 +263,31 @@ void sortDefendEntries(std::vector<DefendEntry>& entries, bool weakestFirst) {
     });
 }
 
+// Fewest jumps, the highest anger, the highest value compared as a whole
+// number; the ministers' sort is not stable (confirmed: binary).
+void sortCandidates(std::vector<Candidate>& candidates) {
+    ministersSort(candidates, [](const Candidate& a, const Candidate& b) {
+        if (const int k = threeWay(a.jumps, b.jumps)) return k;
+        if (const int k = threeWay(b.anger, a.anger)) return k;
+        return threeWay(b.value / kStrengthScale, a.value / kStrengthScale);
+    });
+}
+
+void sortCandidatesBy(std::vector<Candidate>& candidates, const std::vector<int>& anger) {
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) { return a.built < b.built; });
+    for (Candidate& c : candidates)
+        if (c.owner.index() < anger.size()) c.anger = anger[c.owner.index()];
+    sortCandidates(candidates);
+}
+
+std::vector<const Candidate*> candidatesAsBuilt(const std::vector<Candidate>& candidates) {
+    std::vector<const Candidate*> out;
+    out.reserve(candidates.size());
+    for (const Candidate& c : candidates) out.push_back(&c);
+    std::sort(out.begin(), out.end(), [](const Candidate* a, const Candidate* b) { return a->built < b->built; });
+    return out;
+}
+
 Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfile& prof) {
     const Empire& e = s.empire(id);
     const size_t nSys = s.galaxy.systems.size();
@@ -341,16 +366,10 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         const bool belowNone = !rel.contact || rel.treaty == Treaty::War || rel.treaty == Treaty::NonIntercourse;
         if (!belowNone && !canSettle(r, s, e, s.galaxy.object(c->planet))) continue;
         const int64_t value = foreignRatingsAt(r, s, id, locationOf(s.galaxy, c->planet)) + planetDefence(r, s, *c);
-        sit.candidates.push_back({c->planet, sys, c->owner, jumps(sys), rel.anger, value});
+        sit.candidates.push_back({c->planet, sys, c->owner, jumps(sys), rel.anger, value, static_cast<uint32_t>(sit.candidates.size())});
         if (rel.contact && treatyIsHostile(rel.treaty) && s.empire(c->owner).alive) sit.hostile[sys.index()] += kStrengthScale;
     }
-    // Fewest jumps, the highest anger, the highest value compared as a whole
-    // number; the ministers' sort is not stable (confirmed: binary).
-    ministersSort(sit.candidates, [](const Candidate& a, const Candidate& b) {
-        if (const int k = threeWay(a.jumps, b.jumps)) return k;
-        if (const int k = threeWay(b.anger, a.anger)) return k;
-        return threeWay(b.value / kStrengthScale, a.value / kStrengthScale);
-    });
+    sortCandidates(sit.candidates);
 
     // The exploration frontier (spec 05 §7.2, confirmed: binary): the warp
     // points of explored systems whose far system we have not explored,
@@ -1200,7 +1219,9 @@ std::vector<Command> planPlayerPolitics(const Rules& r, const GameState& s, Empi
 
 StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, EmpireId e) {
     if (!planFor(s, e)) return {};
-    return {detail::netIncomeOf(r, s, e), detail::capRevenueOf(r, s, e)};
+    StartOfTurnFigures f{detail::netIncomeOf(r, s, e), detail::capRevenueOf(r, s, e), {}};
+    for (const Relation& rel : s.empire(e).relations) f.anger.push_back(rel.anger);
+    return f;
 }
 
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory,
@@ -1212,6 +1233,9 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
     if (figures) {
         p.startOfTurnNet = figures->net;
         p.capRevenue = figures->revenue;
+        // The attack candidates in the order of the start of the step, by the
+        // anger before the political step (spec 05 §7.2, question 88).
+        if (!figures->anger.empty()) detail::sortCandidatesBy(p.sit.candidates, figures->anger);
     }
     if (colonyTargets) {
         colonyTargets->clear();
