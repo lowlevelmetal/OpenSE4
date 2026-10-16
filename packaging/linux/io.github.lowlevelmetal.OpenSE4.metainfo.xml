@@ -72,6 +72,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.15.1" date="2026-10-16" type="development">
+      <description>
+        <p>Computer players answer treaties and trades as in the original: a counter-proposal can replace a refusal, the turns since a war count at the start of their turn, and their attack choices use the anger the turn began with. Plays with 0.15.0 and reads its saves.</p>
+      </description>
+    </release>
     <release version="0.15.0" date="2026-10-15" type="development">
       <description>
         <p>An accuracy pass against the original game's complete code: about 150 differences corrected in movement and its animation, orders, cargo, colonization, the economy, events, combat, the computer players, diplomacy, intelligence, the galaxy, setup, saved games and the interface. OpenSE4's own additions are kept as options that start off. Network protocol 10 and save format 11: does not play with 0.14.x, reads its saves.</p>
